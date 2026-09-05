@@ -24,9 +24,15 @@ Other docs reference this table; if a number elsewhere disagrees, **this table a
 | Message start (magic) | `R C P U` (0x52 0x43 0x50 0x55) | `src/kernel/chainparams.cpp` (`pchMessageStart`) |
 | Bech32 HRP | `rcpu` (`rcpu1...`) | `src/kernel/chainparams.cpp` (`bech32_hrp`) |
 | Base58 prefix (legacy) | 0 / 5 / 128 | `src/kernel/chainparams.cpp` (`base58Prefixes`) |
-| Genesis hash | `8f8128ff...` | `CreateRcpuGenesisBlock` (nTime=1788566400) |
+| Genesis hash | `8f8128ffccc36d188eabd7846dea187d23cba18cbb45cc16d62ec9b8ac2af8e8` | `CreateRcpuGenesisBlock` (nTime=1788566400) |
+| Genesis coinbase | `22/Feb/2024 S&P 5087.03 @elonmusk ...` | `kernel/chainparams.cpp` (frozen, do not modify) |
+| nMinimumChainWork | `00000000000000000000000000000000000000000000000000000000000c0138` | `kernel/chainparams.cpp` (chainwork at height 2) |
+| defaultAssumeValid | `a0224f31b1b59929aee5cb6394e89461c0487911d7d1602461348966487d0429` | `kernel/chainparams.cpp` (block 2 hash) |
+| Checkpoints | 0, 1, 2 | `kernel/chainparams.cpp` (`checkpointData`) |
 
 ## Notes
 
 - `MAX_MONEY` (2.1B) is a **per-output sanity check**, not a total-supply cap.
 - Default chain is `RCPUMAIN`; `rcpud` without `-chain` launches the RCPU mainnet.
+- `ChainType::MAIN` (Bitcoin mainnet) is **disabled** at runtime; `-chain=main` throws an error.
+- The Bitcoin template (`CMainParams`) remains in source for code structure but cannot be instantiated.

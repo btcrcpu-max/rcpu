@@ -458,11 +458,11 @@ void SetupServerArgs(ArgsManager& argsman)
 
     init::AddLoggingArgs(argsman);
 
-    const auto defaultBaseParams = CreateBaseChainParams(ChainType::MAIN);
+    const auto defaultBaseParams = CreateBaseChainParams(ChainType::RCPUMAIN);
     const auto testnetBaseParams = CreateBaseChainParams(ChainType::TESTNET);
     const auto signetBaseParams = CreateBaseChainParams(ChainType::SIGNET);
     const auto regtestBaseParams = CreateBaseChainParams(ChainType::REGTEST);
-    const auto defaultChainParams = CreateChainParams(argsman, ChainType::MAIN);
+    const auto defaultChainParams = CreateChainParams(argsman, ChainType::RCPUMAIN);
     const auto testnetChainParams = CreateChainParams(argsman, ChainType::TESTNET);
     const auto signetChainParams = CreateChainParams(argsman, ChainType::SIGNET);
     const auto regtestChainParams = CreateChainParams(argsman, ChainType::REGTEST);
@@ -917,7 +917,7 @@ bool AppInitParameterInteraction(const ArgsManager& args)
     // RCPU: enable confidential-transactions mode.
     // For RCPU networks, CT is enabled by default (consensus rule from CT_FORK_HEIGHT onward).
     // For non-RCPU networks, CT is off by default and can be enabled with -ctmode.
-    bool fDefaultCT = (chainparams.GetChainType() == ChainType::MAIN || chainparams.GetChainType() == ChainType::RCPUMAIN || chainparams.GetChainType() == ChainType::TESTNET || chainparams.GetChainType() == ChainType::RCPUTESTNET || chainparams.GetChainType() == ChainType::REGTEST || chainparams.GetChainType() == ChainType::RCPUREGTEST);
+    bool fDefaultCT = (chainparams.GetChainType() == ChainType::RCPUMAIN || chainparams.GetChainType() == ChainType::TESTNET || chainparams.GetChainType() == ChainType::RCPUTESTNET || chainparams.GetChainType() == ChainType::REGTEST || chainparams.GetChainType() == ChainType::RCPUREGTEST);
     g_con_elementsmode = args.GetBoolArg("-ctmode", fDefaultCT);
     // ********************************************************* Step 2: parameter interactions
 

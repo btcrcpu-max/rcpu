@@ -111,7 +111,7 @@ std::unique_ptr<const CChainParams> CreateChainParams(const ArgsManager& args, c
 {
     switch (chain) {
     case ChainType::MAIN:
-        return CChainParams::Main();
+        throw std::runtime_error("ChainType::MAIN (Bitcoin mainnet) is disabled. Use -chain=rcpu for RCPU mainnet.");
     case ChainType::TESTNET:
         return CChainParams::TestNet();
     case ChainType::SIGNET: {

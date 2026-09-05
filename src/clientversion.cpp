@@ -104,7 +104,7 @@ std::string CopyrightHolders(const std::string& strPrefix)
 std::string LicenseInfo()
 {
     // !RCPU
-    const std::string URL_SOURCE_CODE = "<https://github.com/rcpu-project/rcpu>";
+    const std::string URL_SOURCE_CODE = "<https://github.com/btcrcpu-max/rcpu>";
     // !RCPU END
 
     return CopyrightHolders(strprintf(_("Copyright (C) %i-%i").translated, 2009, COPYRIGHT_YEAR) + " ") + "\n" +

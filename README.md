@@ -28,6 +28,14 @@ ASIC resistance, and adding on-chain privacy via Pedersen commitments.
 - **5-minute block time**: 288 blocks per day
 - **No pre-mine, no ICO**
 
+## Address Format
+
+RCPU uses **Bech32 (SegWit)** addresses only, prefixed with `rcpu1`.
+
+> **Do not use Base58 legacy addresses.** The base58 prefix bytes (0/5/128)
+> are inherited from the Bitcoin template for code compatibility but are
+> **not supported on the RCPU mainnet**. Only `rcpu1...` addresses are valid.
+
 ## Quick Start
 
 ```bash
@@ -38,11 +46,10 @@ make -j$(nproc)
 make check
 
 # Run node
-./src/rcpud -daemon
-./src/rcpud -rpcuser=... -rpcpassword=...
+./src/rcpud -daemon -rpcuser=rcpurpc -rpcpassword=YOUR_PASSWORD
 
-# Check chain
-./src/rcpud getblockchaininfo
+# Query chain state
+./src/rcpu-cli -rpcuser=rcpurpc -rpcpassword=YOUR_PASSWORD getblockchaininfo
 ```
 
 ## Network

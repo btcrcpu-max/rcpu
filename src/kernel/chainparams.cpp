@@ -568,8 +568,8 @@ public:
         consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT;
         consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].min_activation_height = 0; // No activation delay
 
-        consensus.nMinimumChainWork = uint256{};
-        consensus.defaultAssumeValid = uint256{};
+        consensus.nMinimumChainWork = uint256S("00000000000000000000000000000000000000000000000000000000000c0138");
+        consensus.defaultAssumeValid = uint256S("a0224f31b1b59929aee5cb6394e89461c0487911d7d1602461348966487d0429");
 
         // The half life for the ASERT DAA. For every (nASERTHalfLife) seconds behind schedule the blockchain gets,
         // difficulty is cut in half. Doubled if blocks are ahead of schedule.
@@ -623,7 +623,8 @@ public:
         checkpointData = {
             {
                 {    0, uint256S("8f8128ffccc36d188eabd7846dea187d23cba18cbb45cc16d62ec9b8ac2af8e8")},
-                {   33, uint256S("14e8324a76f76672a0ed63e1977ff3bb4320dbe0705ff575326d7ffee61fafa1")}
+                {    1, uint256S("a620095d9d1e6c2b20bedcc6925d994deaa9f98457cf78234050701888f57313")},
+                {    2, uint256S("a0224f31b1b59929aee5cb6394e89461c0487911d7d1602461348966487d0429")}
             }
         };
 

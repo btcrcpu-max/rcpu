@@ -12,7 +12,7 @@ Unicode true
 # General Symbol Definitions
 !define REGKEY "SOFTWARE\$(^Name)"
 !define COMPANY "RCPU project"
-!define URL https://github.com/RCPUcoin/RCPU
+!define URL https://github.com/btcrcpu-max/rcpu
 
 # MUI Symbol Definitions
 # !RCPU
