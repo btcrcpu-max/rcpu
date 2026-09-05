@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: RCPU Security Policy
+    url: https://github.com/rcpu-project/rcpu/blob/rcpu_master/SECURITY-RCPU.md
+    about: View security policy
+  - name: RCPU Developers
+    url: https://github.com/rcpu-project
+    about: RCPU Project homepage

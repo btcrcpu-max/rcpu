@@ -1,0 +1,16 @@
+[Unit]
+Description=RCPU Daemon
+After=network.target
+
+[Service]
+Type=forking
+PIDFile=/root/.rcpu/rcpud.pid
+ExecStart=/usr/local/bin/rcpud -chain=rcpu -datadir=/root/.rcpu -daemon
+ExecStop=/usr/local/bin/rcpu-cli -chain=rcpu -datadir=/root/.rcpu -rpcuser=<YOUR_RPC_USERNAME> -rpcpassword=<YOUR_RPC_PASSWORD> stop
+Restart=always
+RestartSec=10
+LimitNOFILE=65536
+OOMScoreAdjust=-500
+
+[Install]
+WantedBy=multi-user.target

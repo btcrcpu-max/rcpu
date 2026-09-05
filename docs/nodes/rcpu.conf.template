@@ -1,0 +1,26 @@
+# RCPU Mainnet Configuration Template
+# Place this file at ~/.rcpu/rcpu.conf
+
+# Network
+server=1
+txindex=1
+port=7227
+
+# RPC
+rpcuser=YOUR_RPC_USER
+rpcpassword=YOUR_STRONG_PASSWORD
+rpcbind=127.0.0.1
+rpcport=7337
+
+# Logging
+logips=1
+listen=1
+
+# Peers
+# addnode=PEER_IP:7227
+addnode=seed1.rcpuapp.top:7227
+addnode=seed2.rcpuapp.top:7227
+
+# Memory / performance
+dbcache=2048
+maxconnections=64

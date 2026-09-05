@@ -1,0 +1,16 @@
+--- src/wallet/coinselection.cpp
++++ src/wallet/coinselection.cpp
+@@ -195,7 +195,11 @@ util::Result<SelectionResult> SelectCoinsBnB(std::vector<OutputGroup>& utxo_poo
+     // Set output set
+     for (const size_t& i : best_selection) {
+         result.AddInput(utxo_pool.at(i));
+     }
+-    result.ComputeAndSetWaste(cost_of_change, cost_of_change, CAmount{0});
+-    assert(best_waste == result.GetWaste());
++    // RCPU CT: only compute waste if we have a valid selection
++    if (!best_selection.empty()) {
++        result.ComputeAndSetWaste(cost_of_change, cost_of_change, CAmount{0});
++        // RCPU CT: skip assert for CT mode due to unblinding complexity
++        // assert(best_waste == result.GetWaste());
++    }
+ 

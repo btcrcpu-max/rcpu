@@ -1,0 +1,15 @@
+[Unit]
+Description=RCPU Node
+After=network.target
+
+[Service]
+Type=forking
+User=root
+ExecStart=/usr/local/bin/rcpud -conf=/root/.rcpu/rcpu.conf -datadir=/root/.rcpu
+ExecStop=/usr/local/bin/rcpu-cli -conf=/root/.rcpu/rcpu.conf stop
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target
+

@@ -1,0 +1,33 @@
+# /etc/conf.d/rcpud: config file for /etc/init.d/rcpud
+
+# Config file location
+#RCPUD_CONFIGFILE="/etc/rcpu/rcpu.conf"
+
+# What directory to write pidfile to?  (created and owned by $RCPUD_USER)
+#RCPUD_PIDDIR="/var/run/rcpud"
+
+# What filename to give the pidfile
+#RCPUD_PIDFILE="${RCPUD_PIDDIR}/rcpud.pid"
+
+# Where to write rcpud data (be mindful that the blockchain is large)
+#RCPUD_DATADIR="/var/lib/rcpud"
+
+# User and group to own rcpud process
+#RCPUD_USER="rcpu"
+#RCPUD_GROUP="rcpu"
+
+# Path to rcpud executable
+#RCPUD_BIN="/usr/bin/rcpud"
+
+# Nice value to run rcpud under
+#RCPUD_NICE=0
+
+# Additional options (avoid -conf and -datadir, use flags above)
+#RCPUD_OPTS=""
+
+# The timeout in seconds OpenRC will wait for rcpud to terminate
+# after a SIGTERM has been raised.
+# Note that this will be mapped as argument to start-stop-daemon's
+# '--retry' option, which means you can specify a retry schedule
+# here. For more information see man 8 start-stop-daemon.
+RCPUD_SIGTERM_TIMEOUT=600

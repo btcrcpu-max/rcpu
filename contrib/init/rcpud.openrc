@@ -1,0 +1,93 @@
+#!/sbin/openrc-run
+
+# backward compatibility for existing gentoo layout 
+#
+if [ -d "/var/lib/rcpu/.rcpu" ]; then
+	RCPUD_DEFAULT_DATADIR="/var/lib/rcpu/.rcpu"
+else
+	RCPUD_DEFAULT_DATADIR="/var/lib/rcpud"
+fi
+
+RCPUD_CONFIGFILE=${RCPUD_CONFIGFILE:-/etc/rcpu/rcpu.conf}
+RCPUD_PIDDIR=${RCPUD_PIDDIR:-/var/run/rcpud}
+RCPUD_PIDFILE=${RCPUD_PIDFILE:-${RCPUD_PIDDIR}/rcpud.pid}
+RCPUD_DATADIR=${RCPUD_DATADIR:-${RCPUD_DEFAULT_DATADIR}}
+RCPUD_USER=${RCPUD_USER:-${RCPU_USER:-rcpu}}
+RCPUD_GROUP=${RCPUD_GROUP:-rcpu}
+RCPUD_BIN=${RCPUD_BIN:-/usr/bin/rcpud}
+RCPUD_NICE=${RCPUD_NICE:-${NICELEVEL:-0}}
+RCPUD_OPTS="${RCPUD_OPTS:-${RCPU_OPTS}}"
+
+name="RCPU Daemon"
+description="RCPU cryptocurrency P2P network daemon"
+
+command="/usr/bin/rcpud"
+command_args="-pid=\"${RCPUD_PIDFILE}\" \
+		-conf=\"${RCPUD_CONFIGFILE}\" \
+		-datadir=\"${RCPUD_DATADIR}\" \
+		-daemon \
+		${RCPUD_OPTS}"
+
+required_files="${RCPUD_CONFIGFILE}"
+start_stop_daemon_args="-u ${RCPUD_USER} \
+			-N ${RCPUD_NICE} -w 2000"
+pidfile="${RCPUD_PIDFILE}"
+
+# The retry schedule to use when stopping the daemon. Could be either
+# a timeout in seconds or multiple signal/timeout pairs (like
+# "SIGKILL/180 SIGTERM/300")
+retry="${RCPUD_SIGTERM_TIMEOUT}"
+
+depend() {
+	need localmount net
+}
+
+# verify
+# 1) that the datadir exists and is writable (or create it)
+# 2) that a directory for the pid exists and is writable
+# 3) ownership and permissions on the config file
+start_pre() {
+	checkpath \
+	-d \
+	--mode 0750 \
+	--owner "${RCPUD_USER}:${RCPUD_GROUP}" \
+	"${RCPUD_DATADIR}"
+
+	checkpath \
+	-d \
+	--mode 0755 \
+	--owner "${RCPUD_USER}:${RCPUD_GROUP}" \
+	"${RCPUD_PIDDIR}"
+
+	checkpath -f \
+	-o "${RCPUD_USER}:${RCPUD_GROUP}" \
+	-m 0660 \
+	"${RCPUD_CONFIGFILE}"
+
+	checkconfig || return 1
+}
+
+checkconfig()
+{
+	if grep -qs '^rpcuser=' "${RCPUD_CONFIGFILE}" && \
+		! grep -qs '^rpcpassword=' "${RCPUD_CONFIGFILE}" ; then
+		eerror ""
+		eerror "ERROR: You must set a secure rpcpassword to run rcpud."
+		eerror "The setting must appear in ${RCPUD_CONFIGFILE}"
+		eerror ""
+		eerror "This password is security critical to securing wallets "
+		eerror "and must not be the same as the rpcuser setting."
+		eerror "You can generate a suitable random password using the following "
+		eerror "command from the shell:"
+		eerror ""
+		eerror "bash -c 'tr -dc a-zA-Z0-9 < /dev/urandom | head -c32 && echo'"
+		eerror ""
+		eerror "It is recommended that you also set alertnotify so you are "
+		eerror "notified of problems:"
+		eerror ""
+		eerror "ie: alertnotify=echo %%s | mail -s \"RCPU Alert\"" \
+			"admin@foo.com"
+		eerror ""
+		return 1
+	fi
+}

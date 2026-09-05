@@ -1,0 +1,191 @@
+#!/usr/bin/env python3
+"""
+Git pre-commit hook - Blocks commits containing Chinese characters.
+Install: Copy this file to .git/hooks/pre-commit (no .py extension)
+
+Or use the install script: python .github/scripts/install_hooks.py
+"""
+
+import os
+import sys
+import subprocess
+import re
+
+# Patterns to exclude (same as CI check)
+EXCLUDED_PATHS = [
+    'src/qt/locale/',
+    'src/qt/android/',
+    'src/qt/res/',
+    'share/pixmaps/',
+    'src/minisketch/doc/',
+    '.git/',
+    'node_modules/',
+    'vendor/',
+    '__pycache__/',
+]
+
+SCAN_EXTENSIONS = {
+    '.py', '.js', '.ts', '.c', '.h', '.cpp', '.cc', '.java',
+    '.html', '.css', '.scss', '.less',
+    '.sh', '.bash', '.zsh',
+    '.md', '.txt', '.rst', '.adoc',
+    '.yml', '.yaml', '.json', '.xml', '.toml', '.ini', '.cfg', '.conf',
+    '.jsx', '.tsx', '.vue', '.svelte',
+    '.go', '.rs', '.rb', '.php', '.pl', '.lua',
+    '.sql', '.graphql', '.proto',
+}
+
+BINARY_EXTENSIONS = {
+    '.png', '.jpg', '.jpeg', '.gif', '.ico', '.svg', '.webp',
+    '.exe', '.dll', '.so', '.dylib', '.o', '.a', '.lib', '.obj',
+    '.gz', '.tar', '.zip', '.bz2', '.xz', '.7z', '.rar',
+    '.pdf', '.doc', '.docx',
+    '.ttf', '.otf', '.woff', '.woff2',
+    '.mp3', '.mp4', '.wav',
+    '.pyc', '.pyo', '.class',
+}
+
+SKIP_FILES = {
+    'package-lock.json',
+    'yarn.lock',
+    'Gemfile.lock',
+    'Cargo.lock',
+    'go.sum',
+}
+
+
+def should_scan(filepath: str) -> bool:
+    filepath = filepath.replace('\\', '/')
+
+    for excluded in EXCLUDED_PATHS:
+        if excluded in filepath:
+            return False
+
+    filename = os.path.basename(filepath)
+    _, ext = os.path.splitext(filename.lower())
+
+    if filename in SKIP_FILES:
+        return False
+
+    if ext in BINARY_EXTENSIONS:
+        return False
+
+    if ext and ext not in SCAN_EXTENSIONS:
+        return False
+
+    return True
+
+
+def check_file(filepath: str) -> list:
+    chinese_pattern = re.compile(r'[\u4e00-\u9fff]')
+    issues = []
+
+    try:
+        with open(filepath, 'r', encoding='utf-8') as f:
+            for line_num, line in enumerate(f, 1):
+                if chinese_pattern.search(line):
+                    issues.append((line_num, line.strip()[:150]))
+    except (UnicodeDecodeError, IOError):
+        pass
+
+    return issues
+
+
+def get_staged_files():
+    """Get list of staged files from git."""
+    try:
+        result = subprocess.run(
+            ['git', 'diff', '--cached', '--name-only', '--diff-filter=ACM'],
+            capture_output=True, text=True
+        )
+        return [f.strip() for f in result.stdout.strip().split('\n') if f.strip()]
+    except Exception:
+        return []
+
+
+def get_all_changed_files():
+    """Get all changed files (staged + unstaged)."""
+    try:
+        result = subprocess.run(
+            ['git', 'status', '--porcelain'],
+            capture_output=True, text=True
+        )
+        files = set()
+        for line in result.stdout.strip().split('\n'):
+            if not line.strip():
+                continue
+            # Extract filename (skip status code and space)
+            filename = line[3:].strip()
+            if filename.startswith('"') and filename.endswith('"'):
+                filename = filename[1:-1]
+            files.add(filename)
+        return list(files)
+    except Exception:
+        return []
+
+
+def main():
+    """Main hook logic."""
+    repo_root = os.getcwd()
+
+    # Get files to check (staged files for pre-commit)
+    staged_files = get_staged_files()
+
+    if not staged_files:
+        # Fall back to all changed files
+        staged_files = get_all_changed_files()
+
+    if not staged_files:
+        sys.exit(0)
+
+    # Filter files that should be scanned
+    files_to_check = []
+    for f in staged_files:
+        full_path = os.path.join(repo_root, f)
+        if os.path.isfile(full_path) and should_scan(f):
+            files_to_check.append(f)
+
+    if not files_to_check:
+        sys.exit(0)
+
+    # Check each file
+    has_issues = False
+    chinese_pattern = re.compile(r'[\u4e00-\u9fff]')
+
+    print("\n" + "=" * 60)
+    print("  Chinese Character Pre-Commit Check")
+    print("=" * 60)
+
+    for filepath in files_to_check:
+        full_path = os.path.join(repo_root, filepath)
+        issues = check_file(full_path)
+
+        if issues:
+            has_issues = True
+            print(f"\n  ❌ {filepath}")
+            for line_num, snippet in issues[:5]:
+                # Find the Chinese character
+                chinese_match = chinese_pattern.search(snippet)
+                if chinese_match:
+                    char = chinese_match.group()
+                    print(f"     Line {line_num}: Found Chinese character '{char}'")
+                    print(f"     Context: {snippet[:100]}")
+            if len(issues) > 5:
+                print(f"     ... and {len(issues) - 5} more lines with Chinese")
+
+    if has_issues:
+        print("\n" + "=" * 60)
+        print("  ❌ COMMIT BLOCKED - Chinese characters detected!")
+        print("=" * 60)
+        print("\n  Please remove all Chinese characters before committing.")
+        print("  Files must use English for code, comments, and strings.\n")
+        print("  To force commit anyway (NOT RECOMMENDED):")
+        print("    git commit --no-verify\n")
+        sys.exit(1)
+
+    print(f"\n  ✅ All {len(files_to_check)} file(s) passed - no Chinese characters found\n")
+    sys.exit(0)
+
+
+if __name__ == '__main__':
+    main()

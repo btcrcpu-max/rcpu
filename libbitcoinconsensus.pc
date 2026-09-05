@@ -1,0 +1,11 @@
+# RCPU Core - based on Bitcoin Core consensus library
+prefix=/usr/local
+exec_prefix=${prefix}
+libdir=${exec_prefix}/lib
+includedir=${prefix}/include
+
+Name: RCPU consensus library
+Description: Library for the Bitcoin consensus protocol.
+Version: 2.0.0-narnia-core-27.0.0
+Libs: -L${libdir} -lbitcoinconsensus
+Cflags: -I${includedir}
