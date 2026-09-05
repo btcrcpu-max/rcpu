@@ -120,12 +120,12 @@ public:
          */
         // !RCPU
         // RCPU message start so the Bitcoin template cannot talk to Bitcoin peers.
-        pchMessageStart[0] = 0x52;  // R
-        pchMessageStart[1] = 0x43;  // C
-        pchMessageStart[2] = 0x50;  // P
-        pchMessageStart[3] = 0x55;  // U
+        pchMessageStart[0] = 0xf9;
+        pchMessageStart[1] = 0xbe;
+        pchMessageStart[2] = 0xb4;
+        pchMessageStart[3] = 0xd9;
         // !RCPU END
-        nDefaultPort = 9965;
+        nDefaultPort = 8333;
         nPruneAfterHeight = 100000;
         m_assumed_blockchain_size = 600;
         m_assumed_chain_state_size = 10;
@@ -568,8 +568,8 @@ public:
         consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT;
         consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].min_activation_height = 0; // No activation delay
 
-        consensus.nMinimumChainWork = uint256S("00000000000000000000000000000000000000000000000000000000000c0138");
-        consensus.defaultAssumeValid = uint256S("a0224f31b1b59929aee5cb6394e89461c0487911d7d1602461348966487d0429");
+        consensus.nMinimumChainWork = uint256S("00000000000000000000000000000000000000000000000000000000009c0138");
+        consensus.defaultAssumeValid = uint256S("d1735c59f51be852cc7c6245ba62c9f1ce3e2a530a586a411efd8b2c5982d748");  // height 30
 
         // The half life for the ASERT DAA. For every (nASERTHalfLife) seconds behind schedule the blockchain gets,
         // difficulty is cut in half. Doubled if blocks are ahead of schedule.
@@ -624,7 +624,12 @@ public:
             {
                 {    0, uint256S("8f8128ffccc36d188eabd7846dea187d23cba18cbb45cc16d62ec9b8ac2af8e8")},
                 {    1, uint256S("a620095d9d1e6c2b20bedcc6925d994deaa9f98457cf78234050701888f57313")},
-                {    2, uint256S("a0224f31b1b59929aee5cb6394e89461c0487911d7d1602461348966487d0429")}
+                {    2, uint256S("a0224f31b1b59929aee5cb6394e89461c0487911d7d1602461348966487d0429")},
+                {    5, uint256S("dd69d79b3c2c661b87ff35d3d6a7640e0f1049ace7571b6165e123d02dcc27dc")},
+                {   10, uint256S("fea7623076c281654b8ddbe8041dc1321eb22cb2438b011d3f6db7ad9fed360e")},
+                {   20, uint256S("16bbcb658d57fc1d9855afdb1b34edf734f7a6cffa72f487c202b15f9eaed15f")},
+                {   30, uint256S("d1735c59f51be852cc7c6245ba62c9f1ce3e2a530a586a411efd8b2c5982d748")},
+                {   38, uint256S("9e31ffa280ff28abfa31fb446faba6f738ab841e7a7f0c0211beea3a70adf93a")}
             }
         };
 
