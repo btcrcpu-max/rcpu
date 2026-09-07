@@ -91,7 +91,7 @@ libqrencode (optional) can be installed with:
 
     sudo apt-get install libqrencode-dev
 
-Once these are installed, they will be found by configure and a bitcoin-qt executable will be
+Once these are installed, they will be found by configure and a rcpu-qt executable will be
 built by default.
 
 
@@ -148,7 +148,7 @@ libqrencode (optional) can be installed with:
 
     sudo dnf install qrencode-devel
 
-Once these are installed, they will be found by configure and a bitcoin-qt executable will be
+Once these are installed, they will be found by configure and a rcpu-qt executable will be
 built by default.
 
 ## Dependencies
@@ -208,6 +208,6 @@ This example lists the steps necessary to setup and build a command line only di
     ./autogen.sh
     ./configure
     make check
-    ./src/bitcoind
+    ./src/rcpud
 
 If you intend to work with legacy Berkeley DB wallets, see [Berkeley DB](#berkeley-db) section.
