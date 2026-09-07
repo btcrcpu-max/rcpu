@@ -10,7 +10,7 @@ RCPU version v1.x.x-mithril-core-26.0.0
 
 Please report bugs using the issue tracker at GitHub:
 
-  <https://github.com/rcpu-project/rcpu/issues>
+  <https://github.com/btcrcpu-max/rcpu/issues>
 
 How to Upgrade
 ==============

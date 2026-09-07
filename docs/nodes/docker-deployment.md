@@ -8,7 +8,7 @@ docker run -d \
   -v ~/.rcpu:/root/.rcpu \
   -p 7227:7227 \
   -p 127.0.0.1:7337:7337 \
-  rcpu-core:latest
+  rcpu:latest
 ```
 
 ## Ports

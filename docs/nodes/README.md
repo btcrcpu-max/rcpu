@@ -13,7 +13,7 @@ This guide covers installing, configuring, and running a RCPU full node on Linux
 Download the latest release from [GitHub Releases](https://github.com/btcrcpu-max/rcpu/releases):
 
 ```bash
-wget https://github.com/btcrcpu-max/rcpu/releases/latest/download/rcpu-core-$(VERSION)-linux-x86_64.tar.gz
+wget https://github.com/btcrcpu-max/rcpu/releases/latest/download/rcpu-v$(VERSION)-linux-x86_64.tar.gz
 wget https://github.com/btcrcpu-max/rcpu/releases/latest/download/SHA256SUMS.txt
 wget https://github.com/btcrcpu-max/rcpu/releases/latest/download/SHA256SUMS.txt.asc
 
@@ -23,8 +23,8 @@ gpg --verify SHA256SUMS.txt.asc
 sha256sum -c SHA256SUMS.txt
 
 # Extract
-tar -xzf rcpu-core-*-linux-x86_64.tar.gz
-cd rcpu-core-*/bin
+tar -xzf rcpu-v*-linux-x86_64.tar.gz
+cd rcpu-v*/bin
 ```
 
 Or build from source:
@@ -64,7 +64,7 @@ docker run -d \
   -v ~/.rcpu:/root/.rcpu \
   -p 7227:7227 \
   -p 127.0.0.1:7337:7337 \
-  rcpu-core:latest
+  rcpu:latest
 ```
 
 ## Firewall
@@ -84,8 +84,8 @@ sudo firewall-cmd --reload
 Add to `rcpu.conf`:
 
 ```ini
-addnode=seed1.rcpuapp.top:7227
-addnode=seed2.rcpuapp.top:7227
+addnode=seed1.rcpu.top:7227
+addnode=seed2.rcpu.top:7227
 ```
 
 ## Monitoring
@@ -105,7 +105,7 @@ curl -X POST http://127.0.0.1:7337 \
 ## Resources
 
 - Explorer: https://rcpu.ren/
-- Pool: https://pool.rcpuapp.top
+- Pool: https://pool.rcpu.top
 - Wallet: https://rcpu.top/
 - GitHub: https://github.com/btcrcpu-max/rcpu
 - Telegram: https://t.me/btc_rcpu

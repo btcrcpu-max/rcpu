@@ -55,7 +55,7 @@ make check
 ## Network
 
 - Explorer: https://rcpu.ren/
-- Mining Pool: https://pool.rcpuapp.top
+- Mining Pool: https://pool.rcpu.top
 - Web Wallet: https://rcpu.top/
 - Telegram: https://t.me/btc_rcpu
 

@@ -42,7 +42,7 @@ Exit WSL and then restart WSL.
 Download the latest version of RCPU and checkout the version you intend to build. If you want to build a specific version, you can replace `rcpu_master` with the version tag.
 
 ```bash
-git clone https://github.com/rcpu-project/rcpu.git
+git clone https://github.com/btcrcpu-max/rcpu.git
 cd rcpu
 git checkout rcpu_master
 ```

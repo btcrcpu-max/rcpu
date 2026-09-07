@@ -606,8 +606,8 @@ public:
 
         vFixedSeeds.clear();  // No hardcoded peer IPs
 
-        vSeeds.emplace_back("seed1.rcpuapp.top");        // Main seed node
-        vSeeds.emplace_back("seed2.rcpuapp.top");        // Secondary seed node
+        vSeeds.emplace_back("seed1.rcpu.top");        // Main seed node
+        vSeeds.emplace_back("seed2.rcpu.top");        // Secondary seed node
 
         base58Prefixes[PUBKEY_ADDRESS] = std::vector<unsigned char>(1,0);
         base58Prefixes[SCRIPT_ADDRESS] = std::vector<unsigned char>(1,5);

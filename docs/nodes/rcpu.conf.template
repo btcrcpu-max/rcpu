@@ -18,8 +18,8 @@ listen=1
 
 # Peers
 # addnode=PEER_IP:7227
-addnode=seed1.rcpuapp.top:7227
-addnode=seed2.rcpuapp.top:7227
+addnode=seed1.rcpu.top:7227
+addnode=seed2.rcpu.top:7227
 
 # Memory / performance
 dbcache=2048
