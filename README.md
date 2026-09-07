@@ -54,9 +54,9 @@ make check
 
 ## Network
 
-- Explorer: https://explorer.rcpuapp.top
+- Explorer: https://rcpu.ren/
 - Mining Pool: https://pool.rcpuapp.top
-- Web Wallet: https://wallet.rcpuapp.top
+- Web Wallet: https://rcpu.top/
 - Telegram: https://t.me/btc_rcpu
 
 ## License

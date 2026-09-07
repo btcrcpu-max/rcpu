@@ -104,8 +104,8 @@ curl -X POST http://127.0.0.1:7337 \
 
 ## Resources
 
-- Explorer: https://explorer.rcpuapp.top
+- Explorer: https://rcpu.ren/
 - Pool: https://pool.rcpuapp.top
-- Wallet: https://wallet.rcpuapp.top
+- Wallet: https://rcpu.top/
 - GitHub: https://github.com/btcrcpu-max/rcpu
 - Telegram: https://t.me/btc_rcpu
