@@ -65,10 +65,10 @@ BrandingText " "
 ShowInstDetails show
 VIProductVersion 27.0.0.0
 VIAddVersionKey ProductName "RCPU"
-VIAddVersionKey ProductVersion "2.0.0-narnia-core-27.0.0"
+VIAddVersionKey ProductVersion "1.0.2-narnia-core-27.0.0"
 VIAddVersionKey CompanyName "${COMPANY}"
 VIAddVersionKey CompanyWebsite "${URL}"
-VIAddVersionKey FileVersion "2.0.0-narnia-core-27.0.0"
+VIAddVersionKey FileVersion "1.0.2-narnia-core-27.0.0"
 VIAddVersionKey FileDescription "Installer for RCPU"
 # !RCPU
 VIAddVersionKey LegalCopyright "Copyright (C) 2009-2026 The Bitcoin Core developers and the RCPU Developers"
@@ -113,7 +113,7 @@ Section -post SEC0001
     CreateShortcut "$SMPROGRAMS\$StartMenuGroup\Uninstall $(^Name).lnk" $INSTDIR\uninstall.exe
     !insertmacro MUI_STARTMENU_WRITE_END
     WriteRegStr HKCU "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$(^Name)" DisplayName "$(^Name)"
-    WriteRegStr HKCU "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$(^Name)" DisplayVersion "2.0.0-narnia-core-27.0.0"
+    WriteRegStr HKCU "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$(^Name)" DisplayVersion "1.0.2-narnia-core-27.0.0"
     WriteRegStr HKCU "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$(^Name)" Publisher "${COMPANY}"
     WriteRegStr HKCU "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$(^Name)" URLInfoAbout "${URL}"
 # !RCPU

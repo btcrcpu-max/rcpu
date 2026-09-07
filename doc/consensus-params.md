@@ -29,9 +29,9 @@ Other docs reference this table; if a number elsewhere disagrees, **this table a
 | Base58 prefix (legacy) | 0 / 5 / 128 | `src/kernel/chainparams.cpp` (`base58Prefixes`) |
 | Genesis hash | `8f8128ffccc36d188eabd7846dea187d23cba18cbb45cc16d62ec9b8ac2af8e8` | `CreateRcpuGenesisBlock` (nTime=1788566400) |
 | Genesis coinbase | `22/Feb/2024 S&P 5087.03 @elonmusk ...` | `kernel/chainparams.cpp` (frozen, do not modify) |
-| nMinimumChainWork | `00000000000000000000000000000000000000000000000000000000009c0138` | `kernel/chainparams.cpp` (chainwork at height 38) |
-| defaultAssumeValid | `d1735c59f51be852cc7c6245ba62c9f1ce3e2a530a586a411efd8b2c5982d748` | `kernel/chainparams.cpp` (block 30 hash) |
-| Checkpoints | 0, 1, 2, 5, 10, 20, 30, 38 | `kernel/chainparams.cpp` (`checkpointData`) |
+| nMinimumChainWork | `00000000000000000000000000000000000000000000000000000001fc87aa3c` | `kernel/chainparams.cpp` (chainwork at height 3,600) |
+| defaultAssumeValid | `75872099399e9682e72795beeac617f1e911573df97d93a14f6ff0d5adab85d5` | `kernel/chainparams.cpp` (block 3,634 hash) |
+| Checkpoints | 0, 1, 2, 5, 10, 20, 30, 38, 3,600 | `kernel/chainparams.cpp` (`checkpointData`) |
 
 ## Notes
 
@@ -69,7 +69,7 @@ hours of history at 5-minute blocks). Subsequent hardening tiers are planned:
 | Tier | Target height | Approx. age | Action |
 |------|---------------|-------------|--------|
 | 1 (done) | 38 | ~3 hours | Initial checkpoints, chainwork, assumevalid (v1.0.1) |
-| 2 | 1,000 | ~3.5 days | Update nMinimumChainWork, add checkpoint, bump assumevalid (v1.0.2) |
+| 2 (done) | 3,600 | ~12.5 days | Update nMinimumChainWork, add checkpoint, bump assumevalid (v1.0.2) |
 | 3 | 10,000 | ~35 days | Full hardening: chainwork, checkpoints, assumevalid, release v1.1.0 |
 | 4 | 100,000 | ~1 year | Long-term hardening, consider removing early checkpoints |
 
@@ -94,9 +94,9 @@ For each tier:
 
 ### Warning
 
-The chain has passed height 1,000 but the tier 2 checkpoint upgrade has not
-been applied yet. Until tier 2 is applied, anti-reorg resistance remains at
-the tier 1 level (height 38).
+The tier 2 checkpoint upgrade has been applied at height 3,600 (v1.0.2).
+Anti-reorg resistance is now anchored at the tier 2 level.
+Subsequent tiers remain as scheduled.
 Miners and pools should run with `-reindex-chainstate` if they encounter
 unexpected reorgs. Exchanges should require a high number of confirmations
 (e.g., 100+) for large deposits during this early period.
