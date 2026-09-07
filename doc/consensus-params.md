@@ -9,7 +9,6 @@ Other docs reference this table; if a number elsewhere disagrees, **this table a
 | Data directory (root) | `~/.rcpu` | `GetDefaultDataDir()` |
 | Chain data directory | `~/.rcpu/rcpu/` | `BaseParams().DataDir()` |
 | Config file | `~/.rcpu/rcpu.conf` | `BITCOIN_CONF_FILENAME` |
-| Config file | `rcpu.conf` | `src/common/args.cpp` (`BITCOIN_CONF_FILENAME`) |
 | P2P port | **7227** | `src/kernel/chainparams.cpp` (`nDefaultPort`) |
 | RPC port | **7337** | `src/chainparamsbase.cpp` (`CreateBaseChainParams`) |
 | Block time | 5 minutes (300 s) | `src/kernel/chainparams.cpp` (`nPowTargetSpacing`) |
@@ -63,13 +62,14 @@ The mainnet was hardened at **height 38** (v1.0.1) with:
 - `defaultAssumeValid` set to block 30 hash
 - Checkpoints at heights: 0, 1, 2, 5, 10, 20, 30, 38
 
-This is the **first hardening tier**. The chain is young (approximately
-hours of history at 5-minute blocks). Subsequent hardening tiers are planned:
+This is the **first hardening tier** (approximately 3 hours of history at 5-minute blocks).
+
+Tier 2 was applied at **height 3,600** (v1.0.2), corresponding to approximately 3,600 blocks or a target span of ~12.5 days at 5-minute block intervals. The actual wall-clock time was shorter due to faster-than-target block production during early mining. Subsequent hardening tiers are planned:
 
 | Tier | Target height | Approx. age | Action |
 |------|---------------|-------------|--------|
 | 1 (done) | 38 | ~3 hours | Initial checkpoints, chainwork, assumevalid (v1.0.1) |
-| 2 (done) | 3,600 | ~12.5 days | Update nMinimumChainWork, add checkpoint, bump assumevalid (v1.0.2) |
+| 2 (done) | 3,600 | ~12.5 days (target) | Update nMinimumChainWork, add checkpoint, bump assumevalid (v1.0.2) |
 | 3 | 10,000 | ~35 days | Full hardening: chainwork, checkpoints, assumevalid, release v1.1.0 |
 | 4 | 100,000 | ~1 year | Long-term hardening, consider removing early checkpoints |
 
@@ -100,3 +100,4 @@ Subsequent tiers remain as scheduled.
 Miners and pools should run with `-reindex-chainstate` if they encounter
 unexpected reorgs. Exchanges should require a high number of confirmations
 (e.g., 100+) for large deposits during this early period.
+

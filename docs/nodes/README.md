@@ -88,11 +88,19 @@ sudo firewall-cmd --reload
 
 ## Seed Nodes
 
-Add to `rcpu.conf`:
+DNS seeds (preferred; allow 1–24 hours for global propagation after a release):
 
 ```ini
 addnode=seed1.rcpu.top:7227
 addnode=seed2.rcpu.top:7227
+```
+
+If DNS is not yet resolving in your region, fall back to these stable IPs:
+
+```ini
+addnode=38.55.199.177:7227
+addnode=119.28.152.245:7227
+addnode=207.57.129.188:7227
 ```
 
 ## Monitoring
@@ -116,3 +124,4 @@ curl -X POST http://127.0.0.1:7337 \
 - Wallet: https://rcpu.top/
 - GitHub: https://github.com/btcrcpu-max/rcpu
 - Telegram: https://t.me/btc_rcpu
+
