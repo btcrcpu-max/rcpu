@@ -51,3 +51,47 @@ The genesis block hash and coinbase are **frozen on-chain** and cannot be
 modified without creating a new chain. Auditors and reviewers should treat
 nTime (2026-09-05) as the genesis timestamp and the coinbase text as a
 cosmetic artifact, not a factual date.
+
+## Checkpoint and Chainwork Upgrade Schedule
+
+The mainnet was hardened at **height 38** (v1.0.1) with:
+
+- `nMinimumChainWork` set to chainwork at height 38
+- `defaultAssumeValid` set to block 30 hash
+- Checkpoints at heights: 0, 1, 2, 5, 10, 20, 30, 38
+
+This is the **first hardening tier**. The chain is young (approximately
+hours of history at 5-minute blocks). Subsequent hardening tiers are planned:
+
+| Tier | Target height | Approx. age | Action |
+|------|---------------|-------------|--------|
+| 1 (current) | 38 | ~3 hours | Initial checkpoints, chainwork, assumevalid |
+| 2 | 1,000 | ~3.5 days | Update nMinimumChainWork, add checkpoint, bump assumevalid |
+| 3 | 10,000 | ~35 days | Full hardening: chainwork, checkpoints, assumevalid, release v1.1.0 |
+| 4 | 100,000 | ~1 year | Long-term hardening, consider removing early checkpoints |
+
+### Upgrade Process
+
+For each tier:
+
+1. **Compute** the chainwork and block hash at the target height using
+   `getblockchaininfo` and `getblock <hash>`.
+2. **Update** `src/kernel/chainparams.cpp`:
+   - `nMinimumChainWork` to the chainwork at the target height
+   - `defaultAssumeValid` to the block hash at (target - 8) for safety margin
+   - Append the target height to `checkpointData`
+3. **Bump version** and tag a new release:
+   - Tier 2: patch version (e.g., v1.0.2)
+   - Tier 3: minor version (e.g., v1.1.0)
+   - Tier 4: minor or major version depending on other changes
+4. **Release** signed binaries and SHA256SUMS via GitHub Releases.
+5. **Announce** the upgrade via Telegram and the explorer. Nodes should
+   upgrade within 2 weeks; old versions remain functional but do not
+   benefit from the new chainwork/assumevalid optimizations.
+
+### Warning
+
+Until tier 2 (height 1,000), the chain has **low anti-reorg resistance**.
+Miners and pools should run with `-reindex-chainstate` if they encounter
+unexpected reorgs. Exchanges should require a high number of confirmations
+(e.g., 100+) for large deposits during this early period.
