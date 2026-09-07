@@ -15,10 +15,17 @@ ASIC resistance, and adding on-chain privacy via Pedersen commitments.
 | RPC Port | **7337** |
 | CT Activation | Block **0** (genesis) |
 | ASERT Activation | Block **0** (genesis) |
-| Genesis nTime | **1788566400** |
+| Genesis nTime | **1788566400** (2026-09-05 UTC) |
 | Block Time | 5 minutes |
 | Block Reward | 5,000 RCPU |
 | Halving Interval | 210,000 blocks |
+
+## Genesis Block
+
+Genesis nTime = **1788566400** (2026-09-05 00:00:00 UTC), the RCPU mainnet launch date.
+The genesis coinbase contains a historical news string (`22/Feb/2024 S&P 5087.03 @elonmusk ...`)
+that is a cosmetic artifact from development -- it is **not** the block creation date.
+Both values are frozen on-chain and cannot be changed.
 
 ## Features
 

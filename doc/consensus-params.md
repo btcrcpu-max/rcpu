@@ -36,3 +36,18 @@ Other docs reference this table; if a number elsewhere disagrees, **this table a
 - Default chain is `RCPUMAIN`; `rcpud` without `-chain` launches the RCPU mainnet.
 - `ChainType::MAIN` (Bitcoin mainnet) is **disabled** at runtime; `-chain=main` throws an error.
 - The Bitcoin template (`CMainParams`) remains in source for code structure but cannot be instantiated.
+
+## Genesis Block
+
+The genesis block nTime is **1788566400** (= 2026-09-05 00:00:00 UTC),
+corresponding to the RCPU mainnet launch date.
+
+The genesis coinbase text reads `22/Feb/2024 S&P 5087.03 @elonmusk ...`.
+This is a **deliberately retained historical news string** inherited from
+the project's early development template. It is **not** the actual block
+creation date, nor does it reflect any event on 22 Feb 2024 related to RCPU.
+
+The genesis block hash and coinbase are **frozen on-chain** and cannot be
+modified without creating a new chain. Auditors and reviewers should treat
+nTime (2026-09-05) as the genesis timestamp and the coinbase text as a
+cosmetic artifact, not a factual date.

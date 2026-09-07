@@ -58,14 +58,21 @@ port=7227
 
 ## Docker
 
+Build the image first (no pre-built image is published):
+
 ```bash
-docker run -d \
-  --name rcpu-node \
-  -v ~/.rcpu:/root/.rcpu \
-  -p 7227:7227 \
-  -p 127.0.0.1:7337:7337 \
-  rcpu:latest
+git clone https://github.com/btcrcpu-max/rcpu.git
+cd rcpu
+docker build -t rcpu:latest .
 ```
+
+Then run:
+
+```bash
+docker run -d   --name rcpu-node   -v ~/.rcpu:/root/.rcpu   -p 7227:7227   -p 127.0.0.1:7337:7337   rcpu:latest
+```
+
+See [docker-deployment.md](docker-deployment.md) for details.
 
 ## Firewall
 
