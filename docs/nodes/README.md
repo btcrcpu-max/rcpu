@@ -44,7 +44,7 @@ make check
 
 ## Configuration
 
-Create `~/.rcpu/rcpu.conf`:
+Create `~/.rcpu/rcpu.conf` (the chain data subdirectory `~/.rcpu/rcpu/` is created automatically):
 
 ```ini
 server=1
@@ -69,7 +69,7 @@ docker build -t rcpu:latest .
 Then run:
 
 ```bash
-docker run -d   --name rcpu-node   -v ~/.rcpu:/root/.rcpu   -p 7227:7227   -p 127.0.0.1:7337:7337   rcpu:latest
+docker run -d   --name rcpu-node   -v ~/.rcpu:/home/rcpu/.rcpu   -p 7227:7227   -p 127.0.0.1:7337:7337   rcpu:latest
 ```
 
 See [docker-deployment.md](docker-deployment.md) for details.

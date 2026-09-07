@@ -31,9 +31,9 @@ remain in source for test compatibility, users should not generate or use
 
 - `getnewaddress` returns Bech32 (`rcpu1...`) by default.
 - `m_default_address_type` defaults to `OutputType::BECH32`.
-- If a user explicitly requests `OutputType::LEGACY`, the wallet may produce
-  a Base58 address, but **transactions to/from such addresses may be rejected**
-  by network policy or future consensus changes.
+- `getnewaddress` and `getrawchangeaddress` **reject** `OutputType::LEGACY` on
+  mainnet. The wallet cannot produce Base58 addresses on RCPUMAIN.
+- `validateaddress` reports legacy addresses as invalid on mainnet.
 - Users and exchanges should only use `rcpu1...` addresses.
 
 ## Recommendation for Integrations
@@ -42,5 +42,4 @@ remain in source for test compatibility, users should not generate or use
   deposit addresses start with `rcpu1`.
 - The `validateaddress` RPC returns the address type; integrations should
   reject non-Bech32 addresses.
-- Future versions may add a consensus-level rejection of Base58 addresses
-  on mainnet.
+- Base58 address rejection is enforced at the wallet RPC layer on mainnet.

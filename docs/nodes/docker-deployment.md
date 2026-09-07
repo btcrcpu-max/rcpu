@@ -13,7 +13,7 @@ docker build -t rcpu:latest .
 ## Quick Start
 
 ```bash
-docker run -d   --name rcpu-node   -v ~/.rcpu:/root/.rcpu   -p 7227:7227   -p 127.0.0.1:7337:7337   rcpu:latest
+docker run -d   --name rcpu-node   -v ~/.rcpu:/home/rcpu/.rcpu   -p 7227:7227   -p 127.0.0.1:7337:7337   rcpu:latest
 ```
 
 ## Ports
@@ -26,7 +26,7 @@ docker run -d   --name rcpu-node   -v ~/.rcpu:/root/.rcpu   -p 7227:7227   -p 12
 ## Adding Peers
 
 ```bash
-docker exec rcpu-node rcpud addnode "<PEER_IP>:7227" "add"
+docker exec rcpu-node rcpu-cli addnode "<PEER_IP>:7227" "add"
 ```
 
 ## Security Notes

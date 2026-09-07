@@ -14,6 +14,8 @@
 #include <script/descriptor.h>
 #include <script/script.h>
 #include <script/signingprovider.h>
+#include <addresstype.h>
+#include <chainparams.h>
 #include <tinyformat.h>
 #include <univalue.h>
 #include <util/check.h>
@@ -67,8 +69,13 @@ static RPCHelpMan validateaddress()
             const bool isValid = IsValidDestination(dest);
             CHECK_NONFATAL(isValid == error_msg.empty());
 
+            // RCPU: Legacy (Base58) addresses are not valid on mainnet
+            bool isLegacy = std::holds_alternative<PKHash>(dest) || std::holds_alternative<ScriptHash>(dest);
+            bool isRcpuMainnet = Params().GetChainType() == ChainType::RCPUMAIN;
+            const bool isAcceptable = isValid && !(isLegacy && isRcpuMainnet);
+
             UniValue ret(UniValue::VOBJ);
-            ret.pushKV("isvalid", isValid);
+            ret.pushKV("isvalid", isAcceptable);
             if (isValid) {
                 std::string currentAddress = EncodeDestination(dest);
                 ret.pushKV("address", currentAddress);
@@ -82,7 +89,10 @@ static RPCHelpMan validateaddress()
                 UniValue error_indices(UniValue::VARR);
                 for (int i : error_locations) error_indices.push_back(i);
                 ret.pushKV("error_locations", error_indices);
-                ret.pushKV("error", error_msg);
+                if (isValid && isLegacy && isRcpuMainnet) {
+                error_msg = "Legacy (Base58) addresses are not supported on RCPU mainnet";
+            }
+            ret.pushKV("error", error_msg);
             }
 
             return ret;

@@ -108,3 +108,15 @@ build_msvc/**/x86/
 *.zip
 deps/
 releases/
+
+# RCPU: backup and build artifacts
+*.bak*
+*.dirstamp
+*.bak_*
+scripts/upgrade-tier2.sh
+
+
+# Generated test data headers
+src/test/data/*.json.h
+src/test/data/asmap.raw.h
+src/minisketch/test/

@@ -28,6 +28,7 @@
 #include <wallet/feebumper.h>
 #include <wallet/fees.h>
 #include <wallet/rpc/util.h>
+#include <chainparams.h>
 #include <wallet/spend.h>
 #include <wallet/scriptpubkeyman.h>
 #include <wallet/wallet.h>
@@ -41,6 +42,12 @@ std::vector<CRecipient> CreateRecipients(const std::vector<std::pair<CTxDestinat
     std::vector<CRecipient> recipients;
     for (size_t i = 0; i < outputs.size(); ++i) {
         const auto& [destination, amount] = outputs.at(i);
+        // RCPU: Reject legacy (Base58) addresses on mainnet
+        if (Params().GetChainType() == ChainType::RCPUMAIN) {
+            if (std::holds_alternative<PKHash>(destination) || std::holds_alternative<ScriptHash>(destination)) {
+                throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Legacy (Base58) addresses are not supported on RCPU mainnet. Use Bech32 (rcpu1...) addresses.");
+            }
+        }
         CRecipient recipient{destination, amount, subtract_fee_outputs.contains(i)};
         recipients.push_back(recipient);
     }
@@ -1033,6 +1040,13 @@ CreatedTransactionResult FundTransaction(CWallet& wallet, const CMutableTransact
                 // !RCPU
                 throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Change address must be a valid RCPU address");
                 // !RCPU END
+            }
+
+            // RCPU: Reject legacy (Base58) change addresses on mainnet
+            if (Params().GetChainType() == ChainType::RCPUMAIN) {
+                if (std::holds_alternative<PKHash>(dest) || std::holds_alternative<ScriptHash>(dest)) {
+                    throw JSONRPCError(RPC_INVALID_PARAMETER, "Legacy (Base58) change addresses are not supported on RCPU mainnet. Use Bech32 (rcpu1...) addresses.");
+                }
             }
 
             coinControl.destChange = dest;

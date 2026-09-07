@@ -6,7 +6,9 @@ Other docs reference this table; if a number elsewhere disagrees, **this table a
 | Parameter | Mainnet value | Source reference |
 |-----------|---------------|------------------|
 | Chain name (CLI) | `-chain=rcpu` / `-rcpu` | `src/chainparamsbase.cpp` (`ChainType::RCPUMAIN`) |
-| Data directory | `~/.rcpu` | client default |
+| Data directory (root) | `~/.rcpu` | `GetDefaultDataDir()` |
+| Chain data directory | `~/.rcpu/rcpu/` | `BaseParams().DataDir()` |
+| Config file | `~/.rcpu/rcpu.conf` | `BITCOIN_CONF_FILENAME` |
 | Config file | `rcpu.conf` | `src/common/args.cpp` (`BITCOIN_CONF_FILENAME`) |
 | P2P port | **7227** | `src/kernel/chainparams.cpp` (`nDefaultPort`) |
 | RPC port | **7337** | `src/chainparamsbase.cpp` (`CreateBaseChainParams`) |
@@ -15,6 +17,7 @@ Other docs reference this table; if a number elsewhere disagrees, **this table a
 | Halving interval | 210,000 blocks | `src/kernel/chainparams.cpp` (`nSubsidyHalvingInterval`) |
 | Block subsidy formula | `5000 >> (height / 210000)` | `src/validation.cpp` `GetBlockSubsidy` |
 | MAX_MONEY (per-output sanity) | 2,100,000,000 RCPU | `src/consensus/amount.h` |
+| **Total subsidy** | **~2,100,000,000 RCPU** | `5000 * 210000 * 2` (geometric series) |
 | CT activation height | **0** (genesis) | `src/kernel/chainparams.cpp` (`nCTActivationHeight`) |
 | ASERT activation height | **0** (genesis) | `src/kernel/chainparams.cpp` (`nASERTActivationHeight`) |
 | ASERT anchor block | 0 (genesis) | `src/kernel/chainparams.cpp` (`asertAnchorParams`) |
@@ -65,8 +68,8 @@ hours of history at 5-minute blocks). Subsequent hardening tiers are planned:
 
 | Tier | Target height | Approx. age | Action |
 |------|---------------|-------------|--------|
-| 1 (current) | 38 | ~3 hours | Initial checkpoints, chainwork, assumevalid |
-| 2 | 1,000 | ~3.5 days | Update nMinimumChainWork, add checkpoint, bump assumevalid |
+| 1 (done) | 38 | ~3 hours | Initial checkpoints, chainwork, assumevalid (v1.0.1) |
+| 2 | 1,000 | ~3.5 days | Update nMinimumChainWork, add checkpoint, bump assumevalid (v1.0.2) |
 | 3 | 10,000 | ~35 days | Full hardening: chainwork, checkpoints, assumevalid, release v1.1.0 |
 | 4 | 100,000 | ~1 year | Long-term hardening, consider removing early checkpoints |
 
@@ -91,7 +94,9 @@ For each tier:
 
 ### Warning
 
-Until tier 2 (height 1,000), the chain has **low anti-reorg resistance**.
+The chain has passed height 1,000 but the tier 2 checkpoint upgrade has not
+been applied yet. Until tier 2 is applied, anti-reorg resistance remains at
+the tier 1 level (height 38).
 Miners and pools should run with `-reindex-chainstate` if they encounter
 unexpected reorgs. Exchanges should require a high number of confirmations
 (e.g., 100+) for large deposits during this early period.

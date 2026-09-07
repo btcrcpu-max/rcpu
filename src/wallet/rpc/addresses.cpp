@@ -17,6 +17,7 @@
 #include <wallet/receive.h>
 #include <wallet/rpc/util.h>
 #include <wallet/wallet.h>
+#include <chainparams.h>
 
 #include <univalue.h>
 
@@ -61,6 +62,11 @@ RPCHelpMan getnewaddress()
             throw JSONRPCError(RPC_INVALID_PARAMETER, "Legacy wallets cannot provide bech32m addresses");
         }
         output_type = parsed.value();
+    }
+
+    // RCPU: Reject legacy (Base58) addresses on mainnet
+    if (output_type == OutputType::LEGACY && Params().GetChainType() == ChainType::RCPUMAIN) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Legacy (Base58) addresses are not supported on RCPU mainnet. Use Bech32 (rcpu1...) addresses.");
     }
 
     auto op_dest = pwallet->GetNewDestination(output_type, label);
@@ -108,6 +114,11 @@ RPCHelpMan getrawchangeaddress()
             throw JSONRPCError(RPC_INVALID_PARAMETER, "Legacy wallets cannot provide bech32m addresses");
         }
         output_type = parsed.value();
+    }
+
+    // RCPU: Reject legacy (Base58) change addresses on mainnet
+    if (output_type == OutputType::LEGACY && Params().GetChainType() == ChainType::RCPUMAIN) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Legacy (Base58) change addresses are not supported on RCPU mainnet. Use Bech32 (rcpu1...) addresses.");
     }
 
     auto op_dest = pwallet->GetNewChangeDestination(output_type);
