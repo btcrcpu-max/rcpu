@@ -3,12 +3,15 @@
 This is the **single source of truth** for consensus-critical RCPU values.
 Other docs reference this table; if a number elsewhere disagrees, **this table and the code win**.
 
+Operational paths (datadir / conf / ports) are not consensus rules.
+They are listed here so other docs have one place to copy from.
+
 | Parameter | Mainnet value | Source reference |
 |-----------|---------------|------------------|
 | Chain name (CLI) | `-chain=rcpu` / `-rcpu` | `src/chainparamsbase.cpp` (`ChainType::RCPUMAIN`) |
 | Data directory (root) | `~/.rcpu` | `GetDefaultDataDir()` |
 | Chain data directory | `~/.rcpu/rcpu/` | `BaseParams().DataDir()` |
-| Config file | `~/.rcpu/rcpu.conf` | `src/common/args.cpp` (`BITCOIN_CONF_FILENAME`) |
+| Config file | `~/.rcpu/rcpu.conf` (basename: `rcpu.conf`) | `src/common/args.cpp` (internal macro still called `BITCOIN_CONF_FILENAME`) |
 | P2P port | **7227** | `src/kernel/chainparams.cpp` (`nDefaultPort`) |
 | RPC port | **7337** | `src/chainparamsbase.cpp` (`CreateBaseChainParams`) |
 | Block time | 5 minutes (300 s) | `src/kernel/chainparams.cpp` (`nPowTargetSpacing`) |
@@ -34,11 +37,18 @@ Other docs reference this table; if a number elsewhere disagrees, **this table a
 
 ## Notes
 
-- README's "10 halvings to dust" is descriptive. The code keeps halving until the subsidy rounds to zero.
-- `MAX_MONEY` (2.1B) is a **per-output sanity check**, not a separate supply cap.
+- Theoretical total subsidy ≈ 2.1e9 RCPU = 5000 × 210000 × 2
+  (infinite geometric series of halvings).
+  Code actually halves until subsidy truncates to 0; "10 halvings to dust"
+  in older text is informal, not a consensus cutoff.
+- `MAX_MONEY` (2.1e9) is a per-output sanity limit, not a second cap.
 - Default chain is `RCPUMAIN`; `rcpud` without `-chain` launches the RCPU mainnet.
 - `ChainType::MAIN` (Bitcoin mainnet) is **disabled** at runtime; `-chain=main` throws an error.
-- The Bitcoin template (`CMainParams`) remains in source for code structure but cannot be instantiated.
+- Default chain is RCPUMAIN.
+  `-chain=main` is rejected at runtime.
+  CMainParams is retained as an upstream Bitcoin template for
+  structure/tests. It is not RCPU mainnet. Do not copy its magic,
+  port, genesis, or seeds into RCPU docs.
 
 ## Genesis Block
 
@@ -101,4 +111,9 @@ Subsequent tiers remain as scheduled.
 Miners and pools should run with `-reindex-chainstate` if they encounter
 unexpected reorgs. Exchanges should require a high number of confirmations
 (e.g., 100+) for large deposits during this early period.
+
+Exchanges: require a high confirmation count (e.g. 100+) while
+the chain is below tier 3 (height 10,000).
+Checkpoints / nMinimumChainWork reduce IBD risk; they are not a
+substitute for confirmations on a young CPU chain.
 

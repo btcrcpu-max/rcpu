@@ -8,6 +8,10 @@ This guide covers installing, configuring, and running a RCPU full node on Linux
 - 4 GB RAM minimum (8 GB recommended)
 - 20 GB free disk space (grows with chain)
 
+RandomX + CT from genesis is heavier than a plain Bitcoin node.
+4 GB is the documented minimum; prefer 8 GB if the node also mines
+or serves wallets.
+
 ## Install
 
 Download the latest release from GitHub Releases:
@@ -52,6 +56,9 @@ make check
 ## Configuration
 
 Create `~/.rcpu/rcpu.conf` (the chain data subdirectory `~/.rcpu/rcpu/` is created automatically):
+
+Do not use bitcoin.conf or ~/.bitcoin.
+Canonical paths: see [doc/consensus-params.md](../../doc/consensus-params.md).
 
 ```ini
 server=1
@@ -102,8 +109,9 @@ sudo firewall-cmd --reload
 
 ## Seed Nodes
 
-DNS seeds are already compiled in (seed1.rcpu.top, seed2.rcpu.top).
-If DNS fails, add fallbacks to rcpu.conf:
+DNS seeds compiled into the binary: seed1.rcpu.top, seed2.rcpu.top.
+The IPs below are operator fallbacks if DNS fails; they are not
+consensus and may change.
 
 ```ini
 addnode=seed1.rcpu.top:7227
@@ -132,4 +140,11 @@ curl -X POST http://127.0.0.1:7337 \
 - Wallet: https://rcpu.top/
 - GitHub: https://github.com/btcrcpu-max/rcpu
 - Telegram: https://t.me/btc_rcpu
+
+## Confirmations
+
+Exchanges and services should require a high confirmation count
+(e.g. 100+) while the chain is below tier 3 (height 10,000).
+See [doc/consensus-params.md](../../doc/consensus-params.md) for the
+hardening tier schedule.
 

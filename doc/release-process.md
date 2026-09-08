@@ -106,4 +106,5 @@ the Bitcoin Core build process can adapt the Guix configuration for RCPU.
 5. [ ] SHA256SUMS generated and signed
 6. [ ] GitHub Release created with tarball, SHA256SUMS, and SHA256SUMS.asc
 7. [ ] Release notes added to `doc/release-notes/`
-8. [ ] Announcement on Telegram
+8. [ ] `doc/consensus-params.md` matches `chainparams.cpp` (chainwork / assumevalid / checkpoints)
+9. [ ] Announcement on Telegram
