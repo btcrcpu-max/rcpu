@@ -19,7 +19,7 @@ ASIC resistance, and adding on-chain privacy via Pedersen commitments.
 | Block Time | 5 minutes |
 | Block Reward | 5,000 RCPU |
 | Halving Interval | 210,000 blocks |
-| Max Supply | ~2,100,000,000 RCPU (10 halvings to dust) |
+| Max Supply | ~2,100,000,000 RCPU (theoretical sum of all subsidies) |
 
 ## Genesis Block
 
@@ -71,4 +71,4 @@ make check
 
 MIT License. See [COPYING](COPYING) for details.
 Copyright (c) 2009-2024 Bitcoin Core developers
-Copyright (c) 2026 The RCPU developers
+Copyright (c) 2024-2026 The RCPU developers

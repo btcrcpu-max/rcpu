@@ -8,7 +8,7 @@ Other docs reference this table; if a number elsewhere disagrees, **this table a
 | Chain name (CLI) | `-chain=rcpu` / `-rcpu` | `src/chainparamsbase.cpp` (`ChainType::RCPUMAIN`) |
 | Data directory (root) | `~/.rcpu` | `GetDefaultDataDir()` |
 | Chain data directory | `~/.rcpu/rcpu/` | `BaseParams().DataDir()` |
-| Config file | `~/.rcpu/rcpu.conf` | `BITCOIN_CONF_FILENAME` |
+| Config file | `~/.rcpu/rcpu.conf` | `src/common/args.cpp` (`BITCOIN_CONF_FILENAME`) |
 | P2P port | **7227** | `src/kernel/chainparams.cpp` (`nDefaultPort`) |
 | RPC port | **7337** | `src/chainparamsbase.cpp` (`CreateBaseChainParams`) |
 | Block time | 5 minutes (300 s) | `src/kernel/chainparams.cpp` (`nPowTargetSpacing`) |
@@ -16,7 +16,7 @@ Other docs reference this table; if a number elsewhere disagrees, **this table a
 | Halving interval | 210,000 blocks | `src/kernel/chainparams.cpp` (`nSubsidyHalvingInterval`) |
 | Block subsidy formula | `5000 >> (height / 210000)` | `src/validation.cpp` `GetBlockSubsidy` |
 | MAX_MONEY (per-output sanity) | 2,100,000,000 RCPU | `src/consensus/amount.h` |
-| **Total subsidy** | **~2,100,000,000 RCPU** | `5000 * 210000 * 2` (geometric series) |
+| Theoretical total subsidy | ~2,100,000,000 RCPU | `5000 * 210000 * 2` (geometric series, infinite halvings) |
 | CT activation height | **0** (genesis) | `src/kernel/chainparams.cpp` (`nCTActivationHeight`) |
 | ASERT activation height | **0** (genesis) | `src/kernel/chainparams.cpp` (`nASERTActivationHeight`) |
 | ASERT anchor block | 0 (genesis) | `src/kernel/chainparams.cpp` (`asertAnchorParams`) |
@@ -34,7 +34,8 @@ Other docs reference this table; if a number elsewhere disagrees, **this table a
 
 ## Notes
 
-- `MAX_MONEY` (2.1B) is a **per-output sanity check**, not a total-supply cap.
+- README's "10 halvings to dust" is descriptive. The code keeps halving until the subsidy rounds to zero.
+- `MAX_MONEY` (2.1B) is a **per-output sanity check**, not a separate supply cap.
 - Default chain is `RCPUMAIN`; `rcpud` without `-chain` launches the RCPU mainnet.
 - `ChainType::MAIN` (Bitcoin mainnet) is **disabled** at runtime; `-chain=main` throws an error.
 - The Bitcoin template (`CMainParams`) remains in source for code structure but cannot be instantiated.

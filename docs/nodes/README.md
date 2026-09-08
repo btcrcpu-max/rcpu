@@ -10,21 +10,28 @@ This guide covers installing, configuring, and running a RCPU full node on Linux
 
 ## Install
 
-Download the latest release from [GitHub Releases](https://github.com/btcrcpu-max/rcpu/releases):
+Download the latest release from GitHub Releases:
 
 ```bash
-wget https://github.com/btcrcpu-max/rcpu/releases/latest/download/rcpu-v$(VERSION)-linux-x86_64.tar.gz
-wget https://github.com/btcrcpu-max/rcpu/releases/latest/download/SHA256SUMS.txt
-wget https://github.com/btcrcpu-max/rcpu/releases/latest/download/SHA256SUMS.txt.asc
+VERSION=1.0.2
+wget https://github.com/btcrcpu-max/rcpu/releases/download/v${VERSION}/rcpu-v${VERSION}-linux-x86_64.tar.gz
+wget https://github.com/btcrcpu-max/rcpu/releases/download/v${VERSION}/SHA256SUMS.txt
+wget https://github.com/btcrcpu-max/rcpu/releases/download/v${VERSION}/SHA256SUMS.txt.asc
+wget https://raw.githubusercontent.com/btcrcpu-max/rcpu/main/RCPU-DEV-GPG-KEY.asc
+```
 
-# Verify
+Verify:
+
+```bash
 gpg --import RCPU-DEV-GPG-KEY.asc
-gpg --verify SHA256SUMS.txt.asc
+gpg --verify SHA256SUMS.txt.asc SHA256SUMS.txt
 sha256sum -c SHA256SUMS.txt
+```
 
-# Extract
-tar -xzf rcpu-v*-linux-x86_64.tar.gz
-cd rcpu-v*/bin
+Extract:
+
+```bash
+tar -xzf rcpu-v${VERSION}-linux-x86_64.tar.gz
 ```
 
 Or build from source:
@@ -58,7 +65,7 @@ port=7227
 
 ## Docker
 
-Build the image first (no pre-built image is published):
+No pre-built image is published. Build first:
 
 ```bash
 git clone https://github.com/btcrcpu-max/rcpu.git
@@ -66,38 +73,41 @@ cd rcpu
 docker build -t rcpu:latest .
 ```
 
-Then run:
+Run:
 
 ```bash
-docker run -d   --name rcpu-node   -v ~/.rcpu:/home/rcpu/.rcpu   -p 7227:7227   -p 127.0.0.1:7337:7337   rcpu:latest
+docker run -d \
+  --name rcpu-node \
+  -v ~/.rcpu:/home/rcpu/.rcpu \
+  -p 7227:7227 \
+  -p 127.0.0.1:7337:7337 \
+  rcpu:latest
 ```
-
-See [docker-deployment.md](docker-deployment.md) for details.
 
 ## Firewall
 
+UFW (Ubuntu):
+
 ```bash
-# UFW (Ubuntu)
 sudo ufw allow 7227/tcp   # P2P (required)
 # DO NOT open 7337 (RPC) to the internet!
+```
 
-# firewalld (CentOS/RHEL)
+firewalld (CentOS/RHEL):
+
+```bash
 sudo firewall-cmd --permanent --add-port=7227/tcp
 sudo firewall-cmd --reload
 ```
 
 ## Seed Nodes
 
-DNS seeds (preferred; allow 1–24 hours for global propagation after a release):
+DNS seeds are already compiled in (seed1.rcpu.top, seed2.rcpu.top).
+If DNS fails, add fallbacks to rcpu.conf:
 
 ```ini
 addnode=seed1.rcpu.top:7227
 addnode=seed2.rcpu.top:7227
-```
-
-If DNS is not yet resolving in your region, fall back to these stable IPs:
-
-```ini
 addnode=38.55.199.177:7227
 addnode=119.28.152.245:7227
 addnode=207.57.129.188:7227
@@ -106,11 +116,9 @@ addnode=207.57.129.188:7227
 ## Monitoring
 
 ```bash
-# Check node is running
 ss -tlnp | grep 7337
 # Should show: 127.0.0.1:7337
 
-# Test RPC
 curl -X POST http://127.0.0.1:7337 \
   -u your_rpc_user:your_strong_password \
   -H 'Content-Type: application/json' \

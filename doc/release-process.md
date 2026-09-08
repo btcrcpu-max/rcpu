@@ -46,8 +46,10 @@ and `configure.ac`.
 3. Create the tarball:
 
    ```bash
-   make install
-   tar -czf rcpu-v$(VERSION)-linux-x86_64.tar.gz -C /usr/local/bin rcpud rcpu-cli
+   VERSION=1.0.2
+   make install DESTDIR="$PWD/stage"
+   tar -czf rcpu-v${VERSION}-linux-x86_64.tar.gz \
+     -C stage/usr/local/bin rcpud rcpu-cli rcpu-tx rcpu-util rcpu-wallet
    ```
 
 4. Generate checksums:
@@ -84,8 +86,7 @@ the Bitcoin Core build process can adapt the Guix configuration for RCPU.
 
 - **One key, one signer**: Only the key `934D 5BC9 ... 1FE4 B8EE` signs releases.
 - **Tags must be signed** (`git tag -s`); commits do not require signatures.
-- Until a GPG signing key is configured, tags may be unsigned -- this should be
-  clearly noted in the release announcement.
+- Tags must be signed with key `934D 5BC9 5DD4 B3AC FEF5 21B9 5476 3350 1FE4 B8EE`.
 - The private key is held by the RCPU Dev Team (`rcpudevs@proton.me`).
 - The public key is committed to the repository as `RCPU-DEV-GPG-KEY.asc`.
 - Verify signatures:
