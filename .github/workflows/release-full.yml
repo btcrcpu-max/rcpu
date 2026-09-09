@@ -34,13 +34,26 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y g++-mingw-w64-x86-64-posix
           sudo update-alternatives --set x86_64-w64-mingw32-g++ /usr/bin/x86_64-w64-mingw32-g++-posix
+      - name: Create MinGW toolchain file
+        run: |
+          cat > /tmp/mingw-w64-x86_64.cmake << 'TOOLCHAIN'
+          set(CMAKE_SYSTEM_NAME Windows)
+          set(CMAKE_SYSTEM_PROCESSOR AMD64)
+          set(CMAKE_C_COMPILER x86_64-w64-mingw32-gcc)
+          set(CMAKE_CXX_COMPILER x86_64-w64-mingw32-g++)
+          set(CMAKE_RC_COMPILER x86_64-w64-mingw32-windres)
+          set(CMAKE_FIND_ROOT_PATH /usr/x86_64-w64-mingw32)
+          set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
+          set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
+          set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
+          TOOLCHAIN
       - name: Download and build RandomX (Windows cross)
         run: |
           curl -L -o /tmp/rx.tgz https://github.com/tevador/RandomX/archive/refs/tags/v1.2.1.tar.gz
           tar -xf /tmp/rx.tgz -C /tmp
           cd /tmp/RandomX-1.2.1 && mkdir build-win && cd build-win
           cmake .. -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_TOOLCHAIN_FILE=../cmake/mingw-w64-x86_64.cmake \
+            -DCMAKE_TOOLCHAIN_FILE=/tmp/mingw-w64-x86_64.cmake \
             -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc \
             -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++
           make -j$(nproc)
@@ -61,6 +74,18 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential libtool autotools-dev \
             automake pkg-config bsdmainutils python3 cmake curl
+      - name: Ensure depends files exist
+        run: |
+          # Ensure config.guess and config.sub exist in depends/
+          if [ ! -f depends/config.guess ]; then
+            curl -L -o depends/config.guess 'https://git.savannah.gnu.org/gitweb/?p=config.git;a=blob_plain;f=config.guess;hb=HEAD' || \
+              curl -L -o depends/config.guess 'https://raw.githubusercontent.com/gcc-mirror/gcc/master/config.guess'
+          fi
+          if [ ! -f depends/config.sub ]; then
+            curl -L -o depends/config.sub 'https://git.savannah.gnu.org/gitweb/?p=config.git;a=blob_plain;f=config.sub;hb=HEAD' || \
+              curl -L -o depends/config.sub 'https://raw.githubusercontent.com/gcc-mirror/gcc/master/config.sub'
+          fi
+          chmod +x depends/config.guess depends/config.sub
       - name: Download RandomX artifact
         uses: actions/download-artifact@v4
         with:
@@ -121,6 +146,18 @@ jobs:
             g++-mingw-w64-x86-64-posix nsis
           sudo update-alternatives --set x86_64-w64-mingw32-g++ \
             /usr/bin/x86_64-w64-mingw32-g++-posix
+      - name: Ensure depends files exist
+        run: |
+          # Ensure config.guess and config.sub exist in depends/
+          if [ ! -f depends/config.guess ]; then
+            curl -L -o depends/config.guess 'https://git.savannah.gnu.org/gitweb/?p=config.git;a=blob_plain;f=config.guess;hb=HEAD' || \
+              curl -L -o depends/config.guess 'https://raw.githubusercontent.com/gcc-mirror/gcc/master/config.guess'
+          fi
+          if [ ! -f depends/config.sub ]; then
+            curl -L -o depends/config.sub 'https://git.savannah.gnu.org/gitweb/?p=config.git;a=blob_plain;f=config.sub;hb=HEAD' || \
+              curl -L -o depends/config.sub 'https://raw.githubusercontent.com/gcc-mirror/gcc/master/config.sub'
+          fi
+          chmod +x depends/config.guess depends/config.sub
       - name: Download RandomX artifact
         uses: actions/download-artifact@v4
         with:
