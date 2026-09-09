@@ -133,6 +133,19 @@ curl -X POST http://127.0.0.1:7337 \
   -d '{"jsonrpc":"1.0","id":"1","method":"getblockchaininfo","params":[]}'
 ```
 
+## Block Subsidy
+
+Genesis pays 50 RCPU; from height 1 the subsidy is 5,000 RCPU per block,
+halved every 210,000 blocks. After 10 halvings it stays at 1 RCPU per
+block forever — there is no hard max supply in consensus code.
+
+"~2.1B" in the README means the sum of the first 10 subsidy eras plus
+the 50 RCPU genesis reward, not a total-supply cap. MAX_MONEY (2.1B)
+only limits a single output, not the chain-wide supply.
+
+See [doc/consensus-params.md](../../doc/consensus-params.md) for the
+canonical values.
+
 ## Resources
 
 - Explorer: https://rcpu.ren/
