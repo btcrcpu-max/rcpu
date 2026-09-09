@@ -6,12 +6,15 @@
 # suite. Job names are deliberately distinct so both workflows run in parallel.
 #
 # Design notes:
-# - The repository-root Dockerfile builds from source in a multi-stage build,
-#   but its builder stage does not compile RandomX, which configure.ac treats
-#   as a hard dependency. A bare `docker build .` therefore fails at configure
-#   time. source-build-smoke instead uses the same proven source-build path as
-#   ci.yml (RandomX built and installed first), then boots the resulting
-#   binaries on rcpuregtest and asserts height 0 + a listening P2P port.
+# - The repository-root Dockerfile builds from source in a multi-stage build.
+#   Its builder stage compiles RandomX (pinned v1.2.1 tarball, sha256
+#   verified, custom_configuration.patch applied) before configuring RCPU,
+#   because configure.ac treats RandomX as a hard dependency. The docker-build
+#   job below proves a bare `docker build .` succeeds and the runtime image
+#   links librandomx.so.
+# - source-build-smoke re-verifies the same source-build path ci.yml uses and
+#   boots the resulting binaries on rcpuregtest, asserting height 0 and a
+#   listening P2P port.
 # - docs/nodes/Dockerfile is a release-binary template (the binary COPY lines
 #   are commented out), so we validate it statically rather than building it.
 # - To turn p2p checks into a standalone job (e.g. with workflow_dispatch
@@ -78,6 +81,58 @@ jobs:
           ! grep -Eq '9962|9965' "$f"
           grep -q 'COPY --from=builder /usr/local/bin/rcpud' "$f"
           grep -q 'CMD \["rcpud", "-daemon=0", "-printtoconsole"\]' "$f"
+
+  # ------------------------------------------------------------------
+  # Build the repository-root Dockerfile for real and boot the image
+  # ------------------------------------------------------------------
+  docker-build:
+    name: docker build root Dockerfile
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: |
+          docker build -t rcpu:latest .
+
+      - name: Assert rcpud -version works inside the image
+        run: |
+          docker run --rm rcpu:latest rcpud -version
+
+      - name: Assert librandomx.so is linked and loadable
+        run: |
+          set -euo pipefail
+          output=$(docker run --rm rcpu:latest ldd /usr/local/bin/rcpud)
+          echo "$output"
+          echo "$output" | grep -q 'librandomx.so'
+          # And the library must actually load, not just be listed.
+          docker run --rm rcpu:latest python3 -c 'import ctypes, sys; ctypes.CDLL("librandomx.so"); print("librandomx loads OK")'
+
+      - name: Boot rcpuregtest in the image and assert via RPC
+        run: |
+          set -euo pipefail
+          docker run -d --name rcpu-smoke \
+            rcpu:latest -chain=rcpuregtest \
+            -datadir=/tmp/rcpu-smoke -server=1
+          trap 'docker rm -f rcpu-smoke >/dev/null 2>&1 || true' EXIT
+          ok=0
+          for i in $(seq 1 60); do
+            if output=$(docker exec rcpu-smoke rcpu-cli -chain=rcpuregtest \
+                -datadir=/tmp/rcpu-smoke getblockchaininfo 2>/dev/null); then
+              ok=1
+              break
+            fi
+            sleep 1
+          done
+          test "$ok" = 1 || { echo "RPC did not come up in container"; \
+                              docker logs rcpu-smoke; exit 1; }
+          echo "$output" | python3 -c '
+          import json, sys
+          info = json.load(sys.stdin)
+          assert info["chain"] == "rcpuregtest", info
+          assert info["blocks"] == 0, info
+          print("container regtest boot OK:", info["chain"], "height", info["blocks"])
+          '
 
   # ------------------------------------------------------------------
   # Real boot: compile from source (RandomX first), then run rcpuregtest
