@@ -1,0 +1,2 @@
+# Keep scripts in depends with LF line endings so they execute on Unix runners.
+gen_id text eol=lf
