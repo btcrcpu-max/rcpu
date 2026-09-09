@@ -77,7 +77,7 @@ public:
         m_chain_type = ChainType::MAIN;
         consensus.signet_blocks = false;
         consensus.signet_challenge.clear();
-        consensus.nSubsidyHalvingInterval = 210000; // RCPU: 2 years with 5min blocks
+        consensus.nSubsidyHalvingInterval = 210000; // template value; unused at runtime
         consensus.script_flag_exceptions.emplace( // BIP16 exception
             uint256S("0x00000000000002dc756eebf4f49723ed8d30cc28a5f108eb94b1ba88ac4f9c22"), SCRIPT_VERIFY_NONE);
         consensus.script_flag_exceptions.emplace( // Taproot exception
@@ -91,7 +91,7 @@ public:
         consensus.MinBIP9WarningHeight = 483840; // segwit activation height + miner confirmation window
         consensus.powLimit = uint256S("00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
         consensus.nPowTargetTimespan = 14 * 24 * 60 * 60; // two weeks
-        consensus.nPowTargetSpacing = 5 * 60; // RCPU: 5 minutes
+        consensus.nPowTargetSpacing = 5 * 60;       // template value; unused at runtime
         consensus.fPowAllowMinDifficultyBlocks = false;
         consensus.fPowNoRetargeting = false;
         consensus.nRuleChangeActivationThreshold = 1815; // 90% of 2016
@@ -108,7 +108,11 @@ public:
         consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].min_activation_height = 709632; // Approximately November 12th, 2021
 
         // !RCPU
-        // Bitcoin template is test-only: no minimum chain work or assumevalid.
+        // Upstream Bitcoin template retained for structure. This is NOT
+        // RCPU mainnet. ChainType::MAIN cannot be selected at runtime.
+        // nMinimumChainWork left non-zero as leftover template data;
+        // defaultAssumeValid cleared so this class is useless for IBD.
+        // Do not treat these values as RCPU consensus.
         consensus.nMinimumChainWork = uint256S("0x0000000000000000000000000000000000000000000000000000000000880138");
         consensus.defaultAssumeValid = uint256{};
         // !RCPU END
@@ -119,9 +123,10 @@ public:
          * a large 32-bit integer with any alignment.
          */
         // !RCPU
-        // RCPU message start so the Bitcoin template cannot talk to Bitcoin peers.
-        // Bitcoin template magic retained. ChainType::MAIN is disabled at runtime
-        // and cannot be selected with -chain=main.
+        // Bitcoin mainnet magic retained on the unused template class.
+        // Isolation from Bitcoin peers is done by disabling ChainType::MAIN
+        // at runtime, not by changing this template magic.
+        // RCPU mainnet magic lives only in CRcpuMainParams ("RCPU" / 0x52...55).
         pchMessageStart[0] = 0xf9;
         pchMessageStart[1] = 0xbe;
         pchMessageStart[2] = 0xb4;
@@ -530,6 +535,8 @@ static uint256 GetHashOfRcpuGenesisBlock(const CBlock& genesis) {
 
 static CBlock CreateRcpuGenesisBlock(uint32_t nTime, uint32_t nNonce, uint32_t nBits, int32_t nVersion, const CAmount& genesisReward, const char* pszTimestampMsg = nullptr)
 {
+    // Frozen mainnet coinbase string. Do not edit.
+    // Launch date is nTime (1788566400), not this text.
     const char* pszTimestamp = pszTimestampMsg ? pszTimestampMsg : "22/Feb/2024 S&P 5087.03 @elonmusk 1760819426688115087 Congrats";
     const CScript genesisOutputScript = CScript() << ParseHex("04678afdb0fe5548271967f1a67130b7105cd6a828e03909a67962e0ea1f61deb649f6bc3f4cef38c4f35504e51ec112de5c384df7ba0b8d578a4c702b6bf11d5f") << OP_CHECKSIG;
     return CreateGenesisBlock(pszTimestamp, genesisOutputScript, nTime, nNonce, nBits, nVersion, genesisReward);
@@ -601,6 +608,10 @@ public:
         consensus.fPowRandomX = true;
         consensus.nRandomXEpochDuration = 7 * 24 * 60 * 60;     // one week
         consensus.nCTActivationHeight = 0;  // RCPU: Confidential Transactions active from genesis
+        // RCPU mainnet only. Consensus values below are frozen for this
+        // release; change them only with a versioned hardening PR.
+        // Genesis coinbase text is a frozen artifact (2024 news string).
+        // Canonical launch timestamp is genesis.nTime = 1788566400.
         genesis = CreateRcpuGenesisBlock(1788566400, 20076863, 0x1e3ffffc, 1, 50 * COIN);
         genesis.hashRandomX = uint256S("33c450e0152826e3a8948b01464cf9182344a1544b3ddcf6153dd04b62938d01");
         consensus.hashGenesisBlock = GetHashOfRcpuGenesisBlock(genesis);
@@ -610,12 +621,16 @@ public:
 
         vSeeds.emplace_back("seed1.rcpu.top");        // Main seed node
         vSeeds.emplace_back("seed2.rcpu.top");        // Secondary seed node
+        // vSeeds are DNS hints, not consensus.
 
         base58Prefixes[PUBKEY_ADDRESS] = std::vector<unsigned char>(1,0);
         base58Prefixes[SCRIPT_ADDRESS] = std::vector<unsigned char>(1,5);
         base58Prefixes[SECRET_KEY] =     std::vector<unsigned char>(1,128);
         base58Prefixes[EXT_PUBLIC_KEY] = {0x04, 0x88, 0xB2, 0x1E};
         base58Prefixes[EXT_SECRET_KEY] = {0x04, 0x88, 0xAD, 0xE4};
+        // Base58 prefixes are inherited from the Bitcoin template for
+        // encoder compatibility. Mainnet rejects legacy addresses;
+        // only bech32 HRP "rcpu" is valid.
 
         bech32_hrp = "rcpu";
 

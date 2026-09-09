@@ -17,16 +17,19 @@ ASIC resistance, and adding on-chain privacy via Pedersen commitments.
 | ASERT Activation | Block **0** (genesis) |
 | Genesis nTime | **1788566400** (2026-09-05 UTC) |
 | Block Time | 5 minutes |
-| Block Reward | 5,000 RCPU |
 | Halving Interval | 210,000 blocks |
-| Max Supply | ~2,100,000,000 RCPU (theoretical sum of all subsidies) |
+| Block subsidy | 5,000 RCPU from height 1; genesis is 50 RCPU |
+| After 10 halvings | 1 RCPU per block (tail emission, no hard cap) |
+| Approx. subsidy by height 2,100,000 | ~2.10B RCPU (then +105,120 RCPU/year) |
+
+Canonical values: [doc/consensus-params.md](doc/consensus-params.md).
+If this README disagrees with that file or the code, the code wins.
 
 ## Genesis Block
 
-Genesis nTime = **1788566400** (2026-09-05 00:00:00 UTC), the RCPU mainnet launch date.
-The genesis coinbase contains a historical news string (`22/Feb/2024 S&P 5087.03 @elonmusk ...`)
-that is a cosmetic artifact from development -- it is **not** the block creation date.
-Both values are frozen on-chain and cannot be changed.
+Treat genesis nTime = **1788566400** (2026-09-05 UTC) as the launch
+timestamp. The coinbase news string is a frozen development artifact
+and is not the block date. Do not change either value.
 
 ## Features
 
@@ -35,6 +38,7 @@ Both values are frozen on-chain and cannot be changed.
 - **ASERT Difficulty Adjustment**: 2-day half-life, adjusts every block
 - **5-minute block time**: 288 blocks per day
 - **No pre-mine, no ICO**
+- **Subsidy**: 5,000 RCPU per block, halved every 210,000 blocks; after 10 halvings a 1 RCPU tail remains
 
 ## Address Format
 
@@ -66,6 +70,8 @@ make check
 - Mining Pool: https://pool.rcpu.top
 - Web Wallet: https://rcpu.top/
 - Telegram: https://t.me/btc_rcpu
+
+Telegram group name still uses the historical btc_rcpu handle.
 
 ## License
 

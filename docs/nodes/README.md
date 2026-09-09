@@ -8,6 +8,10 @@ This guide covers installing, configuring, and running a RCPU full node on Linux
 - 4 GB RAM minimum (8 GB recommended)
 - 20 GB free disk space (grows with chain)
 
+RandomX + CT from genesis is heavier than a plain Bitcoin node.
+4 GB is the documented minimum; prefer 8 GB if the node also mines
+or serves wallets.
+
 ## Install
 
 Download the latest release from GitHub Releases:
@@ -52,6 +56,9 @@ make check
 ## Configuration
 
 Create `~/.rcpu/rcpu.conf` (the chain data subdirectory `~/.rcpu/rcpu/` is created automatically):
+
+Do not use bitcoin.conf or ~/.bitcoin.
+Canonical paths: see [doc/consensus-params.md](../../doc/consensus-params.md).
 
 ```ini
 server=1
@@ -102,8 +109,9 @@ sudo firewall-cmd --reload
 
 ## Seed Nodes
 
-DNS seeds are already compiled in (seed1.rcpu.top, seed2.rcpu.top).
-If DNS fails, add fallbacks to rcpu.conf:
+DNS seeds compiled into the binary: seed1.rcpu.top, seed2.rcpu.top.
+The IPs below are operator fallbacks if DNS fails; they are not
+consensus and may change.
 
 ```ini
 addnode=seed1.rcpu.top:7227
@@ -125,6 +133,19 @@ curl -X POST http://127.0.0.1:7337 \
   -d '{"jsonrpc":"1.0","id":"1","method":"getblockchaininfo","params":[]}'
 ```
 
+## Block Subsidy
+
+Genesis pays 50 RCPU; from height 1 the subsidy is 5,000 RCPU per block,
+halved every 210,000 blocks. After 10 halvings it stays at 1 RCPU per
+block forever — there is no hard max supply in consensus code.
+
+"~2.1B" in the README means the sum of the first 10 subsidy eras plus
+the 50 RCPU genesis reward, not a total-supply cap. MAX_MONEY (2.1B)
+only limits a single output, not the chain-wide supply.
+
+See [doc/consensus-params.md](../../doc/consensus-params.md) for the
+canonical values.
+
 ## Resources
 
 - Explorer: https://rcpu.ren/
@@ -132,4 +153,11 @@ curl -X POST http://127.0.0.1:7337 \
 - Wallet: https://rcpu.top/
 - GitHub: https://github.com/btcrcpu-max/rcpu
 - Telegram: https://t.me/btc_rcpu
+
+## Confirmations
+
+Exchanges and services should require a high confirmation count
+(e.g. 100+) while the chain is below tier 3 (height 10,000).
+See [doc/consensus-params.md](../../doc/consensus-params.md) for the
+hardening tier schedule.
 

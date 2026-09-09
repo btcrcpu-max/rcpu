@@ -21,6 +21,10 @@ Thank you for your interest in contributing to RCPU Core!
 - Include unit tests for new consensus-critical logic
 - Document any changes to chain parameters in `doc/consensus-params.md`
 - Do **not** modify the genesis block or coinbase string \u2014 changing these breaks chain compatibility
+- Do not edit consensus constants in reviews that are docs-only.
+  If a number in docs disagrees with `src/kernel/chainparams.cpp`
+  or `GetBlockSubsidy`, fix the docs, not the code, unless the
+  code is independently shown wrong.
 - Keep `pool/` out of the core repository; pool code lives in a separate repo
 
 ## Reporting Issues

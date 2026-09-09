@@ -3,20 +3,26 @@
 This is the **single source of truth** for consensus-critical RCPU values.
 Other docs reference this table; if a number elsewhere disagrees, **this table and the code win**.
 
+Operational paths (datadir / conf / ports) are not consensus rules.
+They are listed here so other docs have one place to copy from.
+
 | Parameter | Mainnet value | Source reference |
 |-----------|---------------|------------------|
 | Chain name (CLI) | `-chain=rcpu` / `-rcpu` | `src/chainparamsbase.cpp` (`ChainType::RCPUMAIN`) |
 | Data directory (root) | `~/.rcpu` | `GetDefaultDataDir()` |
 | Chain data directory | `~/.rcpu/rcpu/` | `BaseParams().DataDir()` |
-| Config file | `~/.rcpu/rcpu.conf` | `src/common/args.cpp` (`BITCOIN_CONF_FILENAME`) |
+| Config file | `~/.rcpu/rcpu.conf` (basename: `rcpu.conf`) | `src/common/args.cpp` (internal macro still called `BITCOIN_CONF_FILENAME`) |
 | P2P port | **7227** | `src/kernel/chainparams.cpp` (`nDefaultPort`) |
 | RPC port | **7337** | `src/chainparamsbase.cpp` (`CreateBaseChainParams`) |
 | Block time | 5 minutes (300 s) | `src/kernel/chainparams.cpp` (`nPowTargetSpacing`) |
 | Block reward (start) | 5,000 RCPU | `src/validation.cpp` (`GetBlockSubsidy`) |
 | Halving interval | 210,000 blocks | `src/kernel/chainparams.cpp` (`nSubsidyHalvingInterval`) |
-| Block subsidy formula | `5000 >> (height / 210000)` | `src/validation.cpp` `GetBlockSubsidy` |
-| MAX_MONEY (per-output sanity) | 2,100,000,000 RCPU | `src/consensus/amount.h` |
-| Theoretical total subsidy | ~2,100,000,000 RCPU | `5000 * 210000 * 2` (geometric series, infinite halvings) |
+| Block subsidy (height 0) | 50 RCPU | `src/validation.cpp` `GetBlockSubsidy` (genesis special case) |
+| Block subsidy (height 1–2,099,999) | `5000 >> (height / 210000)` RCPU | `src/validation.cpp` `GetBlockSubsidy` |
+| Block subsidy (height ≥ 2,100,000) | 1 RCPU per block, perpetual | `GetBlockSubsidy`: if (halvings >= 10) return 1 * COIN |
+| MAX_MONEY (per-output sanity) | 2,100,000,000 RCPU | `src/consensus/amount.h` — not a total-supply cap |
+| Approx. mined by first 10 halvings | ~2.10B RCPU | 50 + 5000 * 210000 * (1 + 1/2 + … + 1/512) |
+| Tail emission after height 2,100,000 | ~105,120 RCPU / year | 1 RCPU * 288 blocks/day * 365 |
 | CT activation height | **0** (genesis) | `src/kernel/chainparams.cpp` (`nCTActivationHeight`) |
 | ASERT activation height | **0** (genesis) | `src/kernel/chainparams.cpp` (`nASERTActivationHeight`) |
 | ASERT anchor block | 0 (genesis) | `src/kernel/chainparams.cpp` (`asertAnchorParams`) |
@@ -34,11 +40,12 @@ Other docs reference this table; if a number elsewhere disagrees, **this table a
 
 ## Notes
 
-- README's "10 halvings to dust" is descriptive. The code keeps halving until the subsidy rounds to zero.
-- `MAX_MONEY` (2.1B) is a **per-output sanity check**, not a separate supply cap.
-- Default chain is `RCPUMAIN`; `rcpud` without `-chain` launches the RCPU mainnet.
-- `ChainType::MAIN` (Bitcoin mainnet) is **disabled** at runtime; `-chain=main` throws an error.
-- The Bitcoin template (`CMainParams`) remains in source for code structure but cannot be instantiated.
+- There is no hard max supply in consensus code. After 10 halvings the subsidy does not go to zero; it stays at 1 RCPU per block.
+- README / marketing "~2.10B" means "sum of the first 10 subsidy eras plus genesis 50", not a cap.
+- MAX_MONEY (2.1B) is only a per-output sanity check. A single output above that is invalid; the chain-wide sum can exceed it because of tail emission.
+- Default chain is RCPUMAIN; `rcpud` without `-chain` launches the RCPU mainnet.
+- `ChainType::MAIN` (Bitcoin mainnet) is disabled at runtime; `-chain=main` throws an error.
+- The Bitcoin template (`CMainParams`) remains in source for structure/tests but cannot be selected as the live chain.
 
 ## Genesis Block
 
@@ -101,4 +108,9 @@ Subsequent tiers remain as scheduled.
 Miners and pools should run with `-reindex-chainstate` if they encounter
 unexpected reorgs. Exchanges should require a high number of confirmations
 (e.g., 100+) for large deposits during this early period.
+
+Exchanges: require a high confirmation count (e.g. 100+) while
+the chain is below tier 3 (height 10,000).
+Checkpoints / nMinimumChainWork reduce IBD risk; they are not a
+substitute for confirmations on a young CPU chain.
 

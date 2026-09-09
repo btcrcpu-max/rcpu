@@ -23,6 +23,8 @@ make -j$(nproc)
 make check
 ```
 
+`make check` must pass on the default chain RCPUMAIN.
+
 - Default data directory: `~/.rcpu`
 - Config file: `~/.rcpu/rcpu.conf`
 - P2P: **7227**  RPC: **7337**
