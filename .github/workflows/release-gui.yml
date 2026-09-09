@@ -57,6 +57,20 @@ jobs:
           wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -O appimagetool
           chmod +x linuxdeploy linuxdeploy-plugin-qt appimagetool
 
+      - name: Create desktop entry
+        run: |
+          mkdir -p AppDir/usr/share/applications
+          cat > AppDir/usr/share/applications/rcpu-qt.desktop << DESKTOP_EOF
+          [Desktop Entry]
+          Name=RCPU Qt Wallet
+          Exec=rcpu-qt
+          Type=Application
+          Icon=rcpu-qt
+          Categories=Office;Finance;
+          DESKTOP_EOF
+          # Also copy to AppDir root for linuxdeploy to find it
+          cp AppDir/usr/share/applications/rcpu-qt.desktop AppDir/rcpu-qt.desktop
+
       - name: Create AppImage
         run: |
           export QT_SELECT=qt5
