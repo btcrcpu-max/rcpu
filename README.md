@@ -50,6 +50,34 @@ RCPU uses **Bech32 (SegWit)** addresses only, prefixed with `rcpu1`.
 
 ## Quick Start
 
+### Desktop GUI (optional)
+
+```bash
+# Install GUI dependencies (Ubuntu 22.04 / 24.04)
+sudo apt-get install -y qtbase5-dev qttools5-dev qttools5-dev-tools \
+  libqrencode-dev libminiupnpc-dev libminiupnpc17 libprotobuf-dev protobuf-compiler
+
+# Build
+./autogen.sh
+./configure --with-gui=qt5
+make -j$(nproc)
+
+# Run (binary name depends on build: rcpu-qt or bitcoin-qt)
+./src/qt/rcpu-qt 2>/dev/null || ./src/qt/bitcoin-qt
+```
+
+> **Note:** Official GitHub Releases currently provide headless binaries only.
+> GUI must be built from source or wait for automated packaging (AppImage).
+>
+> If `libminiupnpc.so` is missing at runtime:
+> ```bash
+> sudo apt-get install -y libminiupnpc17
+> # Or disable UPnP
+> ./src/qt/rcpu-qt -upnp=0
+> ```
+
+### Headless Node
+
 ```bash
 # Build
 ./autogen.sh
