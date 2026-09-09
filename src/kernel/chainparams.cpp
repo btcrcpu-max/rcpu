@@ -617,7 +617,7 @@ public:
         consensus.hashGenesisBlock = GetHashOfRcpuGenesisBlock(genesis);
         assert(genesis.hashMerkleRoot == uint256S("2f7b90fafd8247ee73d213d49699fcfe12a37c608f1d9d1c06f10e43cb6426c6"));
 
-        vFixedSeeds.clear();  // No hardcoded peer IPs
+        vFixedSeeds.assign(std::begin(chainparams_seed_main), std::end(chainparams_seed_main));  // Hardcoded mainnet seed IPs
 
         vSeeds.emplace_back("seed1.rcpu.top");        // Main seed node
         vSeeds.emplace_back("seed2.rcpu.top");        // Secondary seed node
