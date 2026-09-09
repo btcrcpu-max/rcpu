@@ -46,7 +46,8 @@ RUN cd /build/rcpu \
 FROM ubuntu:22.04
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libevent-2.1-7 libboost-system1.74.0 libsqlite3-0 libstdc++6 \
+    libevent-2.1-7 libevent-pthreads-2.1-7 \
+    libboost-system1.74.0 libsqlite3-0 libstdc++6 \
     && rm -rf /var/lib/apt/lists/*
 
 RUN useradd -m -s /bin/bash rcpu
