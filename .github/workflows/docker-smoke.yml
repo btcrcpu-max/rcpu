@@ -115,6 +115,7 @@ jobs:
         run: |
           set -euo pipefail
           docker run -d --name rcpu-smoke \
+            --entrypoint rcpud \
             rcpu:latest -chain=rcpuregtest \
             -datadir=/tmp/rcpu-smoke -server=1
           trap 'docker rm -f rcpu-smoke >/dev/null 2>&1 || true' EXIT
