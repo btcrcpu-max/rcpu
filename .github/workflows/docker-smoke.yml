@@ -1,0 +1,166 @@
+# Docker & node smoke tests
+#
+# Purpose: catch regressions in the Docker packaging (ports, runtime deps,
+# non-root user, foreground CMD) and verify the RCPU node actually boots on the
+# regtest chain. This complements ci.yml, which covers the full unit-test
+# suite. Job names are deliberately distinct so both workflows run in parallel.
+#
+# Design notes:
+# - The repository-root Dockerfile builds from source in a multi-stage build,
+#   but its builder stage does not compile RandomX, which configure.ac treats
+#   as a hard dependency. A bare `docker build .` therefore fails at configure
+#   time. source-build-smoke instead uses the same proven source-build path as
+#   ci.yml (RandomX built and installed first), then boots the resulting
+#   binaries on rcpuregtest and asserts height 0 + a listening P2P port.
+# - docs/nodes/Dockerfile is a release-binary template (the binary COPY lines
+#   are commented out), so we validate it statically rather than building it.
+# - To turn p2p checks into a standalone job (e.g. with workflow_dispatch
+#   inputs), split the "P2P listener" step out of source-build-smoke and give
+#   the new job `needs: source-build-smoke` plus
+#   actions/upload-artifact + actions/download-artifact for the rcpud and
+#   rcpu-cli binaries.
+
+name: docker-smoke
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  # ------------------------------------------------------------------
+  # Static checks: ports, runtime deps, user, CMD, mount points
+  # ------------------------------------------------------------------
+  release-template-checks:
+    name: release template checks
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate docs/nodes/Dockerfile
+        run: |
+          set -euo pipefail
+          f=docs/nodes/Dockerfile
+          grep -q 'FROM ubuntu:24.04' "$f"
+          grep -q 'EXPOSE 7227 7337' "$f"
+          # Bitcoin-template RPC port 9962 / any obsolete port must never return
+          ! grep -Eq '9962|9965' "$f"
+          grep -q '^RUN useradd -m -s /bin/bash rcpu' "$f"
+          grep -q '^USER rcpu' "$f"
+          grep -q 'VOLUME \["/home/rcpu/.rcpu"\]' "$f"
+          grep -q 'libevent-2.1-7t64' "$f"
+          grep -q 'libboost-system1.83.0' "$f"
+          grep -q 'libsqlite3-0' "$f"
+          grep -q 'CMD \["rcpud", "-daemon=0", "-printtoconsole"\]' "$f"
+          # The binary COPY lines must stay commented out (release-binary template)
+          grep -q '^# COPY rcpud-linux-x64 /usr/local/bin/rcpud' "$f"
+
+      - name: Validate docs/nodes/rcpu.conf.template
+        run: |
+          set -euo pipefail
+          f=docs/nodes/rcpu.conf.template
+          grep -q '^port=7227' "$f"
+          grep -q '^rpcport=7337' "$f"
+          grep -q '^rpcbind=127.0.0.1' "$f"
+          grep -q '^server=1' "$f"
+
+      - name: Validate repository-root Dockerfile
+        run: |
+          set -euo pipefail
+          f=Dockerfile
+          test -f "$f"
+          grep -q 'FROM ubuntu:22.04 AS builder' "$f"
+          grep -q 'EXPOSE 7227 7337' "$f"
+          ! grep -Eq '9962|9965' "$f"
+          grep -q 'COPY --from=builder /usr/local/bin/rcpud' "$f"
+          grep -q 'CMD \["rcpud", "-daemon=0", "-printtoconsole"\]' "$f"
+
+  # ------------------------------------------------------------------
+  # Real boot: compile from source (RandomX first), then run rcpuregtest
+  # ------------------------------------------------------------------
+  source-build-smoke:
+    name: source build + regtest smoke
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libtool autotools-dev automake \
+            pkg-config bsdmainutils python3 autoconf-archive cmake \
+            libssl-dev libevent-dev libboost-all-dev \
+            libsqlite3-dev libdb-dev libdb++-dev
+
+      - name: Build RandomX dependency
+        run: |
+          curl --fail -L -o /tmp/randomx-src.tar.gz https://github.com/tevador/RandomX/archive/refs/tags/v1.2.1.tar.gz
+          echo "2e6dd3bed96479332c4c8e4cab2505699ade418a07797f64ee0d4fa394555032  /tmp/randomx-src.tar.gz" | sha256sum -c -
+          tar -xf /tmp/randomx-src.tar.gz -C /tmp
+          cd /tmp/RandomX-1.2.1
+          patch -p1 < ${{ github.workspace }}/depends/patches/randomx/custom_configuration.patch
+          mkdir build && cd build
+          cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON
+          make -j$(nproc)
+          sudo make install
+          sudo ldconfig
+
+      - name: Build node (no bench/tests, faster than ci.yml)
+        run: |
+          ./autogen.sh
+          CPPFLAGS="-I/usr/local/include" LDFLAGS="-L/usr/local/lib" \
+            ./configure --without-gui --disable-bench --disable-tests --prefix=/opt/rcpu
+          make -j$(nproc)
+
+      - name: Boot rcpuregtest and assert height 0 + RPC + P2P listening
+        run: |
+          set -euo pipefail
+          datadir=/tmp/rcpu-regtest
+          mkdir -p "$datadir"
+
+          # Foreground boot on the regtest chain. -port overrides the base
+          # chain default (18444) so the check does not collide with anything
+          # else on the runner; RPC stays on the rcpuregtest base port 18443.
+          ./src/rcpud -chain=rcpuregtest -datadir="$datadir" \
+            -daemon=0 -printtoconsole -port=17227 \
+            >"$datadir/rcpud.log" 2>&1 &
+          pid=$!
+          trap 'kill $pid 2>/dev/null || true' EXIT
+
+          # Wait for the RPC server, then assert chain + block height.
+          ok=0
+          for i in $(seq 1 60); do
+            if ./src/rcpu-cli -chain=rcpuregtest -datadir="$datadir" \
+                getblockchaininfo >"$datadir/chain.json" 2>/dev/null; then
+              ok=1
+              break
+            fi
+            sleep 1
+          done
+          test "$ok" = 1 || { echo "RPC did not come up"; cat "$datadir/rcpud.log"; exit 1; }
+
+          python3 - <<'EOF'
+          import json
+          with open("/tmp/rcpu-regtest/chain.json") as f:
+              info = json.load(f)
+          assert info["chain"] == "rcpuregtest", info
+          assert info["blocks"] == 0, info
+          assert info["headers"] == 0, info
+          print("regtest boot OK:", info["chain"], "height", info["blocks"])
+          EOF
+
+          # P2P listener must be up on the port we asked for.
+          for i in $(seq 1 20); do
+            if ss -ltn 2>/dev/null | grep -q ':17227'; then
+              echo "P2P listener OK on 17227"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "P2P port 17227 not listening"; exit 1
