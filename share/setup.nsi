@@ -16,11 +16,11 @@ Unicode true
 
 # MUI Symbol Definitions
 # !RCPU
-!define MUI_ICON "/root/rcpu/share/pixmaps/rcpu.ico"
-!define MUI_WELCOMEFINISHPAGE_BITMAP "/root/rcpu/share/pixmaps/nsis-wizard-rcpu.bmp"
+!define MUI_ICON "/root/rcpu-build/share/pixmaps/rcpu.ico"
+!define MUI_WELCOMEFINISHPAGE_BITMAP "/root/rcpu-build/share/pixmaps/nsis-wizard-rcpu.bmp"
 !define MUI_HEADERIMAGE
 !define MUI_HEADERIMAGE_RIGHT
-!define MUI_HEADERIMAGE_BITMAP "/root/rcpu/share/pixmaps/nsis-header-rcpu.bmp"
+!define MUI_HEADERIMAGE_BITMAP "/root/rcpu-build/share/pixmaps/nsis-header-rcpu.bmp"
 #! RCPU END
 !define MUI_FINISHPAGE_NOAUTOCLOSE
 !define MUI_STARTMENUPAGE_REGISTRY_ROOT HKLM
@@ -32,7 +32,7 @@ Unicode true
 !define MUI_FINISHPAGE_RUN_PARAMETERS $INSTDIR\rcpu-qt
 # !RCPU END
 !define MUI_UNICON "${NSISDIR}\Contrib\Graphics\Icons\modern-uninstall.ico"
-!define MUI_UNWELCOMEFINISHPAGE_BITMAP "/root/rcpu/share/pixmaps/nsis-wizard.bmp"
+!define MUI_UNWELCOMEFINISHPAGE_BITMAP "/root/rcpu-build/share/pixmaps/nsis-wizard.bmp"
 !define MUI_UNFINISHPAGE_NOAUTOCLOSE
 
 # Included files
@@ -81,20 +81,20 @@ Section -Main SEC0000
     SetOutPath $INSTDIR
     SetOverwrite on
 # !RCPU
-    File /root/rcpu/release/rcpu-qt
-    File /oname=COPYING.txt /root/rcpu/COPYING
-    File /oname=readme.txt /root/rcpu/doc/README_windows_rcpu.txt
-    File /root/rcpu/share/examples/rcpu.conf
+    File /root/rcpu-build/release/rcpu-qt
+    File /oname=COPYING.txt /root/rcpu-build/COPYING
+    File /oname=readme.txt /root/rcpu-build/doc/README_windows_rcpu.txt
+    File /root/rcpu-build/share/examples/rcpu.conf
 # !RCPU END
     SetOutPath $INSTDIR\share\rpcauth
-    File /root/rcpu/share/rpcauth/*.*
+    File /root/rcpu-build/share/rpcauth/*.*
     SetOutPath $INSTDIR\daemon
 # !RCPU
-    File /root/rcpu/release/rcpud
-    File /root/rcpu/release/rcpu-cli
-    File /root/rcpu/release/rcpu-tx
-    File /root/rcpu/release/rcpu-wallet
-    File /root/rcpu/release/test_rcpu
+    File /root/rcpu-build/release/rcpud
+    File /root/rcpu-build/release/rcpu-cli
+    File /root/rcpu-build/release/rcpu-tx
+    File /root/rcpu-build/release/rcpu-wallet
+    File /root/rcpu-build/release/test_rcpu
 # !RCPU END
     SetOutPath $INSTDIR
     WriteRegStr HKCU "${REGKEY}\Components" Main 1
