@@ -105,8 +105,11 @@ jobs:
           output=$(docker run --rm rcpu:latest ldd /usr/local/bin/rcpud)
           echo "$output"
           echo "$output" | grep -q 'librandomx.so'
-          # And the library must actually load, not just be listed.
-          docker run --rm rcpu:latest python3 -c 'import ctypes, sys; ctypes.CDLL("librandomx.so"); print("librandomx loads OK")'
+          # The runtime image is minimal (no python3 inside); extract the
+          # library and load it from the host to prove it is functional.
+          docker run --rm --entrypoint cat rcpu:latest \
+            /usr/local/lib/librandomx.so > /tmp/librandomx.so
+          python3 -c 'import ctypes; ctypes.CDLL("/tmp/librandomx.so"); print("librandomx loads OK")'
 
       - name: Boot rcpuregtest in the image and assert via RPC
         run: |
