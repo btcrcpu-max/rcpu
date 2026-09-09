@@ -116,13 +116,12 @@ jobs:
           set -euo pipefail
           docker run -d --name rcpu-smoke \
             --entrypoint rcpud \
-            rcpu:latest -chain=rcpuregtest \
-            -datadir=/tmp/rcpu-smoke -server=1
+            rcpu:latest -chain=rcpuregtest -server=1
           trap 'docker rm -f rcpu-smoke >/dev/null 2>&1 || true' EXIT
           ok=0
           for i in $(seq 1 60); do
             if output=$(docker exec rcpu-smoke rcpu-cli -chain=rcpuregtest \
-                -datadir=/tmp/rcpu-smoke getblockchaininfo 2>/dev/null); then
+                getblockchaininfo 2>/dev/null); then
               ok=1
               break
             fi
