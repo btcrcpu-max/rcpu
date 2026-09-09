@@ -19,7 +19,9 @@ ASIC resistance, and adding on-chain privacy via Pedersen commitments.
 | Block Time | 5 minutes |
 | Block Reward | 5,000 RCPU |
 | Halving Interval | 210,000 blocks |
-| Max Supply | ~2,100,000,000 RCPU (theoretical sum of all subsidies) |
+| Block subsidy | 5,000 RCPU from height 1; genesis is 50 RCPU |
+| After 10 halvings | 1 RCPU per block (tail emission, no hard cap) |
+| Approx. subsidy by height 2,100,000 | 2.1B RCPU (then +105,120 RCPU/year) |
 
 Canonical values: [doc/consensus-params.md](doc/consensus-params.md).
 If this README disagrees with that file or the code, the code wins.
@@ -37,6 +39,7 @@ and is not the block date. Do not change either value.
 - **ASERT Difficulty Adjustment**: 2-day half-life, adjusts every block
 - **5-minute block time**: 288 blocks per day
 - **No pre-mine, no ICO**
+- **Subsidy**: 5,000 RCPU per block, halved every 210,000 blocks; after 10 halvings a 1 RCPU tail remains
 
 ## Address Format
 

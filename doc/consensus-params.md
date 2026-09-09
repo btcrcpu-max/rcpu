@@ -17,9 +17,12 @@ They are listed here so other docs have one place to copy from.
 | Block time | 5 minutes (300 s) | `src/kernel/chainparams.cpp` (`nPowTargetSpacing`) |
 | Block reward (start) | 5,000 RCPU | `src/validation.cpp` (`GetBlockSubsidy`) |
 | Halving interval | 210,000 blocks | `src/kernel/chainparams.cpp` (`nSubsidyHalvingInterval`) |
-| Block subsidy formula | `5000 >> (height / 210000)` | `src/validation.cpp` `GetBlockSubsidy` |
-| MAX_MONEY (per-output sanity) | 2,100,000,000 RCPU | `src/consensus/amount.h` |
-| Theoretical total subsidy | ~2,100,000,000 RCPU | `5000 * 210000 * 2` (geometric series, infinite halvings) |
+| Block subsidy (height 0) | 50 RCPU | `src/validation.cpp` `GetBlockSubsidy` (genesis special case) |
+| Block subsidy (height 1–2,099,999) | `5000 >> (height / 210000)` RCPU | `src/validation.cpp` `GetBlockSubsidy` |
+| Block subsidy (height ≥ 2,100,000) | 1 RCPU per block, perpetual | `GetBlockSubsidy`: if (halvings >= 10) return 1 * COIN |
+| MAX_MONEY (per-output sanity) | 2,100,000,000 RCPU | `src/consensus/amount.h` — not a total-supply cap |
+| Approx. mined by first 10 halvings | ~2,100,000,050 RCPU | 50 + 5000 * 210000 * (1 + 1/2 + … + 1/512) |
+| Tail emission after height 2,100,000 | ~105,120 RCPU / year | 1 RCPU * 288 blocks/day * 365 |
 | CT activation height | **0** (genesis) | `src/kernel/chainparams.cpp` (`nCTActivationHeight`) |
 | ASERT activation height | **0** (genesis) | `src/kernel/chainparams.cpp` (`nASERTActivationHeight`) |
 | ASERT anchor block | 0 (genesis) | `src/kernel/chainparams.cpp` (`asertAnchorParams`) |
@@ -37,18 +40,12 @@ They are listed here so other docs have one place to copy from.
 
 ## Notes
 
-- Theoretical total subsidy ≈ 2.1e9 RCPU = 5000 × 210000 × 2
-  (infinite geometric series of halvings).
-  Code actually halves until subsidy truncates to 0; "10 halvings to dust"
-  in older text is informal, not a consensus cutoff.
-- `MAX_MONEY` (2.1e9) is a per-output sanity limit, not a second cap.
-- Default chain is `RCPUMAIN`; `rcpud` without `-chain` launches the RCPU mainnet.
-- `ChainType::MAIN` (Bitcoin mainnet) is **disabled** at runtime; `-chain=main` throws an error.
-- Default chain is RCPUMAIN.
-  `-chain=main` is rejected at runtime.
-  CMainParams is retained as an upstream Bitcoin template for
-  structure/tests. It is not RCPU mainnet. Do not copy its magic,
-  port, genesis, or seeds into RCPU docs.
+- There is no hard max supply in consensus code. After 10 halvings the subsidy does not go to zero; it stays at 1 RCPU per block.
+- README / marketing "~2.1B" means "sum of the first 10 subsidy eras plus genesis 50", not a cap.
+- MAX_MONEY (2.1B) is only a per-output sanity check. A single output above that is invalid; the chain-wide sum can exceed it because of tail emission.
+- Default chain is RCPUMAIN; `rcpud` without `-chain` launches the RCPU mainnet.
+- `ChainType::MAIN` (Bitcoin mainnet) is disabled at runtime; `-chain=main` throws an error.
+- The Bitcoin template (`CMainParams`) remains in source for structure/tests but cannot be selected as the live chain.
 
 ## Genesis Block
 
