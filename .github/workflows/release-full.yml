@@ -1,0 +1,185 @@
+name: Release Full (Linux + Windows)
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-randomx-linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Download and build RandomX (Linux)
+        run: |
+          curl -L -o /tmp/rx.tgz https://github.com/tevador/RandomX/archive/refs/tags/v1.2.1.tar.gz
+          tar -xf /tmp/rx.tgz -C /tmp
+          cd /tmp/RandomX-1.2.1 && mkdir build && cd build
+          cmake .. -DCMAKE_BUILD_TYPE=Release
+          make -j$(nproc)
+      - name: Upload RandomX Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: randomx-linux
+          path: /tmp/RandomX-1.2.1/build/librandomx.a
+          retention-days: 1
+
+  build-randomx-windows:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Install mingw
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++-mingw-w64-x86-64-posix
+          sudo update-alternatives --set x86_64-w64-mingw32-g++ /usr/bin/x86_64-w64-mingw32-g++-posix
+      - name: Download and build RandomX (Windows cross)
+        run: |
+          curl -L -o /tmp/rx.tgz https://github.com/tevador/RandomX/archive/refs/tags/v1.2.1.tar.gz
+          tar -xf /tmp/rx.tgz -C /tmp
+          cd /tmp/RandomX-1.2.1 && mkdir build-win && cd build-win
+          cmake .. -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_TOOLCHAIN_FILE=../cmake/mingw-w64-x86_64.cmake \
+            -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc \
+            -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++
+          make -j$(nproc)
+      - name: Upload RandomX Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: randomx-windows
+          path: /tmp/RandomX-1.2.1/build-win/librandomx.a
+          retention-days: 1
+
+  build-linux:
+    needs: build-randomx-linux
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libtool autotools-dev \
+            automake pkg-config bsdmainutils python3 cmake curl
+      - name: Download RandomX artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: randomx-linux
+          path: /tmp/randomx-linux/
+      - name: Install RandomX to prefix
+        run: |
+          mkdir -p depends/x86_64-pc-linux-gnu/lib
+          mkdir -p depends/x86_64-pc-linux-gnu/include
+          cp /tmp/randomx-linux/librandomx.a depends/x86_64-pc-linux-gnu/lib/
+          # Also copy header from source
+          curl -L -o /tmp/rx-src.tgz https://github.com/tevador/RandomX/archive/refs/tags/v1.2.1.tar.gz
+          tar -xf /tmp/rx-src.tgz -C /tmp
+          cp /tmp/RandomX-1.2.1/src/randomx.h depends/x86_64-pc-linux-gnu/include/
+      - name: Build depends
+        run: |
+          ./autogen.sh
+          make -C depends HOST=x86_64-pc-linux-gnu -j$(nproc)
+      - name: Configure and build
+        run: |
+          ./configure \
+            --prefix="$PWD/depends/x86_64-pc-linux-gnu" \
+            --disable-bench --disable-tests \
+            --with-gui=qt5
+          make -j$(nproc)
+          make install
+      - name: Package Linux
+        run: |
+          PREFIX=$PWD/depends/x86_64-pc-linux-gnu
+          STAGE=$PWD/rcpu-${GITHUB_REF_NAME}-narnia-core-27.0.0
+          rm -rf "$STAGE"
+          mkdir -p "$STAGE"
+          cp -a "$PREFIX/bin/rcpud" "$PREFIX/bin/rcpu-qt" \
+                "$PREFIX/bin/rcpu-cli" "$PREFIX/bin/rcpu-tx" \
+                "$PREFIX/bin/rcpu-wallet" "$STAGE/" 2>/dev/null || true
+          tar -C "$(dirname "$STAGE")" -czf \
+            "rcpu-${GITHUB_REF_NAME}-narnia-core-27.0.0-x86_64-linux-gnu.tgz" \
+            "$(basename "$STAGE")"
+          sha256sum *.tgz > SHA256SUMS-linux.txt
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-package
+          path: |
+            *.tgz
+            SHA256SUMS-linux.txt
+
+  build-windows:
+    needs: build-randomx-windows
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libtool autotools-dev \
+            automake pkg-config bsdmainutils python3 cmake curl \
+            g++-mingw-w64-x86-64-posix nsis
+          sudo update-alternatives --set x86_64-w64-mingw32-g++ \
+            /usr/bin/x86_64-w64-mingw32-g++-posix
+      - name: Download RandomX artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: randomx-windows
+          path: /tmp/randomx-windows/
+      - name: Install RandomX to prefix
+        run: |
+          mkdir -p depends/x86_64-w64-mingw32/lib
+          mkdir -p depends/x86_64-w64-mingw32/include
+          cp /tmp/randomx-windows/librandomx.a depends/x86_64-w64-mingw32/lib/
+          curl -L -o /tmp/rx-src.tgz https://github.com/tevador/RandomX/archive/refs/tags/v1.2.1.tar.gz
+          tar -xf /tmp/rx-src.tgz -C /tmp
+          cp /tmp/RandomX-1.2.1/src/randomx.h depends/x86_64-w64-mingw32/include/
+      - name: Build depends
+        run: |
+          ./autogen.sh
+          make -C depends HOST=x86_64-w64-mingw32 -j$(nproc)
+      - name: Configure and build
+        run: |
+          ./configure \
+            --prefix="$PWD/depends/x86_64-w64-mingw32" \
+            --disable-bench --disable-tests \
+            --with-gui=qt5
+          make -j$(nproc)
+          make deploy
+      - name: Package Windows
+        run: |
+          EXE=$(ls -1t *win64-setup.exe 2>/dev/null | head -1)
+          if [ -z "$EXE" ]; then
+            echo "ERROR: No setup.exe found"
+            ls -la *.exe 2>/dev/null || true
+            exit 1
+          fi
+          zip "${EXE%.exe}.zip" "$EXE"
+          sha256sum "$EXE" "${EXE%.exe}.zip" > SHA256SUMS-windows.txt
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-package
+          path: |
+            *win64-setup.exe
+            *win64-setup.zip
+            SHA256SUMS-windows.txt
+
+  release:
+    needs: [build-linux, build-windows]
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-package
+          path: linux/
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-package
+          path: windows/
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            linux/*
+            windows/*
