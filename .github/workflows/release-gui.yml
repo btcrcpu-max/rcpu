@@ -6,6 +6,9 @@ on:
     tags:
       - "v*"
 
+permissions:
+  contents: write
+
 jobs:
   build-appimage:
     runs-on: ubuntu-22.04
@@ -96,7 +99,8 @@ jobs:
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
         run: |
           if [ -z "$GPG_PRIVATE_KEY" ]; then
-            echo "No GPG key configured, skipping signature"
+            echo "No GPG key configured, creating empty placeholder"
+            touch rcpu-qt-x86_64.AppImage.asc
             exit 0
           fi
           echo "$GPG_PRIVATE_KEY" | gpg --batch --yes --import
