@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -14,10 +15,13 @@ jobs:
     steps:
       - name: Download and build RandomX (Linux)
         run: |
-          curl -L -o /tmp/rx.tgz https://github.com/tevador/RandomX/archive/refs/tags/v1.2.1.tar.gz
-          tar -xf /tmp/rx.tgz -C /tmp
-          cd /tmp/RandomX-1.2.1 && mkdir build && cd build
-          cmake .. -DCMAKE_BUILD_TYPE=Release
+          curl --fail -L -o /tmp/randomx-src.tar.gz \
+            https://github.com/tevador/RandomX/archive/refs/tags/v1.2.1.tar.gz
+          echo "2e6dd3bed96479332c4c8e4cab2505699ade418a07797f64ee0d4fa394555032  /tmp/randomx-src.tar.gz" | sha256sum -c -
+          tar -xf /tmp/randomx-src.tar.gz -C /tmp
+          cd /tmp/RandomX-1.2.1
+          mkdir build && cd build
+          cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF
           make -j$(nproc)
       - name: Upload RandomX Linux artifact
         uses: actions/upload-artifact@v4
@@ -49,13 +53,14 @@ jobs:
           TOOLCHAIN
       - name: Download and build RandomX (Windows cross)
         run: |
-          curl -L -o /tmp/rx.tgz https://github.com/tevador/RandomX/archive/refs/tags/v1.2.1.tar.gz
-          tar -xf /tmp/rx.tgz -C /tmp
-          cd /tmp/RandomX-1.2.1 && mkdir build-win && cd build-win
+          curl --fail -L -o /tmp/randomx-src.tar.gz \
+            https://github.com/tevador/RandomX/archive/refs/tags/v1.2.1.tar.gz
+          echo "2e6dd3bed96479332c4c8e4cab2505699ade418a07797f64ee0d4fa394555032  /tmp/randomx-src.tar.gz" | sha256sum -c -
+          tar -xf /tmp/randomx-src.tar.gz -C /tmp
+          cd /tmp/RandomX-1.2.1
+          mkdir build-win && cd build-win
           cmake .. -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_TOOLCHAIN_FILE=/tmp/mingw-w64-x86_64.cmake \
-            -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc \
-            -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++
+            -DCMAKE_TOOLCHAIN_FILE=/tmp/mingw-w64-x86_64.cmake
           make -j$(nproc)
       - name: Upload RandomX Windows artifact
         uses: actions/upload-artifact@v4
@@ -74,38 +79,45 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential libtool autotools-dev \
             automake pkg-config bsdmainutils python3 cmake curl
-      - name: Ensure depends files exist
+      - name: Repair depends tree
         run: |
-          # Ensure config.guess and config.sub exist in depends/
+          chmod +x depends/gen_id depends/config.guess depends/config.sub 2>/dev/null || true
+          if [ ! -x depends/gen_id ]; then
+            echo "ERROR: depends/gen_id is not executable"
+            ls -la depends/gen_id || true
+            exit 1
+          fi
           if [ ! -f depends/config.guess ]; then
-            curl -L -o depends/config.guess 'https://git.savannah.gnu.org/gitweb/?p=config.git;a=blob_plain;f=config.guess;hb=HEAD' || \
-              curl -L -o depends/config.guess 'https://raw.githubusercontent.com/gcc-mirror/gcc/master/config.guess'
+            curl --fail -L -o depends/config.guess \
+              https://raw.githubusercontent.com/bitcoin/bitcoin/v27.0/depends/config.guess
           fi
           if [ ! -f depends/config.sub ]; then
-            curl -L -o depends/config.sub 'https://git.savannah.gnu.org/gitweb/?p=config.git;a=blob_plain;f=config.sub;hb=HEAD' || \
-              curl -L -o depends/config.sub 'https://raw.githubusercontent.com/gcc-mirror/gcc/master/config.sub'
+            curl --fail -L -o depends/config.sub \
+              https://raw.githubusercontent.com/bitcoin/bitcoin/v27.0/depends/config.sub
           fi
-          chmod +x depends/config.guess depends/config.sub
-      - name: Download RandomX artifact
-        uses: actions/download-artifact@v4
+          if [ ! -f depends/patches/qt/mac-qmake.conf ]; then
+            mkdir -p depends/patches/qt
+            curl --fail -L -o depends/patches/qt/mac-qmake.conf \
+              https://raw.githubusercontent.com/bitcoin/bitcoin/v27.0/depends/patches/qt/mac-qmake.conf
+          fi
+          chmod +x depends/gen_id depends/config.guess depends/config.sub
+      - uses: actions/download-artifact@v4
         with:
           name: randomx-linux
           path: /tmp/randomx-linux/
-      - name: Install RandomX to prefix
+      - name: Install RandomX into depends prefix
         run: |
-          mkdir -p depends/x86_64-pc-linux-gnu/lib
-          mkdir -p depends/x86_64-pc-linux-gnu/include
+          mkdir -p depends/x86_64-pc-linux-gnu/lib depends/x86_64-pc-linux-gnu/include
           cp /tmp/randomx-linux/librandomx.a depends/x86_64-pc-linux-gnu/lib/
-          # Also copy header from source
-          curl -L -o /tmp/rx-src.tgz https://github.com/tevador/RandomX/archive/refs/tags/v1.2.1.tar.gz
+          curl --fail -L -o /tmp/rx-src.tgz \
+            https://github.com/tevador/RandomX/archive/refs/tags/v1.2.1.tar.gz
           tar -xf /tmp/rx-src.tgz -C /tmp
           cp /tmp/RandomX-1.2.1/src/randomx.h depends/x86_64-pc-linux-gnu/include/
       - name: Build depends
-        run: |
-          ./autogen.sh
-          make -C depends HOST=x86_64-pc-linux-gnu -j$(nproc)
+        run: make -C depends HOST=x86_64-pc-linux-gnu -j$(nproc)
       - name: Configure and build
         run: |
+          ./autogen.sh
           ./configure \
             --prefix="$PWD/depends/x86_64-pc-linux-gnu" \
             --disable-bench --disable-tests \
@@ -125,8 +137,7 @@ jobs:
             "rcpu-${GITHUB_REF_NAME}-narnia-core-27.0.0-x86_64-linux-gnu.tgz" \
             "$(basename "$STAGE")"
           sha256sum *.tgz > SHA256SUMS-linux.txt
-      - name: Upload Linux artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: linux-package
           path: |
@@ -146,37 +157,45 @@ jobs:
             g++-mingw-w64-x86-64-posix nsis
           sudo update-alternatives --set x86_64-w64-mingw32-g++ \
             /usr/bin/x86_64-w64-mingw32-g++-posix
-      - name: Ensure depends files exist
+      - name: Repair depends tree
         run: |
-          # Ensure config.guess and config.sub exist in depends/
+          chmod +x depends/gen_id depends/config.guess depends/config.sub 2>/dev/null || true
+          if [ ! -x depends/gen_id ]; then
+            echo "ERROR: depends/gen_id is not executable"
+            ls -la depends/gen_id || true
+            exit 1
+          fi
           if [ ! -f depends/config.guess ]; then
-            curl -L -o depends/config.guess 'https://git.savannah.gnu.org/gitweb/?p=config.git;a=blob_plain;f=config.guess;hb=HEAD' || \
-              curl -L -o depends/config.guess 'https://raw.githubusercontent.com/gcc-mirror/gcc/master/config.guess'
+            curl --fail -L -o depends/config.guess \
+              https://raw.githubusercontent.com/bitcoin/bitcoin/v27.0/depends/config.guess
           fi
           if [ ! -f depends/config.sub ]; then
-            curl -L -o depends/config.sub 'https://git.savannah.gnu.org/gitweb/?p=config.git;a=blob_plain;f=config.sub;hb=HEAD' || \
-              curl -L -o depends/config.sub 'https://raw.githubusercontent.com/gcc-mirror/gcc/master/config.sub'
+            curl --fail -L -o depends/config.sub \
+              https://raw.githubusercontent.com/bitcoin/bitcoin/v27.0/depends/config.sub
           fi
-          chmod +x depends/config.guess depends/config.sub
-      - name: Download RandomX artifact
-        uses: actions/download-artifact@v4
+          if [ ! -f depends/patches/qt/mac-qmake.conf ]; then
+            mkdir -p depends/patches/qt
+            curl --fail -L -o depends/patches/qt/mac-qmake.conf \
+              https://raw.githubusercontent.com/bitcoin/bitcoin/v27.0/depends/patches/qt/mac-qmake.conf
+          fi
+          chmod +x depends/gen_id depends/config.guess depends/config.sub
+      - uses: actions/download-artifact@v4
         with:
           name: randomx-windows
           path: /tmp/randomx-windows/
-      - name: Install RandomX to prefix
+      - name: Install RandomX into depends prefix
         run: |
-          mkdir -p depends/x86_64-w64-mingw32/lib
-          mkdir -p depends/x86_64-w64-mingw32/include
+          mkdir -p depends/x86_64-w64-mingw32/lib depends/x86_64-w64-mingw32/include
           cp /tmp/randomx-windows/librandomx.a depends/x86_64-w64-mingw32/lib/
-          curl -L -o /tmp/rx-src.tgz https://github.com/tevador/RandomX/archive/refs/tags/v1.2.1.tar.gz
+          curl --fail -L -o /tmp/rx-src.tgz \
+            https://github.com/tevador/RandomX/archive/refs/tags/v1.2.1.tar.gz
           tar -xf /tmp/rx-src.tgz -C /tmp
           cp /tmp/RandomX-1.2.1/src/randomx.h depends/x86_64-w64-mingw32/include/
       - name: Build depends
-        run: |
-          ./autogen.sh
-          make -C depends HOST=x86_64-w64-mingw32 -j$(nproc)
+        run: make -C depends HOST=x86_64-w64-mingw32 -j$(nproc)
       - name: Configure and build
         run: |
+          ./autogen.sh
           ./configure \
             --prefix="$PWD/depends/x86_64-w64-mingw32" \
             --disable-bench --disable-tests \
@@ -193,8 +212,7 @@ jobs:
           fi
           zip "${EXE%.exe}.zip" "$EXE"
           sha256sum "$EXE" "${EXE%.exe}.zip" > SHA256SUMS-windows.txt
-      - name: Upload Windows artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: windows-package
           path: |
@@ -204,6 +222,7 @@ jobs:
 
   release:
     needs: [build-linux, build-windows]
+    if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/download-artifact@v4
@@ -214,8 +233,7 @@ jobs:
         with:
           name: windows-package
           path: windows/
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v2
         with:
           files: |
             linux/*
