@@ -21,7 +21,7 @@ They are listed here so other docs have one place to copy from.
 | Block subsidy (height 1–2,099,999) | `5000 >> (height / 210000)` RCPU | `src/validation.cpp` `GetBlockSubsidy` |
 | Block subsidy (height ≥ 2,100,000) | 1 RCPU per block, perpetual | `GetBlockSubsidy`: if (halvings >= 10) return 1 * COIN |
 | MAX_MONEY (per-output sanity) | 2,100,000,000 RCPU | `src/consensus/amount.h` — not a total-supply cap |
-| Approx. mined by first 10 halvings | ~2,100,000,050 RCPU | 50 + 5000 * 210000 * (1 + 1/2 + … + 1/512) |
+| Approx. mined by first 10 halvings | ~2.10B RCPU | 50 + 5000 * 210000 * (1 + 1/2 + … + 1/512) |
 | Tail emission after height 2,100,000 | ~105,120 RCPU / year | 1 RCPU * 288 blocks/day * 365 |
 | CT activation height | **0** (genesis) | `src/kernel/chainparams.cpp` (`nCTActivationHeight`) |
 | ASERT activation height | **0** (genesis) | `src/kernel/chainparams.cpp` (`nASERTActivationHeight`) |
@@ -41,7 +41,7 @@ They are listed here so other docs have one place to copy from.
 ## Notes
 
 - There is no hard max supply in consensus code. After 10 halvings the subsidy does not go to zero; it stays at 1 RCPU per block.
-- README / marketing "~2.1B" means "sum of the first 10 subsidy eras plus genesis 50", not a cap.
+- README / marketing "~2.10B" means "sum of the first 10 subsidy eras plus genesis 50", not a cap.
 - MAX_MONEY (2.1B) is only a per-output sanity check. A single output above that is invalid; the chain-wide sum can exceed it because of tail emission.
 - Default chain is RCPUMAIN; `rcpud` without `-chain` launches the RCPU mainnet.
 - `ChainType::MAIN` (Bitcoin mainnet) is disabled at runtime; `-chain=main` throws an error.

@@ -17,11 +17,10 @@ ASIC resistance, and adding on-chain privacy via Pedersen commitments.
 | ASERT Activation | Block **0** (genesis) |
 | Genesis nTime | **1788566400** (2026-09-05 UTC) |
 | Block Time | 5 minutes |
-| Block Reward | 5,000 RCPU |
 | Halving Interval | 210,000 blocks |
 | Block subsidy | 5,000 RCPU from height 1; genesis is 50 RCPU |
 | After 10 halvings | 1 RCPU per block (tail emission, no hard cap) |
-| Approx. subsidy by height 2,100,000 | 2.1B RCPU (then +105,120 RCPU/year) |
+| Approx. subsidy by height 2,100,000 | ~2.10B RCPU (then +105,120 RCPU/year) |
 
 Canonical values: [doc/consensus-params.md](doc/consensus-params.md).
 If this README disagrees with that file or the code, the code wins.
