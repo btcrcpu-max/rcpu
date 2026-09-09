@@ -115,6 +115,5 @@ jobs:
           files: |
             rcpu-qt-x86_64.AppImage
             rcpu-qt-x86_64.AppImage.sha256
-            rcpu-qt-x86_64.AppImage.asc
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
