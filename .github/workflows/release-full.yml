@@ -83,6 +83,7 @@ jobs:
             automake pkg-config bsdmainutils python3 cmake curl
       - name: Repair depends tree
         run: |
+          sed -i 's/\r$//' depends/gen_id 2>/dev/null || true
           chmod +x depends/gen_id depends/config.guess depends/config.sub 2>/dev/null || true
           if [ ! -x depends/gen_id ]; then
             echo "ERROR: depends/gen_id is not executable"
@@ -162,6 +163,7 @@ jobs:
             /usr/bin/x86_64-w64-mingw32-g++-posix
       - name: Repair depends tree
         run: |
+          sed -i 's/\r$//' depends/gen_id 2>/dev/null || true
           chmod +x depends/gen_id depends/config.guess depends/config.sub 2>/dev/null || true
           if [ ! -x depends/gen_id ]; then
             echo "ERROR: depends/gen_id is not executable"
