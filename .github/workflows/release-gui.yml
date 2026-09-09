@@ -1,0 +1,100 @@
+name: Release GUI (AppImage)
+
+# Trigger on any tag starting with v (e.g. v1.0.0, v1.0.1, etc.)
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build-appimage:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libtool autotools-dev automake \
+            pkg-config bsdmainutils python3 autoconf-archive cmake \
+            libssl-dev libevent-dev libboost-all-dev \
+            libsqlite3-dev libdb-dev libdb++-dev \
+            qtbase5-dev qttools5-dev qttools5-dev-tools \
+            libqrencode-dev libprotobuf-dev protobuf-compiler \
+            libminiupnpc-dev libfuse2 wget
+
+      - name: Build RandomX dependency
+        run: |
+          curl --fail -L -o /tmp/randomx-src.tar.gz https://github.com/tevador/RandomX/archive/refs/tags/v1.2.1.tar.gz
+          echo "2e6dd3bed96479332c4c8e4cab2505699ade418a07797f64ee0d4fa394555032  /tmp/randomx-src.tar.gz" | sha256sum -c -
+          tar -xf /tmp/randomx-src.tar.gz -C /tmp
+          cd /tmp/RandomX-1.2.1
+          patch -p1 < ${{ github.workspace }}/depends/patches/randomx/custom_configuration.patch
+          mkdir build && cd build
+          cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON
+          make -j$(nproc)
+          sudo make install
+          sudo ldconfig
+
+      - name: Build rcpu-qt (with GUI)
+        run: |
+          ./autogen.sh
+          CPPFLAGS="-I/usr/local/include" LDFLAGS="-L/usr/local/lib" \
+            ./configure --with-gui=qt5 --prefix=/usr
+          make -j$(nproc)
+
+      - name: Install to AppDir
+        run: |
+          make install DESTDIR=$PWD/AppDir
+
+      - name: Download linuxdeploy & appimagetool
+        run: |
+          wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage -O linuxdeploy
+          wget -q https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage -O linuxdeploy-plugin-qt
+          wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -O appimagetool
+          chmod +x linuxdeploy linuxdeploy-plugin-qt appimagetool
+
+      - name: Create AppImage
+        run: |
+          export QT_SELECT=qt5
+          export LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH
+          ./linuxdeploy --appdir AppDir \
+            --plugin qt \
+            --output appimage
+          ls -la *.AppImage
+
+      - name: Rename AppImage
+        run: |
+          mv *.AppImage rcpu-qt-x86_64.AppImage
+
+      - name: Generate SHA256 checksum
+        run: |
+          sha256sum rcpu-qt-x86_64.AppImage > rcpu-qt-x86_64.AppImage.sha256
+
+      - name: Sign with GPG (if key configured)
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          if [ -z "$GPG_PRIVATE_KEY" ]; then
+            echo "No GPG key configured, skipping signature"
+            exit 0
+          fi
+          echo "$GPG_PRIVATE_KEY" | gpg --batch --yes --import
+          echo "$GPG_PASSPHRASE" | gpg --batch --yes --passphrase-fd 0 \
+            --pinentry-mode loopback \
+            --output rcpu-qt-x86_64.AppImage.asc \
+            --detach-sig rcpu-qt-x86_64.AppImage
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            rcpu-qt-x86_64.AppImage
+            rcpu-qt-x86_64.AppImage.sha256
+            rcpu-qt-x86_64.AppImage.asc
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
