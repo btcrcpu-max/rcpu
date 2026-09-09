@@ -1,14 +1,27 @@
+# RCPU Node Dockerfile (release-binary template)
+#
+# This is an alternative template for running a pre-built binary inside a
+# container placed under docs/nodes. The canonical image is built from source
+# with the repository-root Dockerfile instead:
+#
+#   docker build -t rcpu:latest .
+#   docker run -d --name rcpu-node \
+#     -v ~/.rcpu:/home/rcpu/.rcpu \
+#     -p 7227:7227 \
+#     -p 127.0.0.1:7337:7337 \
+#     rcpu:latest
+
 FROM ubuntu:24.04
 
 LABEL maintainer="RCPU Core"
 LABEL description="RCPU Node"
 
-# Install dependencies
+# Runtime dependencies needed by rcpud / rcpu-cli (SQLite wallet, libevent,
+# boost). No BDB or UPnP libraries are required.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libevent-dev \
-    libzmq5 \
-    libdb5.3++t64 \
-    libminiupnpc17 \
+    libevent-2.1-7t64 \
+    libboost-system1.83.0 \
+    libsqlite3-0 \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
@@ -20,19 +33,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Make executable
 # RUN chmod +x /usr/local/bin/rcpud /usr/local/bin/rcpu-cli
 
-# Create data directory
-RUN mkdir -p /root/.rcpu
+# Non-root user. Data directory is ~/.rcpu (canonical RCPU path, not .bitcoin).
+RUN useradd -m -s /bin/bash rcpu
 
-# Copy default config
-COPY rcpu.conf.template /root/.rcpu/rcpu.conf
+USER rcpu
+WORKDIR /home/rcpu
 
-# Expose ports
-EXPOSE 9965 9962
+# Mount your own rcpu.conf (see docs/nodes/rcpu.conf.template) here:
+#   -v ~/.rcpu:/home/rcpu/.rcpu
+VOLUME ["/home/rcpu/.rcpu"]
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD /usr/local/bin/rcpu-cli -chain=rcpu -datadir=/root/.rcpu \
-    -rpcuser=rcpu -rpcpassword=rcpupass getblockchaininfo || exit 1
+# Expose ports: 7227 P2P, 7337 RPC. The default chain is RCPU mainnet; no
+# -chain argument is needed.
+EXPOSE 7227 7337
 
-# Run as daemon
-CMD ["/usr/local/bin/rcpud", "-chain=rcpu", "-datadir=/root/.rcpu", "-daemon"]
+# Run in the foreground (do not use -daemon inside a container).
+CMD ["rcpud", "-daemon=0", "-printtoconsole"]
