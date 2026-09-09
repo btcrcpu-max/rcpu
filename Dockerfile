@@ -50,7 +50,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libboost-system1.74.0 libsqlite3-0 libstdc++6 \
     && rm -rf /var/lib/apt/lists/*
 
-RUN useradd -m -s /bin/bash rcpu
+RUN useradd -m -s /bin/bash rcpu \
+    && mkdir -p /home/rcpu/.rcpu \
+    && chown -R rcpu:rcpu /home/rcpu
 
 # Shared RandomX library built in Stage 1; ldconfig registers it for rcpud.
 COPY --from=builder /usr/local/lib/librandomx.so* /usr/local/lib/
@@ -59,6 +61,8 @@ RUN ldconfig
 USER rcpu
 WORKDIR /home/rcpu
 
+# Pre-create + chown the datadir so anonymous volume init keeps rcpu ownership;
+# otherwise the mount point is root-owned and rcpud cannot create its wallets dir.
 VOLUME ["/home/rcpu/.rcpu"]
 EXPOSE 7227 7337
 
