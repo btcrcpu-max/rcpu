@@ -1394,7 +1394,7 @@ void RPCConsole::updateAlerts(const QString& warnings)
 void RPCConsole::updateWindowTitle()
 {
     const ChainType chain = Params().GetChainType();
-    if (chain == ChainType::MAIN) return;
+    if (chain == ChainType::RCPUMAIN) return;
 
     const QString chainType = QString::fromStdString(Params().GetChainTypeString());
     const QString title = tr("Node window - [%1]").arg(chainType);
