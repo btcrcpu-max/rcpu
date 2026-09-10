@@ -108,21 +108,27 @@ jobs:
         with:
           name: randomx-linux
           path: /tmp/randomx-linux/
+      - name: Build depends
+        run: make -C depends HOST=x86_64-pc-linux-gnu -j$(nproc)
       - name: Install RandomX into depends prefix
         run: |
-          mkdir -p depends/x86_64-pc-linux-gnu/lib depends/x86_64-pc-linux-gnu/include
-          cp /tmp/randomx-linux/librandomx.a depends/x86_64-pc-linux-gnu/lib/
+          PREFIX="$PWD/depends/x86_64-pc-linux-gnu"
+          mkdir -p "$PREFIX/lib" "$PREFIX/include"
+          cp /tmp/randomx-linux/librandomx.a "$PREFIX/lib/"
           curl --fail -L -o /tmp/rx-src.tgz \
             https://github.com/tevador/RandomX/archive/refs/tags/v1.2.1.tar.gz
           tar -xf /tmp/rx-src.tgz -C /tmp
-          cp /tmp/RandomX-1.2.1/src/randomx.h depends/x86_64-pc-linux-gnu/include/
-      - name: Build depends
-        run: make -C depends HOST=x86_64-pc-linux-gnu -j$(nproc)
+          cp /tmp/RandomX-1.2.1/src/randomx.h "$PREFIX/include/"
+          test -f "$PREFIX/include/randomx.h"
+          test -f "$PREFIX/lib/librandomx.a"
       - name: Configure and build
         run: |
+          PREFIX="$PWD/depends/x86_64-pc-linux-gnu"
           ./autogen.sh
-          ./configure \
-            --prefix="$PWD/depends/x86_64-pc-linux-gnu" \
+          CONFIG_SITE="$PREFIX/share/config.site" \
+          CPPFLAGS="-I$PREFIX/include" \
+          LDFLAGS="-L$PREFIX/lib" \
+          ./configure --prefix="$PREFIX" \
             --disable-bench --disable-tests \
             --with-gui=qt5
           make -j$(nproc)
@@ -188,21 +194,27 @@ jobs:
         with:
           name: randomx-windows
           path: /tmp/randomx-windows/
+      - name: Build depends
+        run: make -C depends HOST=x86_64-w64-mingw32 -j$(nproc)
       - name: Install RandomX into depends prefix
         run: |
-          mkdir -p depends/x86_64-w64-mingw32/lib depends/x86_64-w64-mingw32/include
-          cp /tmp/randomx-windows/librandomx.a depends/x86_64-w64-mingw32/lib/
+          PREFIX="$PWD/depends/x86_64-w64-mingw32"
+          mkdir -p "$PREFIX/lib" "$PREFIX/include"
+          cp /tmp/randomx-windows/librandomx.a "$PREFIX/lib/"
           curl --fail -L -o /tmp/rx-src.tgz \
             https://github.com/tevador/RandomX/archive/refs/tags/v1.2.1.tar.gz
           tar -xf /tmp/rx-src.tgz -C /tmp
-          cp /tmp/RandomX-1.2.1/src/randomx.h depends/x86_64-w64-mingw32/include/
-      - name: Build depends
-        run: make -C depends HOST=x86_64-w64-mingw32 -j$(nproc)
+          cp /tmp/RandomX-1.2.1/src/randomx.h "$PREFIX/include/"
+          test -f "$PREFIX/include/randomx.h"
+          test -f "$PREFIX/lib/librandomx.a"
       - name: Configure and build
         run: |
+          PREFIX="$PWD/depends/x86_64-w64-mingw32"
           ./autogen.sh
-          ./configure \
-            --prefix="$PWD/depends/x86_64-w64-mingw32" \
+          CONFIG_SITE="$PREFIX/share/config.site" \
+          CPPFLAGS="-I$PREFIX/include" \
+          LDFLAGS="-L$PREFIX/lib" \
+          ./configure --prefix="$PREFIX" \
             --disable-bench --disable-tests \
             --with-gui=qt5
           make -j$(nproc)
