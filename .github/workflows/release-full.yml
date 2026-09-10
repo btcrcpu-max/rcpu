@@ -13,13 +13,16 @@ jobs:
   build-randomx-linux:
     runs-on: ubuntu-22.04
     steps:
-      - name: Download and build RandomX (Linux)
+      - uses: actions/checkout@v4
+      - name: Download, patch, and build RandomX (Linux)
         run: |
           curl --fail -L -o /tmp/randomx-src.tar.gz \
             https://github.com/tevador/RandomX/archive/refs/tags/v1.2.1.tar.gz
           echo "2e6dd3bed96479332c4c8e4cab2505699ade418a07797f64ee0d4fa394555032  /tmp/randomx-src.tar.gz" | sha256sum -c -
           tar -xf /tmp/randomx-src.tar.gz -C /tmp
           cd /tmp/RandomX-1.2.1
+          patch -p1 < "${GITHUB_WORKSPACE}/depends/patches/randomx/custom_configuration.patch"
+          grep 'RANDOMX_ARGON_SALT' src/configuration.h
           mkdir build && cd build
           cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF
           make -j$(nproc)
@@ -33,6 +36,7 @@ jobs:
   build-randomx-windows:
     runs-on: ubuntu-22.04
     steps:
+      - uses: actions/checkout@v4
       - name: Install mingw
         run: |
           sudo rm -f /etc/apt/sources.list.d/google-chrome.list || true
@@ -52,13 +56,15 @@ jobs:
           set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
           set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
           TOOLCHAIN
-      - name: Download and build RandomX (Windows cross)
+      - name: Download, patch, and build RandomX (Windows cross)
         run: |
           curl --fail -L -o /tmp/randomx-src.tar.gz \
             https://github.com/tevador/RandomX/archive/refs/tags/v1.2.1.tar.gz
           echo "2e6dd3bed96479332c4c8e4cab2505699ade418a07797f64ee0d4fa394555032  /tmp/randomx-src.tar.gz" | sha256sum -c -
           tar -xf /tmp/randomx-src.tar.gz -C /tmp
           cd /tmp/RandomX-1.2.1
+          patch -p1 < "${GITHUB_WORKSPACE}/depends/patches/randomx/custom_configuration.patch"
+          grep 'RANDOMX_ARGON_SALT' src/configuration.h
           mkdir build-win && cd build-win
           cmake .. -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_TOOLCHAIN_FILE=/tmp/mingw-w64-x86_64.cmake
