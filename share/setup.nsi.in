@@ -27,9 +27,9 @@ Unicode true
 !define MUI_STARTMENUPAGE_REGISTRY_KEY ${REGKEY}
 !define MUI_STARTMENUPAGE_REGISTRY_VALUENAME StartMenuGroup
 !define MUI_STARTMENUPAGE_DEFAULTFOLDER "@PACKAGE_NAME@"
-!define MUI_FINISHPAGE_RUN "$WINDIR\explorer.exe"
-# !RCPU
-!define MUI_FINISHPAGE_RUN_PARAMETERS $INSTDIR\@RCPU_GUI_NAME@@EXEEXT@
+# !RCPU - removed auto-run on finish
+# !define MUI_FINISHPAGE_RUN "$WINDIR\explorer.exe"
+# !define MUI_FINISHPAGE_RUN_PARAMETERS $INSTDIR\@RCPU_GUI_NAME@@EXEEXT@
 # !RCPU END
 !define MUI_UNICON "${NSISDIR}\Contrib\Graphics\Icons\modern-uninstall.ico"
 !define MUI_UNWELCOMEFINISHPAGE_BITMAP "@abs_top_srcdir@/share/pixmaps/nsis-wizard.bmp"
@@ -93,7 +93,7 @@ Section -Main SEC0000
     File @abs_top_builddir@/release/@RCPU_DAEMON_NAME@@EXEEXT@
     File @abs_top_builddir@/release/@RCPU_CLI_NAME@@EXEEXT@
     File @abs_top_builddir@/release/@RCPU_TX_NAME@@EXEEXT@
-File @abs_top_builddir@/release/@RCPU_WALLET_TOOL_NAME@@EXEEXT@
+    File @abs_top_builddir@/release/@RCPU_WALLET_TOOL_NAME@@EXEEXT@
 # !RCPU END
     SetOutPath $INSTDIR
     WriteRegStr HKCU "${REGKEY}\Components" Main 1
@@ -107,7 +107,7 @@ Section -post SEC0001
     CreateDirectory $SMPROGRAMS\$StartMenuGroup
 # !RCPU
     CreateShortcut "$SMPROGRAMS\$StartMenuGroup\$(^Name).lnk" $INSTDIR\@RCPU_GUI_NAME@@EXEEXT@
-    CreateShortcut "$SMPROGRAMS\$StartMenuGroup\@PACKAGE_NAME@ (testnet, 64-bit).lnk" "$INSTDIR\@RCPU_GUI_NAME@@EXEEXT@" "-chain=rcputestnet" "$INSTDIR\@RCPU_GUI_NAME@@EXEEXT@" 1
+    CreateShortcut "$DESKTOP\$(^Name).lnk" $INSTDIR\@RCPU_GUI_NAME@@EXEEXT@
 # !RCPU END
     CreateShortcut "$SMPROGRAMS\$StartMenuGroup\Uninstall $(^Name).lnk" $INSTDIR\uninstall.exe
     !insertmacro MUI_STARTMENU_WRITE_END
@@ -165,9 +165,9 @@ Section -un.post UNSEC0001
 # !RCPU
     Delete /REBOOTOK "$SMSTARTUP\RCPU.lnk"
 # !RCPU END
+    Delete /REBOOTOK "$DESKTOP\$(^Name).lnk"
     Delete /REBOOTOK $INSTDIR\uninstall.exe
-    Delete /REBOOTOK $INSTDIR\debug.log
-    Delete /REBOOTOK $INSTDIR\db.log
+    # Do NOT delete %APPDATA%\RCPU (datadir is separate from install dir)
     DeleteRegValue HKCU "${REGKEY}" StartMenuGroup
     DeleteRegValue HKCU "${REGKEY}" Path
     DeleteRegKey /IfEmpty HKCU "${REGKEY}\Components"
@@ -192,6 +192,21 @@ Function .onInit
       MessageBox MB_OK|MB_ICONSTOP "Cannot install 64-bit version on a 32-bit system."
       Abort
     ${EndIf}
+    # !RCPU - Check if rcpu-qt / rcpud is already running, abort install if so
+    ; detect running GUI: tasklist filtered, findstr exit code 0 = found
+    nsExec::ExecToStack 'cmd /c tasklist /FI "IMAGENAME eq rcpu-qt.exe" | findstr /i rcpu-qt.exe'
+    Pop $R1
+    Pop $R0
+    StrCmp $R1 "0" app_running
+    nsExec::ExecToStack 'cmd /c tasklist /FI "IMAGENAME eq rcpud.exe" | findstr /i rcpud.exe'
+    Pop $R1
+    Pop $R0
+    StrCmp $R1 "0" app_running
+    Goto not_running
+app_running:
+    MessageBox MB_OK|MB_ICONSTOP "RCPU is currently running. Please close it before installing."
+    Abort
+not_running:
 FunctionEnd
 
 # Uninstaller functions
