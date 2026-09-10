@@ -93,8 +93,7 @@ Section -Main SEC0000
     File @abs_top_builddir@/release/@RCPU_DAEMON_NAME@@EXEEXT@
     File @abs_top_builddir@/release/@RCPU_CLI_NAME@@EXEEXT@
     File @abs_top_builddir@/release/@RCPU_TX_NAME@@EXEEXT@
-    File @abs_top_builddir@/release/@RCPU_WALLET_TOOL_NAME@@EXEEXT@
-    File @abs_top_builddir@/release/@RCPU_TEST_NAME@@EXEEXT@
+File @abs_top_builddir@/release/@RCPU_WALLET_TOOL_NAME@@EXEEXT@
 # !RCPU END
     SetOutPath $INSTDIR
     WriteRegStr HKCU "${REGKEY}\Components" Main 1
