@@ -136,14 +136,16 @@ jobs:
       - name: Package Linux
         run: |
           PREFIX=$PWD/depends/x86_64-pc-linux-gnu
-          STAGE=$PWD/rcpu-${GITHUB_REF_NAME}-narnia-core-27.0.0
+          PKGVER=$(sed -n 's/^PACKAGE_VERSION = //p' Makefile | head -1)
+          echo "PACKAGE_VERSION=$PKGVER"
+          STAGE=$PWD/rcpu-${PKGVER}
           rm -rf "$STAGE"
           mkdir -p "$STAGE"
           cp -a "$PREFIX/bin/rcpud" "$PREFIX/bin/rcpu-qt" \
                 "$PREFIX/bin/rcpu-cli" "$PREFIX/bin/rcpu-tx" \
                 "$PREFIX/bin/rcpu-wallet" "$STAGE/" 2>/dev/null || true
           tar -C "$(dirname "$STAGE")" -czf \
-            "rcpu-${GITHUB_REF_NAME}-narnia-core-27.0.0-x86_64-linux-gnu.tgz" \
+            "rcpu-${PKGVER}-x86_64-linux-gnu.tgz" \
             "$(basename "$STAGE")"
           sha256sum *.tgz > SHA256SUMS-linux.txt
       - uses: actions/upload-artifact@v4
@@ -251,7 +253,7 @@ jobs:
     needs: [build-linux, build-windows]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-22.04
-    steps:
+steps:
       - uses: actions/download-artifact@v4
         with:
           name: linux-package
@@ -260,8 +262,13 @@ jobs:
         with:
           name: windows-package
           path: windows/
+      - name: Merge checksums
+        run: |
+          cat linux/SHA256SUMS-linux.txt windows/SHA256SUMS-windows.txt > SHA256SUMS.txt
+          cat SHA256SUMS.txt
       - uses: softprops/action-gh-release@v2
         with:
           files: |
             linux/*
             windows/*
+            SHA256SUMS.txt
