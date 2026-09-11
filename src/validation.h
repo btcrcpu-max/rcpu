@@ -367,6 +367,16 @@ static_assert(std::is_nothrow_destructible_v<CScriptCheck>);
 /** Context-independent validity checks */
 bool CheckBlock(const CBlock& block, BlockValidationState& state, const Consensus::Params& consensusParams, bool fCheckPOW = true, bool fCheckMerkleRoot = true);
 
+/** RCPU: reject coinbase transactions that create confidential (committed) outputs.
+ *
+ * Coinbase outputs skip CheckTxInputs/VerifyAmounts entirely (ConnectBlock
+ * only calls it for non-coinbase transactions), and GetValueOut() counts
+ * committed values as 0, so a v3 coinbase sized as the subsidy with a large
+ * commitment would pass the bad-cb-amount check and mint unlimited supply.
+ * This is a context-free block rule enforced in CheckBlock on every node.
+ */
+bool CheckCoinbaseOutputsExplicit(const CTransaction& cb, BlockValidationState& state);
+
 /** Check a block is completely valid from start to finish (only works on top of our current best block) */
 bool TestBlockValidity(BlockValidationState& state,
                        const CChainParams& chainparams,
