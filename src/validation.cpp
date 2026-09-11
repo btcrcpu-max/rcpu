@@ -3811,6 +3811,21 @@ static bool CheckWitnessMalleation(const CBlock& block, bool expect_witness_comm
     return true;
 }
 
+bool CheckCoinbaseOutputsExplicit(const CTransaction& cb, BlockValidationState& state)
+{
+    if (!cb.IsCoinBase()) {
+        return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-cb-missing",
+                             "first tx is not coinbase");
+    }
+    for (const auto& txout : cb.vout) {
+        if (!txout.nValue.IsExplicit()) {
+            return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-cb-confidential",
+                                 "coinbase output is confidential");
+        }
+    }
+    return true;
+}
+
 bool CheckBlock(const CBlock& block, BlockValidationState& state, const Consensus::Params& consensusParams, bool fCheckPOW, bool fCheckMerkleRoot)
 {
     // These are checks that are independent of context.
@@ -3849,6 +3864,12 @@ bool CheckBlock(const CBlock& block, BlockValidationState& state, const Consensu
     for (unsigned int i = 1; i < block.vtx.size(); i++)
         if (block.vtx[i]->IsCoinBase())
             return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-cb-multiple", "more than one coinbase");
+
+    // RCPU: coinbase must not create confidential (committed) outputs. Coinbase
+    // skips CheckTxInputs/VerifyAmounts and GetValueOut() counts commitments as
+    // 0, so a committed coinbase would pass the subsidy check and inflate supply.
+    if (!CheckCoinbaseOutputsExplicit(*block.vtx[0], state))
+        return false;
 
     // Check transactions
     // Must check for duplicate inputs (see CVE-2018-17144)

@@ -84,6 +84,7 @@ BITCOIN_TESTS =\
   test/bloom_tests.cpp \
   test/bswap_tests.cpp \
   test/checkqueue_tests.cpp \
+  test/coinbase_confidential_tests.cpp \
   test/coins_tests.cpp \
   test/confidential_validation_tests.cpp \
   test/coinstatsindex_tests.cpp \
