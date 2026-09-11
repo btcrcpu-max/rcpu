@@ -5,8 +5,12 @@
 #include <boost/test/unit_test.hpp>
 
 #include <blind.h>
+#include <coins.h>
 #include <key.h>
 #include <primitives/confidential.h>
+#include <primitives/transaction.h>
+#include <script/script.h>
+#include <streams.h>
 #include <test/util/setup_common.h>
 #include <uint256.h>
 
@@ -62,6 +66,67 @@ BOOST_AUTO_TEST_CASE(blind_to_recipient_roundtrip)
     BOOST_REQUIRE(UnblindValueWithKey(recv_key, conf_value, nonce_commit, rangeproof, amount_out, blind_out));
     BOOST_CHECK_EQUAL(amount_out, amount);
     BOOST_CHECK(blind_out == blind);
+}
+
+// Regression test for the VerifyDB (level 3) "coin database inconsistencies
+// found" failure on CT chains. Coin serialization used to route through
+// TxOutCompression, which only persisted nValue and scriptPubKey and dropped
+// nNonce and vchRangeproof. After restart, coins loaded from the chainstate
+// DB had an empty nNonce, so CTxOut::operator== failed during
+// DisconnectBlock's VerifyDB reconnect, producing the corrupted-database
+// dialog. This test asserts that a Coin carrying a fully confidential output
+// round-trips all CT fields intact.
+BOOST_AUTO_TEST_CASE(coin_roundtrip_preserves_ct_fields)
+{
+    const CAmount amount = 424242;
+    CConfidentialValue conf_value;
+    CConfidentialNonce nonce_commit;
+    std::vector<unsigned char> rangeproof;
+    uint256 blind;
+    uint256 nonce;
+
+    BOOST_REQUIRE(BlindOutput(conf_value, nonce_commit, rangeproof, blind, nonce, amount));
+    BOOST_CHECK(conf_value.IsCommitment());
+    BOOST_CHECK(!nonce_commit.IsNull());
+    BOOST_CHECK(!rangeproof.empty());
+
+    // A spendable CT output: committed value, recipient nonce, range proof
+    // and a minimal scriptPubKey.
+    CScript script_pubkey = CScript() << OP_TRUE;
+    CTxOut out;
+    out.nValue = conf_value;
+    out.nNonce = nonce_commit;
+    out.vchRangeproof = rangeproof;
+    out.scriptPubKey = script_pubkey;
+
+    const int nHeight = 1227;
+    const bool fCoinBase = false;
+    const Coin coin_in(out, nHeight, fCoinBase);
+
+    // Serialize the coin exactly as it would be flushed to the chainstate DB.
+    CDataStream ss(SER_DISK, 0);
+    ss << coin_in;
+
+    // Deserialize it back, as happens when the coin is loaded after restart.
+    Coin coin_out;
+    ss >> coin_out;
+
+    // The full CT prefix must survive the disk round-trip. Before the fix
+    // nNonce was dropped (TxOutCompression omitted it) and this comparison
+    // failed with "coin database inconsistencies found (last N blocks)".
+    BOOST_CHECK(coin_out.out.nValue == coin_in.out.nValue);
+    BOOST_CHECK(coin_out.out.nNonce == coin_in.out.nNonce);
+    BOOST_CHECK(coin_out.out.vchRangeproof == coin_in.out.vchRangeproof);
+    BOOST_CHECK(coin_out.out.scriptPubKey == coin_in.out.scriptPubKey);
+
+    // CTxOut::operator== compares nValue, nNonce and scriptPubKey; it must
+    // hold on the round-tripped output.
+    BOOST_CHECK(coin_out.out == coin_in.out);
+
+    // Metadata survives too.
+    BOOST_CHECK(coin_out.nHeight == static_cast<uint32_t>(nHeight));
+    BOOST_CHECK(coin_out.fCoinBase == fCoinBase);
+    BOOST_CHECK(!coin_out.IsSpent());
 }
 
 BOOST_AUTO_TEST_SUITE_END()
