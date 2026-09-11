@@ -577,7 +577,7 @@ public:
         consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT;
         consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].min_activation_height = 0; // No activation delay
 
-        consensus.nMinimumChainWork = uint256S("00000000000000000000000000000000000000000000000000000001fc87aa3c");
+        consensus.nMinimumChainWork = uint256S("0000000000000000000000000000000000000000000000000000000001940138");  // height 100 (real node measurement)
         consensus.defaultAssumeValid = uint256S("75872099399e9682e72795beeac617f1e911573df97d93a14f6ff0d5adab85d5");  // height 3634
 
         // The half life for the ASERT DAA. For every (nASERTHalfLife) seconds behind schedule the blockchain gets,
