@@ -117,7 +117,17 @@ struct TxOutCompression
         // instead of calling GetAmount(), which asserts for confidential outputs.
         // CConfidentialValue self-describes its type via the first byte:
         //   0x00 = null, 0x01 = explicit (8 bytes BE), 0x08/0x09 = commitment (32 bytes)
-        READWRITE(obj.nValue.vchCommitment, Using<ScriptCompression>(obj.scriptPubKey));
+        //
+        // RCPU fix: also persist nNonce and vchRangeproof for CT outputs.
+        // Omitting them caused VerifyDB (level 3) to report
+        // "coin database inconsistencies found" during DisconnectBlock,
+        // because CTxOut::operator== compares nNonce and the coin read back
+        // from the chainstate DB had lost it. The chainstate format changes,
+        // so existing nodes must reindex (see release notes).
+        READWRITE(obj.nValue.vchCommitment,
+                  obj.nNonce.vchCommitment,
+                  obj.vchRangeproof,
+                  Using<ScriptCompression>(obj.scriptPubKey));
     }
 };
 
