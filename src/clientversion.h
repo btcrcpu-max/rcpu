@@ -1,6 +1,12 @@
 // Copyright (c) 2009-2022 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
+//
+// RCPU (dnl !RCPU): This fork tracks its own release version.  The canonical
+// version is v1.0.9, defined by _RCPU_CLIENT_VERSION_* in configure.ac and
+// mapped to CLIENT_VERSION_* here via config/bitcoin-config.h.  Older mixed
+// naming (narnia/1.0.2, core-27.0.0) is intentionally gone: the version
+// string must equal the actual consensus rule set.
 
 #ifndef BITCOIN_CLIENTVERSION_H
 #define BITCOIN_CLIENTVERSION_H

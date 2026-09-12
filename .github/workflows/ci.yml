@@ -51,7 +51,18 @@ jobs:
           # deployed consensus implementation (genesis is short-circuited) and are
           # not part of this remediation, so they are excluded deliberately.
           ./src/test/test_bitcoin --log_level=test_suite \
-            --run_test=blind_tests,confidential_validation_tests,randomx_tests
+            --run_test=blind_tests,confidential_validation_tests,randomx_tests,coinbase_confidential_tests
+      - name: Consensus gate - explicit coinbase symbol
+        run: |
+          # v1.0.9 rule: every coinbase output must be explicit. The published
+          # binary must carry this enforcement; otherwise the strings build probe
+          # fails and the release is blocked.
+          BIN=$(ls src/rcpud src/bitcoind 2>/dev/null | head -1)
+          test -n "$BIN" && test -x "$BIN"
+          echo "== checking $BIN for bad-cb-confidential =="
+          strings "$BIN" | grep -q "bad-cb-confidential" ||             { echo "ERROR: rcpud missing bad-cb-confidential (consensus rule not enforced)"; exit 1; }
+          strings "$BIN" | grep -q "CheckCoinbaseOutputsExplicit" ||             { echo "ERROR: rcpud missing CheckCoinbaseOutputsExplicit symbol"; exit 1; }
+          echo "OK: explicit-coinbase rule is enforced in this binary"
   build-gui:
     runs-on: ubuntu-24.04
     steps:
