@@ -21,14 +21,17 @@
 BOOST_FIXTURE_TEST_SUITE(coinbase_confidential_tests, BasicTestingSetup)
 
 // Decode a full block (as captured during the P0 poison-block experiment)
-// and return its coinbase transaction.
-static const CTransaction& CoinbaseOfBlockHex(const std::string& hex)
+// and return its coinbase transaction.  Returned by shared ownership: the
+// decoded CBlock is a stack local, and handing out a reference to its vtx[0]
+// would dangle as soon as the helper returns, making the fixture checks
+// undefined behavior (observed as spurious bad-cb-missing on CI).
+static CTransactionRef CoinbaseOfBlockHex(const std::string& hex)
 {
     CBlock block;
     BOOST_REQUIRE(DecodeHexBlk(block, hex));
     BOOST_REQUIRE(!block.vtx.empty());
     BOOST_REQUIRE(block.vtx[0]->IsCoinBase());
-    return *block.vtx[0];
+    return block.vtx[0];
 }
 
 // A coinbase whose outputs are all explicit passes the rule.
@@ -100,14 +103,14 @@ BOOST_AUTO_TEST_CASE(real_poison_block_explicit_A_passes)
 {
     BlockValidationState state;
     BOOST_CHECK(CheckCoinbaseOutputsExplicit(
-        CoinbaseOfBlockHex(hex_tests::cb_explicit_A), state));
+        *CoinbaseOfBlockHex(hex_tests::cb_explicit_A), state));
 }
 
 BOOST_AUTO_TEST_CASE(real_poison_block_committed_B_rejected)
 {
     BlockValidationState state;
     BOOST_CHECK(!CheckCoinbaseOutputsExplicit(
-        CoinbaseOfBlockHex(hex_tests::cb_confidential_B), state));
+        *CoinbaseOfBlockHex(hex_tests::cb_confidential_B), state));
     BOOST_CHECK_EQUAL(state.GetRejectReason(), "bad-cb-confidential");
 }
 
@@ -115,7 +118,7 @@ BOOST_AUTO_TEST_CASE(real_poison_block_mixed_C_rejected)
 {
     BlockValidationState state;
     BOOST_CHECK(!CheckCoinbaseOutputsExplicit(
-        CoinbaseOfBlockHex(hex_tests::cb_confidential_C), state));
+        *CoinbaseOfBlockHex(hex_tests::cb_confidential_C), state));
     BOOST_CHECK_EQUAL(state.GetRejectReason(), "bad-cb-confidential");
 }
 
