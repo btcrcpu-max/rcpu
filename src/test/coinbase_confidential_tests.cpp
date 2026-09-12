@@ -4,15 +4,35 @@
 
 #include <boost/test/unit_test.hpp>
 
+#include <core_io.h>
+#include <primitives/block.h>
 #include <consensus/validation.h>
 #include <primitives/transaction.h>
 #include <script/script.h>
+#include <test/data/cb_explicit_A.hex.h>
+#include <test/data/cb_confidential_B.hex.h>
+#include <test/data/cb_confidential_C.hex.h>
 #include <test/util/setup_common.h>
 #include <validation.h>
 
+#include <string>
 #include <vector>
 
 BOOST_FIXTURE_TEST_SUITE(coinbase_confidential_tests, BasicTestingSetup)
+
+// Decode a full block (as captured during the P0 poison-block experiment)
+// and return its coinbase transaction.  Returned by shared ownership: the
+// decoded CBlock is a stack local, and handing out a reference to its vtx[0]
+// would dangle as soon as the helper returns, making the fixture checks
+// undefined behavior (observed as spurious bad-cb-missing on CI).
+static CTransactionRef CoinbaseOfBlockHex(const std::string& hex)
+{
+    CBlock block;
+    BOOST_REQUIRE(DecodeHexBlk(block, hex));
+    BOOST_REQUIRE(!block.vtx.empty());
+    BOOST_REQUIRE(block.vtx[0]->IsCoinBase());
+    return block.vtx[0];
+}
 
 // A coinbase whose outputs are all explicit passes the rule.
 BOOST_AUTO_TEST_CASE(explicit_coinbase_passes)
@@ -71,6 +91,34 @@ BOOST_AUTO_TEST_CASE(mixed_coinbase_rejected)
 
     BlockValidationState state;
     BOOST_CHECK(!CheckCoinbaseOutputsExplicit(CTransaction(cb), state));
+    BOOST_CHECK_EQUAL(state.GetRejectReason(), "bad-cb-confidential");
+}
+
+// Real regtest poison blocks from the P0 experiment (see
+// RCPU-P0-poison-verification-2026-09-12.md). These are full blocks, not
+// hand-written transactions, so they exercise the exact serialization the
+// network produced: an all-explicit coinbase must pass, while fully
+// committed and mixed coinbases must both be rejected.
+BOOST_AUTO_TEST_CASE(real_poison_block_explicit_A_passes)
+{
+    BlockValidationState state;
+    BOOST_CHECK(CheckCoinbaseOutputsExplicit(
+        *CoinbaseOfBlockHex(hex_tests::cb_explicit_A), state));
+}
+
+BOOST_AUTO_TEST_CASE(real_poison_block_committed_B_rejected)
+{
+    BlockValidationState state;
+    BOOST_CHECK(!CheckCoinbaseOutputsExplicit(
+        *CoinbaseOfBlockHex(hex_tests::cb_confidential_B), state));
+    BOOST_CHECK_EQUAL(state.GetRejectReason(), "bad-cb-confidential");
+}
+
+BOOST_AUTO_TEST_CASE(real_poison_block_mixed_C_rejected)
+{
+    BlockValidationState state;
+    BOOST_CHECK(!CheckCoinbaseOutputsExplicit(
+        *CoinbaseOfBlockHex(hex_tests::cb_confidential_C), state));
     BOOST_CHECK_EQUAL(state.GetRejectReason(), "bad-cb-confidential");
 }
 

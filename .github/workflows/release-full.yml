@@ -139,6 +139,15 @@ jobs:
             --with-gui=qt5
           make -j$(nproc)
           make install
+      - name: Consensus gate - explicit coinbase symbol (Linux)
+        run: |
+          # v1.0.9 rule: coinbase outputs must be explicit. The published Linux
+          # binary must carry the enforcement; otherwise the release is blocked.
+          BIN="$PWD/depends/x86_64-pc-linux-gnu/bin/rcpud"
+          test -x "$BIN" || { echo "ERROR: $BIN missing"; exit 1; }
+          strings "$BIN" | grep -q "bad-cb-confidential" ||             { echo "ERROR: rcpud missing bad-cb-confidential (consensus rule not enforced)"; exit 1; }
+          strings "$BIN" | grep -q "CheckCoinbaseOutputsExplicit" ||             { echo "ERROR: rcpud missing CheckCoinbaseOutputsExplicit symbol"; exit 1; }
+          echo "OK: Linux rcpud enforces explicit-coinbase rule"
       - name: Package Linux
         run: |
           PREFIX=$PWD/depends/x86_64-pc-linux-gnu
@@ -226,6 +235,16 @@ jobs:
             --with-gui=qt5
           make -j$(nproc)
           make deploy
+      - name: Consensus gate - explicit coinbase symbol (Windows)
+        run: |
+          # v1.0.9 rule: coinbase outputs must be explicit. The published
+          # Windows binary must carry the enforcement; otherwise the release
+          # is blocked.
+          BIN=$(ls -1t src/rcpud.exe 2>/dev/null | head -1)
+          test -n "$BIN" && test -x "$BIN" ||             { echo "ERROR: src/rcpud.exe missing"; exit 1; }
+          strings "$BIN" | grep -q "bad-cb-confidential" ||             { echo "ERROR: rcpud.exe missing bad-cb-confidential (consensus rule not enforced)"; exit 1; }
+          strings "$BIN" | grep -q "CheckCoinbaseOutputsExplicit" ||             { echo "ERROR: rcpud.exe missing CheckCoinbaseOutputsExplicit symbol"; exit 1; }
+          echo "OK: Windows rcpud.exe enforces explicit-coinbase rule"
       - name: Package Windows
         run: |
           echo "=== looking for installer / exe ==="

@@ -2513,6 +2513,15 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
              Ticks<MillisecondsDouble>(time_connect) / num_blocks_total);
 
     CAmount blockReward = nFees + GetBlockSubsidy(pindex->nHeight, params.GetConsensus());
+    // Path B (double-check): re-enforce explicit coinbase outputs right before
+    // the subsidy comparison. CheckBlock (path A) covers IBD/submitblock, but
+    // path B guards tip activation and reorg paths where ConnectBlock runs on
+    // a block already stored by an older binary. GetValueOut() counts
+    // confidential commitments as 0, so an explicit check here is the only
+    // thing standing between a malicious coinbase and free-minted supply.
+    // Failure returns before view is committed, rolling back the whole block.
+    if (!CheckCoinbaseOutputsExplicit(*block.vtx[0], state))
+        return false;
     if (block.vtx[0]->GetValueOut() > blockReward) {
         LogPrintf("ERROR: ConnectBlock(): coinbase pays too much (actual=%d vs limit=%d)\n", block.vtx[0]->GetValueOut(), blockReward);
         return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-cb-amount");
