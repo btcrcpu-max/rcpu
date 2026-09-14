@@ -61,6 +61,35 @@ python security_audit.py
 - Critical issues and warnings
 - Remediation recommendations
 
+### scan_fee_utxos.py
+
+Scan the chain for fee-shaped outputs matching `CTxOut::IsFee()` (explicit value + empty scriptPubKey), and report which of them are still in the UTXO set.
+
+```bash
+# Scan the whole chain with local cookie auth (~/.rcpu/.cookie)
+python3 scan_fee_utxos.py
+
+# Scan a range and write a JSON report (e.g. for alerting)
+python3 scan_fee_utxos.py --from-height 0 --to-height 10000 \
+  --json-out fee_utxo_report.json
+
+# Only care about outputs that are still unspent
+python3 scan_fee_utxos.py --unspent-only
+```
+
+**Options:**
+- `--rpc-url URL` / `--rpc-user USER` / `--rpc-password PASS` — explicit RPC endpoint and credentials (default endpoint: http://127.0.0.1:7337)
+- `--from-height N` / `--to-height N` — scan range (default: from 0 to chain tip)
+- `--json-out FILE` — write a JSON report (scan range, counts, unspent list)
+- `--unspent-only` — only report/still unspent outputs (omit spent/absent details)
+
+**Environment variables** (overridden by command line args): `RCPU_RPC_URL`, `RCPU_RPC_USER`, `RCPU_RPC_PASSWORD`.
+
+**Features:**
+- Fee shape detection identical to `CTxOut::IsFee()`: explicit (non-confidential) amount + empty scriptPubKey
+- Unspent check via `gettxout` only — no `-txindex` required
+- Exit codes: `0` scan completed with no still-unspent fee-shaped UTXO, `1` RPC error, `2` authentication failed / cookie not found, `3` still-unspent fee-shaped UTXO(s) found (alarm)
+
 ## Configuration
 
 Both scripts use a common configuration pattern. Edit the `NODES` list at the top of each script:
