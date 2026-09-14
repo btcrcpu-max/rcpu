@@ -17,25 +17,21 @@ or serves wallets.
 Download the latest release from GitHub Releases:
 
 ```bash
-VERSION=1.0.9
-wget https://github.com/btcrcpu-max/rcpu/releases/download/v${VERSION}/rcpu-v${VERSION}-linux-x86_64.tar.gz
-wget https://github.com/btcrcpu-max/rcpu/releases/download/v${VERSION}/SHA256SUMS.txt
-wget https://github.com/btcrcpu-max/rcpu/releases/download/v${VERSION}/SHA256SUMS.txt.asc
-wget https://raw.githubusercontent.com/btcrcpu-max/rcpu/main/RCPU-DEV-GPG-KEY.asc
+VERSION=1.0.10
+wget https://github.com/btcrcpu-max/rcpu/releases/download/v${VERSION}/rcpu-${VERSION}-x86_64-linux-gnu.tgz
+wget https://github.com/btcrcpu-max/rcpu/releases/download/v${VERSION}/SHA256SUMS-linux.txt
 ```
 
 Verify:
 
 ```bash
-gpg --import RCPU-DEV-GPG-KEY.asc
-gpg --verify SHA256SUMS.txt.asc SHA256SUMS.txt
-sha256sum -c SHA256SUMS.txt
+sha256sum -c SHA256SUMS-linux.txt
 ```
 
 Extract:
 
 ```bash
-tar -xzf rcpu-v${VERSION}-linux-x86_64.tar.gz
+tar -xzf rcpu-${VERSION}-x86_64-linux-gnu.tgz
 ```
 
 Or build from source:
