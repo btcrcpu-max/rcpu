@@ -23,6 +23,8 @@ autom4te.cache
 configure
 configure~
 config.status
+config.status.*
+libbitcoinconsensus.pc
 config.log
 config.h
 config.h.in

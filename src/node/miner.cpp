@@ -148,7 +148,9 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(const CScript& sc
     m_last_block_num_txs = nBlockTx;
     m_last_block_weight = nBlockWeight;
 
-    // Create coinbase transaction.
+// Create coinbase transaction.
+    // nVersion uses CMutableTransaction's default CURRENT_VERSION=2. The
+    // coinbase must carry explicit amounts; never set CT_VERSION=3 here.
     CMutableTransaction coinbaseTx;
     coinbaseTx.vin.resize(1);
     coinbaseTx.vin[0].prevout.SetNull();

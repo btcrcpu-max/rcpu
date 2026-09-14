@@ -1,4 +1,3 @@
-#include <cstdio>
 // Copyright (c) 2010 Satoshi Nakamoto
 // Copyright (c) 2009-2021 The Bitcoin Core developers
 // Copyright (c) 2024-2026 The RCPU developers
@@ -25,6 +24,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <type_traits>
 
