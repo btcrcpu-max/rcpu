@@ -63,6 +63,13 @@ jobs:
           strings "$BIN" | grep -q "bad-cb-confidential" ||             { echo "ERROR: rcpud missing bad-cb-confidential (consensus rule not enforced)"; exit 1; }
           strings "$BIN" | grep -q "CheckCoinbaseOutputsExplicit" ||             { echo "ERROR: rcpud missing CheckCoinbaseOutputsExplicit symbol"; exit 1; }
           echo "OK: explicit-coinbase rule is enforced in this binary"
+      - name: Branding gate - no user-visible bitcoin strings
+        run: |
+          # Source identifiers (bitcoin-cli.cpp, BITCOIN_* macros) may stay
+          # for diff hygiene, but what the binaries print must say RCPU.
+          ! strings src/rcpu-cli | grep -E 'bitcoin-cli|bitcoind server'
+          ! strings src/rcpud     | grep -F 'if bitcoin is started'
+          echo "OK: no user-visible bitcoin strings in shipped binaries"
   build-gui:
     runs-on: ubuntu-24.04
     steps:
