@@ -30,7 +30,7 @@ and `configure.ac`.
 1. Tag the release:
 
 ```bash
-   git tag -s v1.0.11 -m "RCPU Core v1.0.11"
+   git tag -s v1.0.12 -m "RCPU Core v1.0.12"
    ```
 
 2. Build on a clean Ubuntu 22.04 environment:
@@ -50,7 +50,7 @@ and `configure.ac`.
 3. Create the tarball:
 
    ```bash
-   VERSION=1.0.11      # must equal the tag being released
+   VERSION=1.0.12      # must equal the tag being released
    make install DESTDIR="$PWD/stage"
    tar -czf rcpu-${VERSION}-x86_64-linux-gnu.tgz \
      -C stage/usr/local/bin rcpud rcpu-cli rcpu-tx rcpu-util rcpu-wallet
