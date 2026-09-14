@@ -52,20 +52,21 @@ and `configure.ac`.
    ```bash
    VERSION=1.0.10      # must equal the tag being released
    make install DESTDIR="$PWD/stage"
-   tar -czf rcpu-v${VERSION}-linux-x86_64.tar.gz \
+   tar -czf rcpu-${VERSION}-x86_64-linux-gnu.tgz \
      -C stage/usr/local/bin rcpud rcpu-cli rcpu-tx rcpu-util rcpu-wallet
    ```
 
-4. Generate checksums:
+4. Generate checksums (same name as the `release-full.yml` CI job):
 
    ```bash
-   sha256sum rcpu-v*-linux-x86_64.tar.gz > SHA256SUMS.txt
+   sha256sum rcpu-${VERSION}-x86_64-linux-gnu.tgz > SHA256SUMS-linux.txt
    ```
 
-5. Sign the checksums:
+5. Sign the checksums (optional; the GitHub Actions release workflow
+   currently uploads `SHA256SUMS-linux.txt` without a detached signature):
 
    ```bash
-   gpg --detach-sign --armor SHA256SUMS.txt
+   gpg --detach-sign --armor SHA256SUMS-linux.txt
    ```
 
 ### Reproducible Builds
@@ -97,8 +98,9 @@ the Bitcoin Core build process can adapt the Guix configuration for RCPU.
 
   ```bash
   gpg --import RCPU-DEV-GPG-KEY.asc
-  gpg --verify SHA256SUMS.txt.asc
-  sha256sum -c SHA256SUMS.txt
+  # Detached GPG signatures are not published with current releases;
+  # verify the checksums only.
+  sha256sum -c SHA256SUMS-linux.txt
   ```
 
 ## Release Checklist
@@ -107,8 +109,8 @@ the Bitcoin Core build process can adapt the Guix configuration for RCPU.
 2. [ ] Version bumped in `configure.ac` and `src/clientversion.h`
 3. [ ] Git tag created and signed
 4. [ ] Binaries built on clean environment
-5. [ ] SHA256SUMS generated and signed
-6. [ ] GitHub Release created with tarball, SHA256SUMS, and SHA256SUMS.asc
+5. [ ] SHA256SUMS-linux.txt generated
+6. [ ] GitHub Release created with tarball and SHA256SUMS-linux.txt
 7. [ ] Release notes added to `doc/release-notes/`
 8. [ ] `doc/consensus-params.md` matches `chainparams.cpp` (chainwork / assumevalid / checkpoints)
 9. [ ] Announcement on Telegram
