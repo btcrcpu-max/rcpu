@@ -17,7 +17,7 @@ or serves wallets.
 Download the latest release from GitHub Releases:
 
 ```bash
-VERSION=1.0.11
+VERSION=1.0.12
 wget https://github.com/btcrcpu-max/rcpu/releases/download/v${VERSION}/rcpu-${VERSION}-x86_64-linux-gnu.tgz
 wget https://github.com/btcrcpu-max/rcpu/releases/download/v${VERSION}/SHA256SUMS-linux.txt
 ```
