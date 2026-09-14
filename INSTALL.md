@@ -4,10 +4,10 @@
 
 See [docs/nodes/README.md](docs/nodes/README.md).
 
-Current package name:
+Current package name (Linux, see [docs/nodes/README.md](docs/nodes/README.md) for exact asset names per release):
 
 ```
-rcpu-vVERSION-linux-x86_64.tar.gz
+rcpu-${VERSION}-x86_64-linux-gnu.tgz
 ```
 
 ## From source
