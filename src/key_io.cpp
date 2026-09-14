@@ -29,6 +29,10 @@ public:
 
     std::string operator()(const PKHash& id) const
     {
+        // RCPU mainnet is bech32-only (README "Address Format"). Never emit
+        // base58 legacy addresses on mainnet, even though the template
+        // prefix bytes remain in chainparams for test/signet and decoding.
+        if (m_params.GetChainType() == ChainType::RCPUMAIN) return {};
         std::vector<unsigned char> data = m_params.Base58Prefix(CChainParams::PUBKEY_ADDRESS);
         data.insert(data.end(), id.begin(), id.end());
         return EncodeBase58Check(data);
@@ -36,6 +40,7 @@ public:
 
     std::string operator()(const ScriptHash& id) const
     {
+        if (m_params.GetChainType() == ChainType::RCPUMAIN) return {};
         std::vector<unsigned char> data = m_params.Base58Prefix(CChainParams::SCRIPT_ADDRESS);
         data.insert(data.end(), id.begin(), id.end());
         return EncodeBase58Check(data);
@@ -226,6 +231,8 @@ CKey DecodeSecret(const std::string& str)
 
 std::string EncodeSecret(const CKey& key)
 {
+    // RCPU mainnet is bech32-only; do not emit WIF (base58check) either.
+    if (Params().GetChainType() == ChainType::RCPUMAIN) return {};
     assert(key.IsValid());
     std::vector<unsigned char> data = Params().Base58Prefix(CChainParams::SECRET_KEY);
     data.insert(data.end(), UCharCast(key.begin()), UCharCast(key.end()));

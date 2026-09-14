@@ -122,10 +122,15 @@ consensus and may change.
 ```ini
 addnode=seed1.rcpu.top:7227
 addnode=seed2.rcpu.top:7227
+addnode=207.57.129.188:7227
+addnode=38.147.171.29:7227
+addnode=43.159.51.23:7227
 addnode=38.55.199.177:7227
 addnode=119.28.152.245:7227
-addnode=207.57.129.188:7227
 ```
+
+This list mirrors `share/examples/rcpu.conf` and the compiled seeds in
+`src/chainparamsseeds.h`; keep the three in sync.
 
 ## Monitoring
 
