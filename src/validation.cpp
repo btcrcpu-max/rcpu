@@ -2387,10 +2387,15 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
     // testnet3 has no blocks before the BIP34 height with indicated heights
     // post BIP34 before approximately height 486,000,000. After block
     // 1,983,702 testnet3 starts doing unnecessary BIP30 checking again.
-    assert(pindex->pprev);
-    CBlockIndex* pindexBIP34height = pindex->pprev->GetAncestor(params.GetConsensus().BIP34Height);
-    //Only continue to enforce if we're below BIP34 activation height or the block hash at that height doesn't correspond.
-    fEnforceBIP30 = fEnforceBIP30 && (!pindexBIP34height || !(pindexBIP34height->GetBlockHash() == params.GetConsensus().BIP34Hash));
+    // The genesis block has no ancestor to walk, and test fixtures connect it
+    // through this same path, so guard instead of asserting (issue #6). Skipping
+    // the BIP34 refinement for height 0 is safe: BIP30 needs two blocks with the
+    // same coinbase, which cannot exist before any block has been mined.
+    if (pindex->pprev) {
+        CBlockIndex* pindexBIP34height = pindex->pprev->GetAncestor(params.GetConsensus().BIP34Height);
+        //Only continue to enforce if we're below BIP34 activation height or the block hash at that height doesn't correspond.
+        fEnforceBIP30 = fEnforceBIP30 && (!pindexBIP34height || !(pindexBIP34height->GetBlockHash() == params.GetConsensus().BIP34Hash));
+    }
 
     // TODO: Remove BIP30 checking from block height 1,983,702 on, once we have a
     // consensus change that ensures coinbases at those heights cannot

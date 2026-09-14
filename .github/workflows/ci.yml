@@ -51,7 +51,7 @@ jobs:
           # deployed consensus implementation (genesis is short-circuited) and are
           # not part of this remediation, so they are excluded deliberately.
           ./src/test/test_bitcoin --log_level=test_suite \
-            --run_test=blind_tests,confidential_validation_tests,randomx_tests,coinbase_confidential_tests
+            --run_test=blind_tests,confidential_validation_tests,randomx_tests,coinbase_confidential_tests,group_outputs_tests
       - name: Consensus gate - explicit coinbase symbol
         run: |
           # v1.0.9 rule: every coinbase output must be explicit. The published
