@@ -654,6 +654,9 @@ public:
         m_assumeutxo_data = {
         };
 
+// genesis placeholder, NOT used for consensus. Fill from a synced
+        // node with: getchaintxstats 4096 <checkpoint_or_tip_hash>. Do not
+        // invent values.
         chainTxData = ChainTxData{
             .nTime    = 1788566400,
             .nTxCount = 1,

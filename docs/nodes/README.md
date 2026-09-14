@@ -17,7 +17,7 @@ or serves wallets.
 Download the latest release from GitHub Releases:
 
 ```bash
-VERSION=1.0.2
+VERSION=1.0.9
 wget https://github.com/btcrcpu-max/rcpu/releases/download/v${VERSION}/rcpu-v${VERSION}-linux-x86_64.tar.gz
 wget https://github.com/btcrcpu-max/rcpu/releases/download/v${VERSION}/SHA256SUMS.txt
 wget https://github.com/btcrcpu-max/rcpu/releases/download/v${VERSION}/SHA256SUMS.txt.asc
@@ -43,10 +43,16 @@ Or build from source:
 ```bash
 sudo apt-get update
 sudo apt-get install -y build-essential libtool autotools-dev automake \
-  pkg-config bsdmainutils python3 libevent-dev libboost-dev libsqlite3-dev
+  pkg-config bsdmainutils python3 cmake curl ca-certificates patch \
+  libevent-dev libboost-dev libsqlite3-dev
 
 git clone https://github.com/btcrcpu-max/rcpu.git
 cd rcpu
+
+# RandomX v1.2.1 is a hard dependency of configure.ac; this builds the
+# same sha256-verified, patched variant that CI and the Dockerfile use.
+sudo bash scripts/build-randomx.sh
+
 ./autogen.sh
 ./configure --without-gui --disable-bench
 make -j$(nproc)

@@ -29,14 +29,18 @@ and `configure.ac`.
 
 1. Tag the release:
 
-   ```bash
-   git tag -s v1.0.2 -m "RCPU Core v1.0.2"
+```bash
+   git tag -s v1.0.10 -m "RCPU Core v1.0.10"
    ```
 
 2. Build on a clean Ubuntu 22.04 environment:
 
    ```bash
    git clean -x -d -f
+   sudo apt-get install -y build-essential libtool autotools-dev automake \
+     pkg-config bsdmainutils python3 cmake curl ca-certificates patch \
+     libevent-dev libboost-dev libsqlite3-dev
+   sudo bash scripts/build-randomx.sh
    ./autogen.sh
    ./configure --without-gui --disable-bench
    make -j$(nproc)
@@ -46,7 +50,7 @@ and `configure.ac`.
 3. Create the tarball:
 
    ```bash
-   VERSION=1.0.2
+   VERSION=1.0.10      # must equal the tag being released
    make install DESTDIR="$PWD/stage"
    tar -czf rcpu-v${VERSION}-linux-x86_64.tar.gz \
      -C stage/usr/local/bin rcpud rcpu-cli rcpu-tx rcpu-util rcpu-wallet

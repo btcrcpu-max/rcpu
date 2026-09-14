@@ -1,23 +1,26 @@
-Bitcoin Core
-=============
+RCPU Core
+=========
 
 Intro
 -----
-Bitcoin is a free open source peer-to-peer electronic cash system that is
-completely decentralized, without the need for a central server or trusted
-parties.  Users hold the crypto keys to their own money and transact directly
-with each other, with the help of a P2P network to check for double-spending.
-
+RCPU is a CPU-mineable cryptocurrency using RandomX proof-of-work and
+Confidential Transactions (CT). This is the Windows full node client.
+Users hold the crypto keys to their own money and transact directly with
+each other, with the help of a P2P network to check for double-spending.
 
 Setup
 -----
-Unpack the files into a directory and run bitcoin-qt.exe.
+Unpack the files into a directory and run rcpud.exe. The node starts on the
+RCPU mainnet by default and stores chain data in the default data directory
+(see doc/consensus-params.md; override with -datadir=<path>).
 
-Bitcoin Core is the original Bitcoin client and it builds the backbone of the network.
-However, it downloads and stores the entire history of Bitcoin transactions;
-depending on the speed of your computer and network connection, the synchronization
-process can take anywhere from a few hours to a day or more.
+Default ports: P2P 7227/tcp, RPC 127.0.0.1:7337.
+Do not expose the RPC port (7337) to the internet; keep it bound to
+127.0.0.1 and protect it with rpcuser/rpcpassword in the rcpu.conf file.
 
-See the bitcoin wiki at:
-  https://en.bitcoin.it/wiki/Main_Page
-for more help and information.
+Official GitHub Releases currently provide the headless binaries (rcpud,
+rcpu-cli). The Qt GUI can be built from source where available.
+
+For help and updates see:
+  https://rcpu.top/
+  https://github.com/btcrcpu-max/rcpu

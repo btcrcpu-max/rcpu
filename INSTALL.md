@@ -15,7 +15,12 @@ rcpu-vVERSION-linux-x86_64.tar.gz
 ```bash
 sudo apt-get update
 sudo apt-get install -y build-essential libtool autotools-dev automake \
-  pkg-config bsdmainutils python3 libevent-dev libboost-dev libsqlite3-dev
+  pkg-config bsdmainutils python3 cmake curl ca-certificates patch \
+  libevent-dev libboost-dev libsqlite3-dev
+
+# RandomX v1.2.1 is a hard dependency of configure.ac; this builds the
+# same sha256-verified, patched variant that CI and the Dockerfile use.
+sudo bash scripts/build-randomx.sh
 
 ./autogen.sh
 ./configure --without-gui --disable-bench

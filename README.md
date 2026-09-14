@@ -57,13 +57,17 @@ RCPU uses **Bech32 (SegWit)** addresses only, prefixed with `rcpu1`.
 sudo apt-get install -y qtbase5-dev qttools5-dev qttools5-dev-tools \
   libqrencode-dev libminiupnpc-dev libminiupnpc17 libprotobuf-dev protobuf-compiler
 
-# Build
+# Build (RandomX v1.2.1 is a hard dependency of configure.ac)
+sudo apt-get install -y build-essential libtool autotools-dev automake \
+  pkg-config bsdmainutils python3 cmake curl ca-certificates patch \
+  libevent-dev libboost-dev libsqlite3-dev
+sudo bash scripts/build-randomx.sh   # pinned v1.2.1, same as CI/Docker
 ./autogen.sh
 ./configure --with-gui=qt5
 make -j$(nproc)
 
-# Run (binary name depends on build: rcpu-qt or bitcoin-qt)
-./src/qt/rcpu-qt 2>/dev/null || ./src/qt/bitcoin-qt
+# Run
+./src/qt/rcpu-qt
 ```
 
 > **Note:** Official GitHub Releases currently provide headless binaries only.
@@ -79,7 +83,11 @@ make -j$(nproc)
 ### Headless Node
 
 ```bash
-# Build
+# Build (RandomX v1.2.1 is a hard dependency of configure.ac)
+sudo apt-get install -y build-essential libtool autotools-dev automake \
+  pkg-config bsdmainutils python3 cmake curl ca-certificates patch \
+  libevent-dev libboost-dev libsqlite3-dev
+sudo bash scripts/build-randomx.sh   # pinned v1.2.1, same as CI/Docker
 ./autogen.sh
 ./configure --without-gui --disable-bench
 make -j$(nproc)
