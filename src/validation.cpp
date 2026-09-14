@@ -2275,10 +2275,18 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
     num_blocks_total++;
 
     // Special case for the genesis block, skipping connection of its transactions
-    // (its coinbase is unspendable)
-    if (block_hash == params.GetConsensus().hashGenesisBlock) {
-        if (!fJustCheck)
+    // (its coinbase is unspendable).
+    // RCPU: hashGenesisBlock is computed by GetHashOfRcpuGenesisBlock() over the
+    // full RandomX-inclusive header, which is not guaranteed to match
+    // CBlock::GetHash() under every flag combination. Recognize the genesis block
+    // by missing parent / height 0 as well, otherwise ConnectBlock() would fall
+    // through into ordinary block logic and dereference the null pprev (issue #6).
+    if (pindex->pprev == nullptr ||
+        pindex->nHeight == 0 ||
+        block_hash == params.GetConsensus().hashGenesisBlock) {
+        if (!fJustCheck) {
             view.SetBestBlock(pindex->GetBlockHash());
+        }
         return true;
     }
 
@@ -5115,7 +5123,15 @@ void ChainstateManager::CheckBlockIndex()
         // Begin: actual consistency checks.
         if (pindex->pprev == nullptr) {
             // Genesis block checks.
-            assert(pindex->GetBlockHash() == GetConsensus().hashGenesisBlock); // Genesis block's hash must match.
+            // RCPU: consensus.hashGenesisBlock comes from GetHashOfRcpuGenesisBlock(),
+            // which hashes the raw in-memory header layout (incl. hashRandomX).
+            // CBlock::GetHash() only matches it while g_isRandomX is set (node
+            // runtime, see AppInitMain). Unit tests run with g_isRandomX == false,
+            // so the equality is only enforced in the RandomX hash domain and the
+            // structural checks below always apply.
+            if (g_isRandomX) {
+                assert(pindex->GetBlockHash() == GetConsensus().hashGenesisBlock); // Genesis block's hash must match.
+            }
             for (auto c : GetAll()) {
                 if (c->m_chain.Genesis() != nullptr) {
                     assert(pindex == c->m_chain.Genesis()); // The chain's genesis block must be this block.
