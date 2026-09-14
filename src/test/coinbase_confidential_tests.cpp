@@ -99,6 +99,51 @@ BOOST_AUTO_TEST_CASE(mixed_coinbase_rejected)
 // hand-written transactions, so they exercise the exact serialization the
 // network produced: an all-explicit coinbase must pass, while fully
 // committed and mixed coinbases must both be rejected.
+
+// A coinbase whose output is fee-shaped (explicit + empty scriptPubKey) must be
+// rejected: GetValueOut() skips IsFee() outputs, so an all-fee coinbase would
+// report value 0 and bypass the subsidy cap while leaving anyone-can-spend
+// UTXOs if those outputs were ever admitted to the coin database.
+BOOST_AUTO_TEST_CASE(fee_shaped_coinbase_rejected)
+{
+    CMutableTransaction cb;
+    cb.nVersion = 1;
+    cb.vin.resize(1);
+    cb.vin[0].prevout.SetNull();
+    cb.vin[0].scriptSig = CScript() << OP_0 << OP_0;
+    CTxOut out;
+    out.nValue.SetToAmount(50 * COIN);
+    out.scriptPubKey.clear(); // IsFee(): explicit + empty script
+    cb.vout.push_back(out);
+
+    BlockValidationState state;
+    BOOST_CHECK(!CheckCoinbaseOutputsExplicit(CTransaction(cb), state));
+    BOOST_CHECK_EQUAL(state.GetRejectReason(), "bad-cb-fee-output");
+}
+
+// Mixed coinbase: one normal explicit output plus one fee-shaped output is
+// still rejected (any single fee-shaped coinbase output is enough).
+BOOST_AUTO_TEST_CASE(mixed_fee_shaped_coinbase_rejected)
+{
+    CMutableTransaction cb;
+    cb.nVersion = 1;
+    cb.vin.resize(1);
+    cb.vin[0].prevout.SetNull();
+    cb.vin[0].scriptSig = CScript() << OP_0 << OP_0;
+    CTxOut normal;
+    normal.nValue.SetToAmount(1 * COIN);
+    normal.scriptPubKey = CScript() << OP_TRUE;
+    cb.vout.push_back(normal);
+    CTxOut fee;
+    fee.nValue.SetToAmount(49 * COIN);
+    fee.scriptPubKey.clear();
+    cb.vout.push_back(fee);
+
+    BlockValidationState state;
+    BOOST_CHECK(!CheckCoinbaseOutputsExplicit(CTransaction(cb), state));
+    BOOST_CHECK_EQUAL(state.GetRejectReason(), "bad-cb-fee-output");
+}
+
 BOOST_AUTO_TEST_CASE(real_poison_block_explicit_A_passes)
 {
     BlockValidationState state;

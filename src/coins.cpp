@@ -68,7 +68,12 @@ bool CCoinsViewCache::GetCoin(const COutPoint &outpoint, Coin &coin) const {
 
 void CCoinsViewCache::AddCoin(const COutPoint &outpoint, Coin&& coin, bool possible_overwrite) {
     assert(!coin.IsSpent());
-    if (coin.out.scriptPubKey.IsUnspendable()) return;
+    // RCPU CT: fee outputs (explicit value + empty scriptPubKey) must never enter
+    // the UTXO set. Empty scriptPubKey is anyone-can-spend under the script
+    // interpreter, so treating them as normal coins would let the same fee be
+    // claimed twice (once via coinbase nFees, once by spending the UTXO).
+    // Mirror the IsUnspendable() skip used for OP_RETURN.
+    if (coin.out.scriptPubKey.IsUnspendable() || coin.out.IsFee()) return;
     CCoinsMap::iterator it;
     bool inserted;
     std::tie(it, inserted) = cacheCoins.emplace(std::piecewise_construct, std::forward_as_tuple(outpoint), std::tuple<>());

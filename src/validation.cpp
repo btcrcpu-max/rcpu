@@ -2116,7 +2116,9 @@ DisconnectResult Chainstate::DisconnectBlock(const CBlock& block, const CBlockIn
         // Check that all outputs are available and match the outputs in the block itself
         // exactly.
         for (size_t o = 0; o < tx.vout.size(); o++) {
-            if (!tx.vout[o].scriptPubKey.IsUnspendable()) {
+            // RCPU CT: fee outputs are never added to the UTXO set (see AddCoin),
+            // so they must not be required on disconnect either.
+            if (!tx.vout[o].scriptPubKey.IsUnspendable() && !tx.vout[o].IsFee()) {
                 COutPoint out(hash, o);
                 Coin coin;
                 bool is_spent = view.SpendCoin(out, &coin);
@@ -3843,6 +3845,14 @@ bool CheckCoinbaseOutputsExplicit(const CTransaction& cb, BlockValidationState& 
         if (!txout.nValue.IsExplicit()) {
             return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-cb-confidential",
                                  "coinbase output is confidential");
+        }
+        // RCPU CT: fee-shaped outputs (explicit + empty scriptPubKey) on a
+        // coinbase would bypass GetValueOut() subsidy accounting while still
+        // being anyone-can-spend if ever admitted to the UTXO set. Reject them
+        // at the same gate as confidential coinbase outputs.
+        if (txout.IsFee()) {
+            return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-cb-fee-output",
+                                 "coinbase output is fee-shaped (empty scriptPubKey)");
         }
     }
     return true;

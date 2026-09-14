@@ -11,6 +11,7 @@
 #include <test/util/setup_common.h>
 #include <txdb.h>
 #include <uint256.h>
+#include <script/script.h>
 #include <undo.h>
 #include <util/strencodings.h>
 
@@ -1107,6 +1108,34 @@ BOOST_AUTO_TEST_CASE(coins_resource_is_used)
     }
 
     PoolResourceTester::CheckAllDataAccountedFor(resource);
+}
+
+
+// RCPU CT: fee-shaped outputs (explicit value + empty scriptPubKey) must not
+// enter the UTXO set. Empty scriptPubKey is anyone-can-spend, so admitting
+// these coins would allow the fee to be claimed twice.
+BOOST_AUTO_TEST_CASE(fee_output_not_added_to_utxo)
+{
+    CCoinsView backend;
+    CCoinsViewCache view(&backend);
+
+    CTxOut fee_out;
+    fee_out.nValue.SetToAmount(25 * COIN);
+    fee_out.scriptPubKey.clear(); // IsFee()
+    BOOST_CHECK(fee_out.IsFee());
+
+    COutPoint fee_point(Txid::FromUint256(uint256S("0xfeed")), 0);
+    view.AddCoin(fee_point, Coin(fee_out, /*nHeightIn=*/100, /*fCoinBaseIn=*/false), false);
+    BOOST_CHECK(!view.HaveCoin(fee_point));
+
+    CTxOut normal_out;
+    normal_out.nValue.SetToAmount(10 * COIN);
+    normal_out.scriptPubKey = CScript() << OP_TRUE;
+    BOOST_CHECK(!normal_out.IsFee());
+
+    COutPoint normal_point(Txid::FromUint256(uint256S("0xbeef")), 0);
+    view.AddCoin(normal_point, Coin(normal_out, /*nHeightIn=*/100, /*fCoinBaseIn=*/false), false);
+    BOOST_CHECK(view.HaveCoin(normal_point));
 }
 
 BOOST_AUTO_TEST_SUITE_END()

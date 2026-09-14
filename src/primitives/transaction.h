@@ -229,7 +229,10 @@ public:
     }
 
     // RCPU CT: a fee output carries the explicit transaction fee. It has an
-    // empty (unspendable) scriptPubKey and an explicit value.
+    // empty scriptPubKey and an explicit value. Empty scriptPubKey is
+    // anyone-can-spend under the script interpreter, so fee outputs must be
+    // excluded from the UTXO set (see CCoinsViewCache::AddCoin) and must never
+    // appear on a coinbase (see CheckCoinbaseOutputsExplicit).
     bool IsFee() const
     {
         return nValue.IsExplicit() && scriptPubKey.empty();

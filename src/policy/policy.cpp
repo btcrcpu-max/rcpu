@@ -149,7 +149,8 @@ bool IsStandardTx(const CTransaction& tx, const std::optional<unsigned>& max_dat
     TxoutType whichType;
     for (const CTxOut& txout : tx.vout) {
         if (txout.IsFee()) {
-            // RCPU CT: fee outputs have an empty (unspendable) scriptPubKey.
+            // RCPU CT: fee outputs have an empty scriptPubKey and are excluded
+            // from the UTXO set; skip standardness checks for them.
             continue;
         }
         if (!::IsStandard(txout.scriptPubKey, max_datacarrier_bytes, whichType)) {

@@ -25,8 +25,16 @@ Key source references:
 
 - **Coinbase outputs are NOT blinded.** Block rewards and fees are paid in
   cleartext, ensuring auditable supply.
-- **Fees are computed from the difference** between input commitments and
-  output commitments, verified by the consensus layer.
+- **Coinbase outputs must not be fee-shaped** (explicit value + empty
+  `scriptPubKey`). `CheckCoinbaseOutputsExplicit` rejects them so they cannot
+  bypass `GetValueOut()` subsidy accounting.
+- **Fee outputs** on non-coinbase CT transactions use an explicit value and an
+  empty `scriptPubKey`. That script is anyone-can-spend under the interpreter,
+  so fee outputs are **never written to the UTXO set** (`CCoinsViewCache::AddCoin`
+  skips `IsFee()`). The fee is claimed only via the miner’s coinbase
+  (`nFees` + subsidy).
+- **Fees are verified** by Pedersen commitment balance (`VerifyAmounts`) plus
+  the explicit fee output amount.
 - The fee safety cap in `src/wallet/fees.cpp` prevents corrupted fee estimates
   from draining the wallet.
 
