@@ -155,4 +155,16 @@ BOOST_AUTO_TEST_CASE(shuffle_stat_test)
     BOOST_CHECK_EQUAL(sum, 12000U);
 }
 
+BOOST_AUTO_TEST_CASE(random_strongly_seeded_after_init)
+{
+    RandomInit();
+    BOOST_CHECK(RandomIsStronglySeeded());
+    unsigned char buf[32] = {};
+    GetStrongRandBytes(buf);
+    bool nonzero = false;
+    for (unsigned char b : buf) nonzero |= (b != 0);
+    BOOST_CHECK(nonzero);
+    BOOST_CHECK(Random_SanityCheck());
+}
+
 BOOST_AUTO_TEST_SUITE_END()
