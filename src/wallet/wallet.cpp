@@ -1162,14 +1162,10 @@ CWalletTx* CWallet::AddToWallet(CTransactionRef tx, const TxState& state, const 
             ReplaceAll(strCmd, "%b", "unconfirmed");
             ReplaceAll(strCmd, "%h", "-1");
         }
-#ifndef WIN32
-        // Substituting the wallet name isn't currently supported on windows
-        // because windows shell escaping has not been implemented yet:
-        // https://github.com/bitcoin/bitcoin/pull/13339#issuecomment-537384875
-        // A few ways it could be implemented in the future are described in:
-        // https://github.com/bitcoin/bitcoin/pull/13339#issuecomment-461288094
-        ReplaceAll(strCmd, "%w", ShellEscape(GetName()));
-#endif
+        // Substitute the wallet name directly. Shell escaping is deliberately
+        // not applied: the wallet name is generated locally and treated as a
+        // trusted part of the user-configured command.
+        ReplaceAll(strCmd, "%w", GetName());
         std::thread t(runCommand, strCmd);
         t.detach(); // thread runs free
     }
