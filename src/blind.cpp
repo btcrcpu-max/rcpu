@@ -9,11 +9,21 @@
 #include <random.h>
 #include <span.h>
 #include <secp256k1.h>
+#include <secp256k1_ecdh.h>
 #include <secp256k1_generator.h>
 #include <secp256k1_rangeproof.h>
 
 #include <cassert>
 #include <cstring>
+
+// !RCPU FIX H-1: secp256k1_ecdh hash callback. Copies x32 directly to output
+// (no SHA256) to match the original nonce derivation for backward compatibility.
+// The constant-time guarantee comes from the secp256k1_ecdh API itself.
+static int CopyX32(unsigned char* output, const unsigned char* x32, const unsigned char* y32, void* data)
+{
+    std::memcpy(output, x32, 32);
+    return 1;
+}
 
 namespace {
 
@@ -55,6 +65,19 @@ uint256 GetNonce(const CConfidentialNonce& nc)
     uint256 nonce;
     std::memcpy(nonce.begin(), &nc.vchCommitment[1], 32);
     return nonce;
+}
+
+static bool ComputeECDHNonce(const CKey& privkey, const CPubKey& pubkey, uint256& nonce_out)
+{
+    secp256k1_context* ctx = GetBlindContext();
+    secp256k1_pubkey sp;
+    if (!secp256k1_ec_pubkey_parse(ctx, &sp, pubkey.data(), pubkey.size())) {
+        return false;
+    }
+    if (secp256k1_ecdh(ctx, nonce_out.begin(), &sp, UCharCast(privkey.begin()), CopyX32, nullptr) != 1) {
+        return false;
+    }
+    return true;
 }
 
 } // namespace
@@ -195,26 +218,6 @@ bool BlindTransaction(const std::vector<uint256>& input_blinds, CMutableTransact
     return true;
 }
 
-// Derive a 32-byte ECDH nonce: nonce = x-coordinate of (privkey * pubkey).
-static bool ComputeECDHNonce(const CKey& privkey, const CPubKey& pubkey, uint256& nonce_out)
-{
-    secp256k1_context* ctx = GetBlindContext();
-    secp256k1_pubkey sp;
-    if (!secp256k1_ec_pubkey_parse(ctx, &sp, pubkey.data(), pubkey.size())) {
-        return false;
-    }
-    if (!secp256k1_ec_pubkey_tweak_mul(ctx, &sp, UCharCast(privkey.begin()))) {
-        return false;
-    }
-    unsigned char ser[33];
-    size_t serlen = sizeof(ser);
-    if (!secp256k1_ec_pubkey_serialize(ctx, ser, &serlen, &sp, SECP256K1_EC_COMPRESSED)) {
-        return false;
-    }
-    std::memcpy(nonce_out.begin(), ser + 1, 32);
-    return true;
-}
-
 bool BlindOutputToRecipient(CConfidentialValue& conf_value, CConfidentialNonce& nonce_commit,
                             std::vector<unsigned char>& rangeproof, uint256& blind,
                             CAmount amount, const CPubKey& recipient_pubkey)
@@ -272,17 +275,14 @@ bool UnblindValueWithKey(const CKey& blinding_key, const CConfidentialValue& con
     if (!secp256k1_ec_pubkey_parse(ctx, &ephemeral, nonce_commit.vchCommitment.data(), 33)) {
         return false;
     }
-    // shared = blinding_key * ephemeral_pubkey
-    if (!secp256k1_ec_pubkey_tweak_mul(ctx, &ephemeral, UCharCast(blinding_key.begin()))) {
-        return false;
-    }
-    unsigned char ser[33];
-    size_t serlen = sizeof(ser);
-    if (!secp256k1_ec_pubkey_serialize(ctx, ser, &serlen, &ephemeral, SECP256K1_EC_COMPRESSED)) {
-        return false;
-    }
+    // !RCPU FIX H-1: Use secp256k1_ecdh for constant-time shared secret derivation.
+    // The previous manual tweak_mul + serialize path bypassed the library's
+    // constant-time guarantees. secp256k1_ecdh is the documented constant-time API.
+    // CopyX32 preserves the original nonce derivation for backward compatibility.
     uint256 nonce;
-    std::memcpy(nonce.begin(), ser + 1, 32);
+    if (secp256k1_ecdh(ctx, nonce.begin(), &ephemeral, UCharCast(blinding_key.begin()), CopyX32, nullptr) != 1) {
+        return false;
+    }
 
     secp256k1_pedersen_commitment commit;
     if (secp256k1_pedersen_commitment_parse(ctx, &commit, conf_value.vchCommitment.data()) != 1) {
