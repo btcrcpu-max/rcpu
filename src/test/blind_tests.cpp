@@ -232,6 +232,21 @@ BOOST_AUTO_TEST_CASE(blind_tx_fee_only)
     BOOST_CHECK_EQUAL(tx.vout[0].nValue.GetAmount(), 999);
 }
 
+// Single CT output with no input blinds: balances itself, still rewinds.
+BOOST_AUTO_TEST_CASE(blind_tx_single_ct_no_input_blinds)
+{
+    CMutableTransaction tx;
+    tx.vout.push_back(MakeExplicitOut(1000));
+    std::vector<uint256> in_blinds;
+    std::vector<uint256> out_blinds, out_nonces;
+    BOOST_REQUIRE(BlindTransaction(in_blinds, tx, out_blinds, out_nonces));
+    CAmount a = -1;
+    uint256 b;
+    BOOST_REQUIRE(UnblindValue(tx.vout[0].nValue, tx.vout[0].nNonce,
+                               tx.vout[0].vchRangeproof, a, b));
+    BOOST_CHECK_EQUAL(a, 1000);
+}
+
 BOOST_AUTO_TEST_CASE(blind_tx_empty_vout)
 {
     CMutableTransaction tx;
