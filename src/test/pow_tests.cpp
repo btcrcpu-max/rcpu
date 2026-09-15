@@ -14,6 +14,7 @@
 
 // !RCPU
 #include <cmath>
+#include <limits>
 // !RCPU END
 
 
@@ -940,8 +941,25 @@ BOOST_AUTO_TEST_CASE(calculate_asert_rcpu_test) {
         const auto failMsg =
             StrPrintCalcArgs(v.refTarget, v.targetSpacing, parent_time_diff + v.timeDiff, v.heightDiff, v.expectedTarget, v.expectednBits)
             + strprintf("nextTarget=  %s\nnext nBits=  0x%08x\n", nextTarget.ToString(), next_nBits);
-        BOOST_CHECK_MESSAGE(nextTarget == v.expectedTarget && next_nBits == v.expectednBits, failMsg);
+BOOST_CHECK_MESSAGE(nextTarget == v.expectedTarget && next_nBits == v.expectednBits, failMsg);
     }
+}
+
+BOOST_AUTO_TEST_CASE(calculate_asert_extreme_timedelta)
+{
+    Consensus::Params params = CreateChainParams(*m_node.args, ChainType::RCPUMAIN)->GetConsensus();
+    const arith_uint256 powLimit = UintToArith256(params.powLimit);
+    const arith_uint256 ref = powLimit >> 4;
+    auto in_range = [&](const arith_uint256& t) {
+        BOOST_CHECK(t >= arith_uint256(1));
+        BOOST_CHECK(t <= powLimit);
+    };
+    in_range(CalculateASERT(ref, params.nPowTargetSpacing,
+                            std::numeric_limits<int64_t>::max(), 0,
+                            powLimit, params.nASERTHalfLife));
+    in_range(CalculateASERT(ref, params.nPowTargetSpacing,
+                            std::numeric_limits<int64_t>::min() / 2, 1,
+                            powLimit, params.nASERTHalfLife));
 }
 
 /**

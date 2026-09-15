@@ -14,6 +14,7 @@
 // !RCPU
 #include <common/args.h>
 #include <crypto/sha256.h>
+#include <limits>
 #include <randomx.h>
 #include <logging.h>
 #include <list>
@@ -301,55 +302,68 @@ arith_uint256 CalculateASERT(const arith_uint256 &refTarget,
     // Ultimately, we want to approximate the following ASERT formula, using only integer (fixed-point) math:
     //     new_target = old_target * 2^((blocks_time - IDEAL_BLOCK_TIME * (height_diff + 1)) / nHalfLife)
 
-    // First, we'll calculate the exponent:
-    assert( llabs(nTimeDiff - nPowTargetSpacing * nHeightDiff) < (1ll << (63 - 16)) );
-    const int64_t exponent = ((nTimeDiff - nPowTargetSpacing * (nHeightDiff + 1)) * 65536) / nHalfLife;
-
-    // Next, we use the 2^x = 2 * 2^(x-1) identity to shift our exponent into the [0, 1) interval.
-    // The truncated exponent tells us how many shifts we need to do
-    // Note1: This needs to be a right shift. Right shift rounds downward (floored division),
-    //        whereas integer division in C++ rounds towards zero (truncated division).
-    // Note2: This algorithm uses arithmetic shifts of negative numbers. This
-    //        is unpecified but very common behavior for C++ compilers before
-    //        C++20, and standard with C++20. We must check this behavior e.g.
-    //        using static_assert.
-    static_assert(int64_t(-1) >> 1 == int64_t(-1),
-                  "ASERT algorithm needs arithmetic shift support");
-
-    // Now we compute an approximated target * 2^(exponent/65536.0)
-
-    // First decompose exponent into 'integer' and 'fractional' parts:
-    int64_t shifts = exponent >> 16;
-    const auto frac = uint16_t(exponent);
-    assert(exponent == (shifts * 65536) + frac);
-
-    // multiply target by 65536 * 2^(fractional part)
-    // 2^x ~= (1 + 0.695502049*x + 0.2262698*x**2 + 0.0782318*x**3) for 0 <= x < 1
-    // Error versus actual 2^x is less than 0.013%.
-    const uint32_t factor = 65536 + ((
-        + 195766423245049ull * frac
-        + 971821376ull * frac * frac
-        + 5127ull * frac * frac * frac
-        + (1ull << 47)
-        ) >> 48);
-
-    // !RCPU
-    // Intermediate computation uses 512 bit integers to avoid potential overflow from chain parameters.
-    arith_uint512 nextTarget512 = arith_uint512::from(refTarget) * factor;
-    arith_uint512 powLimit512 = arith_uint512::from(powLimit);
-
-    // multiply by 2^(integer part) / 65536
-    shifts -= 16;
-    if (shifts <= 0) {
-        nextTarget512 >>= -shifts;
-    } else {
-        // Detect overflow that would discard high bits
-        const auto nextTarget512Shifted = nextTarget512 << shifts;
-        if ((nextTarget512Shifted >> shifts) != nextTarget512) {
-            nextTarget512 = powLimit512;
+// First, we'll calculate the exponent.
+    // Protect the signed multiply (time_delta * 65536) from overflow; the
+    // historical assert() is debug-only and does not bound `shifts`.
+    const int64_t max_mul = std::numeric_limits<int64_t>::max() / 65536;
+    bool overflow_high = false;
+    bool overflow_low = false;
+    int64_t time_delta = 0;
+    {
+        const int64_t spacing = nPowTargetSpacing;
+        const int64_t h1 = nHeightDiff + 1;
+        if (spacing > 0 && h1 > 0 && spacing > std::numeric_limits<int64_t>::max() / h1) {
+            overflow_low = true; // ideal time overflows -> treat as far behind schedule
         } else {
-            // Shifting produced no overflow, can assign value
-            nextTarget512 = nextTarget512Shifted;
+            const int64_t ideal = spacing * h1;
+            if (nTimeDiff >= 0 && nTimeDiff > std::numeric_limits<int64_t>::max() + (ideal < 0 ? ideal : 0)) {
+                overflow_high = true;
+            } else if (nTimeDiff < 0 && ideal > 0 && nTimeDiff < std::numeric_limits<int64_t>::min() + ideal) {
+                overflow_low = true;
+            } else {
+                time_delta = nTimeDiff - ideal;
+            }
+        }
+    }
+
+    arith_uint512 powLimit512 = arith_uint512::from(powLimit);
+    arith_uint512 nextTarget512 = arith_uint512::from(refTarget);
+
+    if (overflow_high || time_delta > max_mul) {
+        nextTarget512 = powLimit512;
+    } else if (overflow_low || time_delta < -max_mul) {
+        nextTarget512 = arith_uint512(1);
+    } else {
+        const int64_t exponent = (time_delta * 65536) / nHalfLife;
+        static_assert(int64_t(-1) >> 1 == int64_t(-1),
+                      "ASERT algorithm needs arithmetic shift support");
+        int64_t shifts = exponent >> 16;
+        const auto frac = uint16_t(exponent);
+        assert(exponent == (shifts * 65536) + frac);
+
+        const uint32_t factor = 65536 + ((
+            + 195766423245049ull * frac
+            + 971821376ull * frac * frac
+            + 5127ull * frac * frac * frac
+            + (1ull << 47)
+            ) >> 48);
+
+        nextTarget512 = arith_uint512::from(refTarget) * factor;
+        shifts -= 16;
+
+        if (shifts > 512) {
+            nextTarget512 = powLimit512;
+        } else if (shifts < -512) {
+            nextTarget512 = arith_uint512(1);
+        } else if (shifts <= 0) {
+            nextTarget512 >>= -shifts;
+        } else {
+            const auto nextTarget512Shifted = nextTarget512 << shifts;
+            if ((nextTarget512Shifted >> shifts) != nextTarget512) {
+                nextTarget512 = powLimit512;
+            } else {
+                nextTarget512 = nextTarget512Shifted;
+            }
         }
     }
 
