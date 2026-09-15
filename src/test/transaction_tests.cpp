@@ -988,4 +988,15 @@ BOOST_AUTO_TEST_CASE(test_IsStandard)
     }
 }
 
+BOOST_AUTO_TEST_CASE(calculate_output_value_skips_fee)
+{
+    CMutableTransaction tx;
+    tx.vout.push_back(CTxOut(100000, CScript() << OP_TRUE));
+    tx.vout.push_back(CTxOut(2500, CScript())); // fee
+    CTransaction ctx(tx);
+    BOOST_CHECK_EQUAL(ctx.GetValueOut(), 100000);
+    BOOST_CHECK_EQUAL(CalculateOutputValue(ctx), 100000);
+    BOOST_CHECK_EQUAL(ctx.GetFeeOut(), 2500);
+}
+
 BOOST_AUTO_TEST_SUITE_END()

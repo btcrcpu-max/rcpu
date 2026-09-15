@@ -354,7 +354,10 @@ void SerializeTransaction(const TxType& tx, Stream& s, const TransactionSerParam
 template<typename TxType>
 inline CAmount CalculateOutputValue(const TxType& tx)
 {
-    return std::accumulate(tx.vout.cbegin(), tx.vout.cend(), CAmount{0}, [](CAmount sum, const auto& txout) { return sum + (txout.nValue.IsExplicit() ? txout.nValue.GetAmount() : 0); });
+    return std::accumulate(tx.vout.cbegin(), tx.vout.cend(), CAmount{0}, [](CAmount sum, const auto& txout) {
+        if (!txout.nValue.IsExplicit() || txout.IsFee()) return sum;
+        return sum + txout.nValue.GetAmount();
+    });
 }
 
 
