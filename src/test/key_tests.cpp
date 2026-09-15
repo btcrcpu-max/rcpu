@@ -364,4 +364,23 @@ BOOST_AUTO_TEST_CASE(key_ellswift)
     }
 }
 
+BOOST_AUTO_TEST_CASE(ckey_equality_consttime_path)
+{
+    CKey a = DecodeSecret(strSecret1C);
+    CKey b = DecodeSecret(strSecret1C);
+    CKey c = DecodeSecret(strSecret2C);
+    CKey invalid;
+
+    BOOST_CHECK(a == b);
+    BOOST_CHECK(!(a == c));
+    BOOST_CHECK(!(a == invalid));
+    BOOST_CHECK(invalid == CKey{});
+
+    // Same material, different compression flag must not compare equal.
+    CKey uncompressed = DecodeSecret(strSecret1);
+    BOOST_CHECK(a.IsCompressed());
+    BOOST_CHECK(!uncompressed.IsCompressed());
+    BOOST_CHECK(!(a == uncompressed));
+}
+
 BOOST_AUTO_TEST_SUITE_END()
