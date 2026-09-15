@@ -166,22 +166,37 @@ bool BlindTransaction(const std::vector<uint256>& input_blinds, CMutableTransact
     output_blinds.resize(n);
     output_nonces.resize(n);
 
-    // Random blinds for all but the last output.
-    for (size_t i = 0; i + 1 < n; ++i) {
-        Rand32(output_blinds[i]);
-        if (tx.vout[i].IsFee()) continue;
+// Balance against the last non-fee output; fees never take part.
+    size_t last_ct = n;
+    for (size_t i = 0; i < n; ++i) {
+        if (!tx.vout[i].IsFee()) last_ct = i;
+    }
+    if (last_ct == n) {
+        // Fee-only: nothing to commit, do not call pedersen_blind_sum.
+        return true;
     }
 
-    // Balance: last output blind = sum(inputs) - sum(other outputs).
+    // Random blinds for all but the balancing output.
+    for (size_t i = 0; i < last_ct; ++i) {
+        if (tx.vout[i].IsFee()) continue;
+        Rand32(output_blinds[i]);
+    }
+
     std::vector<const unsigned char*> blinds;
+    blinds.reserve(input_blinds.size() + last_ct);
     for (const uint256& b : input_blinds) {
         blinds.push_back(b.begin());
     }
-    for (size_t i = 0; i + 1 < n; ++i) {
+    for (size_t i = 0; i < last_ct; ++i) {
         if (tx.vout[i].IsFee()) continue;
         blinds.push_back(output_blinds[i].begin());
     }
-    if (!secp256k1_pedersen_blind_sum(ctx, output_blinds[n - 1].begin(), blinds.data(), blinds.size(), input_blinds.size())) {
+    if (blinds.empty()) {
+        // Single CT output with no input blinds: it balances itself.
+        Rand32(output_blinds[last_ct]);
+    } else if (!secp256k1_pedersen_blind_sum(ctx, output_blinds[last_ct].begin(),
+                                             blinds.data(), blinds.size(),
+                                             input_blinds.size())) {
         return false;
     }
 

@@ -124,9 +124,136 @@ BOOST_AUTO_TEST_CASE(coin_roundtrip_preserves_ct_fields)
     BOOST_CHECK(coin_out.out == coin_in.out);
 
     // Metadata survives too.
-    BOOST_CHECK(coin_out.nHeight == static_cast<uint32_t>(nHeight));
+BOOST_CHECK(coin_out.nHeight == static_cast<uint32_t>(nHeight));
     BOOST_CHECK(coin_out.fCoinBase == fCoinBase);
     BOOST_CHECK(!coin_out.IsSpent());
+}
+
+static CTxOut MakeExplicitOut(CAmount amount)
+{
+    return CTxOut(amount, CScript() << OP_TRUE);
+}
+
+static CTxOut MakeFeeOut(CAmount fee)
+{
+    // explicit value + empty scriptPubKey
+    return CTxOut(fee, CScript());
+}
+
+// All outputs confidential: last blind balances the rest; amounts rewind.
+BOOST_AUTO_TEST_CASE(blind_tx_all_confidential)
+{
+    CMutableTransaction tx;
+    tx.vout.push_back(MakeExplicitOut(100000));
+    tx.vout.push_back(MakeExplicitOut(200000));
+    tx.vout.push_back(MakeExplicitOut(300000));
+
+    std::vector<uint256> in_blinds(1);
+    std::vector<uint256> out_blinds;
+    std::vector<uint256> out_nonces;
+    BOOST_REQUIRE(BlindTransaction(in_blinds, tx, out_blinds, out_nonces));
+    BOOST_REQUIRE_EQUAL(out_blinds.size(), 3U);
+
+    for (size_t i = 0; i < tx.vout.size(); ++i) {
+        BOOST_CHECK(!tx.vout[i].IsFee());
+        BOOST_CHECK(tx.vout[i].nValue.IsCommitment());
+        CAmount recovered = -1;
+        uint256 blind_out;
+        BOOST_REQUIRE(UnblindValue(tx.vout[i].nValue, tx.vout[i].nNonce,
+                                   tx.vout[i].vchRangeproof, recovered, blind_out));
+        BOOST_CHECK_EQUAL(recovered, (i == 0 ? 100000 : i == 1 ? 200000 : 300000));
+        BOOST_CHECK(blind_out == out_blinds[i]);
+    }
+}
+
+// Fee in the middle must stay explicit; CT siblings still unblind.
+BOOST_AUTO_TEST_CASE(blind_tx_middle_output_is_fee)
+{
+    CMutableTransaction tx;
+    tx.vout.push_back(MakeExplicitOut(500000));
+    tx.vout.push_back(MakeFeeOut(10000));
+    tx.vout.push_back(MakeExplicitOut(250000));
+
+    std::vector<uint256> in_blinds(1);
+    std::vector<uint256> out_blinds;
+    std::vector<uint256> out_nonces;
+    BOOST_REQUIRE(BlindTransaction(in_blinds, tx, out_blinds, out_nonces));
+
+    BOOST_CHECK(tx.vout[1].IsFee());
+    BOOST_CHECK(tx.vout[1].nValue.IsExplicit());
+    BOOST_CHECK_EQUAL(tx.vout[1].nValue.GetAmount(), 10000);
+    BOOST_CHECK(tx.vout[1].vchRangeproof.empty());
+
+    CAmount a0 = -1, a2 = -1;
+    uint256 b0, b2;
+    BOOST_REQUIRE(UnblindValue(tx.vout[0].nValue, tx.vout[0].nNonce,
+                               tx.vout[0].vchRangeproof, a0, b0));
+    BOOST_REQUIRE(UnblindValue(tx.vout[2].nValue, tx.vout[2].nNonce,
+                               tx.vout[2].vchRangeproof, a2, b2));
+    BOOST_CHECK_EQUAL(a0, 500000);
+    BOOST_CHECK_EQUAL(a2, 250000);
+}
+
+// Last output is fee: must remain explicit (not turned into a commitment).
+BOOST_AUTO_TEST_CASE(blind_tx_last_output_is_fee)
+{
+    CMutableTransaction tx;
+    tx.vout.push_back(MakeExplicitOut(800000));
+    tx.vout.push_back(MakeFeeOut(12345));
+
+    std::vector<uint256> in_blinds(1);
+    std::vector<uint256> out_blinds;
+    std::vector<uint256> out_nonces;
+    BOOST_REQUIRE(BlindTransaction(in_blinds, tx, out_blinds, out_nonces));
+
+    BOOST_CHECK(tx.vout[1].IsFee());
+    BOOST_CHECK(tx.vout[1].nValue.IsExplicit());
+    BOOST_CHECK_EQUAL(tx.vout[1].nValue.GetAmount(), 12345);
+
+    CAmount a0 = -1;
+    uint256 b0;
+    BOOST_REQUIRE(UnblindValue(tx.vout[0].nValue, tx.vout[0].nNonce,
+                               tx.vout[0].vchRangeproof, a0, b0));
+    BOOST_CHECK_EQUAL(a0, 800000);
+}
+
+// Single fee-only tx: current API returns true and leaves the fee explicit.
+BOOST_AUTO_TEST_CASE(blind_tx_fee_only)
+{
+    CMutableTransaction tx;
+    tx.vout.push_back(MakeFeeOut(999));
+
+    std::vector<uint256> in_blinds;
+    std::vector<uint256> out_blinds;
+    std::vector<uint256> out_nonces;
+    BOOST_REQUIRE(BlindTransaction(in_blinds, tx, out_blinds, out_nonces));
+    BOOST_CHECK(tx.vout[0].IsFee());
+    BOOST_CHECK(tx.vout[0].nValue.IsExplicit());
+    BOOST_CHECK_EQUAL(tx.vout[0].nValue.GetAmount(), 999);
+}
+
+// Single CT output with no input blinds: balances itself, still rewinds.
+BOOST_AUTO_TEST_CASE(blind_tx_single_ct_no_input_blinds)
+{
+    CMutableTransaction tx;
+    tx.vout.push_back(MakeExplicitOut(1000));
+    std::vector<uint256> in_blinds;
+    std::vector<uint256> out_blinds, out_nonces;
+    BOOST_REQUIRE(BlindTransaction(in_blinds, tx, out_blinds, out_nonces));
+    CAmount a = -1;
+    uint256 b;
+    BOOST_REQUIRE(UnblindValue(tx.vout[0].nValue, tx.vout[0].nNonce,
+                               tx.vout[0].vchRangeproof, a, b));
+    BOOST_CHECK_EQUAL(a, 1000);
+}
+
+BOOST_AUTO_TEST_CASE(blind_tx_empty_vout)
+{
+    CMutableTransaction tx;
+    std::vector<uint256> in_blinds;
+    std::vector<uint256> out_blinds;
+    std::vector<uint256> out_nonces;
+    BOOST_CHECK(!BlindTransaction(in_blinds, tx, out_blinds, out_nonces));
 }
 
 BOOST_AUTO_TEST_SUITE_END()
