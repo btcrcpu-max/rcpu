@@ -88,11 +88,15 @@ jobs:
 
       - name: Rename AppImage
         run: |
-          mv *.AppImage rcpu-qt-x86_64.AppImage
+          VER="${GITHUB_REF#refs/tags/}"
+          VER="${VER#v}"
+          ASSET="rcpu-qt-${VER}-x86_64.AppImage"
+          mv *.AppImage "$ASSET"
+          echo "APPIMAGE_ASSET=$ASSET" >> "$GITHUB_ENV"
 
       - name: Generate SHA256 checksum
         run: |
-          sha256sum rcpu-qt-x86_64.AppImage > rcpu-qt-x86_64.AppImage.sha256
+          sha256sum "$APPIMAGE_ASSET" > "$APPIMAGE_ASSET.sha256"
 
       - name: Sign with GPG (if key configured)
         env:
@@ -101,20 +105,20 @@ jobs:
         run: |
           if [ -z "$GPG_PRIVATE_KEY" ]; then
             echo "No GPG key configured, creating empty placeholder"
-            touch rcpu-qt-x86_64.AppImage.asc
+            touch "$APPIMAGE_ASSET.asc"
             exit 0
           fi
           echo "$GPG_PRIVATE_KEY" | gpg --batch --yes --import
           echo "$GPG_PASSPHRASE" | gpg --batch --yes --passphrase-fd 0 \
             --pinentry-mode loopback \
-            --output rcpu-qt-x86_64.AppImage.asc \
-            --detach-sig rcpu-qt-x86_64.AppImage
+            --output "$APPIMAGE_ASSET.asc" \
+            --detach-sig "$APPIMAGE_ASSET"
 
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            rcpu-qt-x86_64.AppImage
-            rcpu-qt-x86_64.AppImage.sha256
+            ${{ env.APPIMAGE_ASSET }}
+            ${{ env.APPIMAGE_ASSET }}.sha256
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
