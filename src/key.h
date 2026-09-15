@@ -15,12 +15,24 @@
 #include <stdexcept>
 #include <vector>
 
+#include <cstring>
+
 
 /**
  * CPrivKey is a serialized private key, with all parameters included
  * (SIZE bytes)
  */
 typedef std::vector<unsigned char, secure_allocator<unsigned char> > CPrivKey;
+
+/** Constant-time equality for secret-sized buffers. n==0 is true. */
+inline bool FixedTimeEquals(const unsigned char* a, const unsigned char* b, size_t n)
+{
+    unsigned char acc = 0;
+    for (size_t i = 0; i < n; ++i) {
+        acc |= (a[i] ^ b[i]);
+    }
+    return acc == 0;
+}
 
 /** Size of ECDH shared secrets. */
 constexpr static size_t ECDH_SECRET_SIZE = CSHA256::OUTPUT_SIZE;
@@ -89,9 +101,16 @@ public:
 
     friend bool operator==(const CKey& a, const CKey& b)
     {
-        return a.fCompressed == b.fCompressed &&
-            a.size() == b.size() &&
-            memcmp(a.data(), b.data(), a.size()) == 0;
+        if (a.fCompressed != b.fCompressed || a.size() != b.size()) {
+            return false;
+        }
+        if (a.size() == 0) {
+            return true;
+        }
+        return FixedTimeEquals(
+            reinterpret_cast<const unsigned char*>(a.data()),
+            reinterpret_cast<const unsigned char*>(b.data()),
+            a.size());
     }
 
     //! Initialize using begin and end iterators to byte data.
@@ -217,7 +236,7 @@ struct CExtKey {
     friend bool operator==(const CExtKey& a, const CExtKey& b)
     {
         return a.nDepth == b.nDepth &&
-            memcmp(a.vchFingerprint, b.vchFingerprint, sizeof(vchFingerprint)) == 0 &&
+            FixedTimeEquals(a.vchFingerprint, b.vchFingerprint, sizeof(a.vchFingerprint)) &&
             a.nChild == b.nChild &&
             a.chaincode == b.chaincode &&
             a.key == b.key;
