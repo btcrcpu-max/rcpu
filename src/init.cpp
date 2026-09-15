@@ -95,6 +95,8 @@
 #include <pow.h>
 // !RCPU END
 
+#include <random.h>
+
 #include <algorithm>
 #include <condition_variable>
 #include <cstdint>
@@ -1123,6 +1125,7 @@ static bool LockDataDirectory(bool probeOnly)
 bool AppInitSanityChecks(const kernel::Context& kernel)
 {
     // ********************************************************* Step 4: sanity checks
+    RandomInit();
     auto result{kernel::SanityChecks(kernel)};
     if (!result) {
         InitError(util::ErrorString(result));

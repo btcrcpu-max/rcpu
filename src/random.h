@@ -299,4 +299,7 @@ bool Random_SanityCheck();
  */
 void RandomInit();
 
+/** True after SeedStartup has mixed a strong seed into RNG state. */
+bool RandomIsStronglySeeded() noexcept;
+
 #endif // BITCOIN_RANDOM_H

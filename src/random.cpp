@@ -430,6 +430,12 @@ public:
 
     ~RNGState() = default;
 
+    bool IsStronglySeeded() noexcept EXCLUSIVE_LOCKS_REQUIRED(!m_mutex)
+    {
+        LOCK(m_mutex);
+        return m_strongly_seeded;
+    }
+
     void AddEvent(uint32_t event_info) noexcept EXCLUSIVE_LOCKS_REQUIRED(!m_events_mutex)
     {
         LOCK(m_events_mutex);
@@ -497,7 +503,7 @@ public:
 RNGState& GetRNGState() noexcept
 {
     // This idiom relies on the guarantee that static variable are initialized
-    // on first call, even when multiple parallel calls are permitted.
+// on first call, even when multiple parallel calls are permitted.
     static std::vector<RNGState, secure_allocator<RNGState>> g_rng(1);
     return g_rng[0];
 }
@@ -628,10 +634,11 @@ static void ProcRand(unsigned char* out, int num, RNGLevel level) noexcept
 
     // Combine with and update state
     if (!rng.MixExtract(out, num, std::move(hasher), false)) {
-        // On the first invocation, also seed with SeedStartup().
         CSHA512 startup_hasher;
         SeedStartup(startup_hasher, rng);
-        rng.MixExtract(out, num, std::move(startup_hasher), true);
+        if (!rng.MixExtract(out, num, std::move(startup_hasher), true)) {
+            RandFailure();
+        }
     }
 }
 
@@ -687,6 +694,11 @@ void FastRandomContext::fillrand(Span<std::byte> output)
 
 FastRandomContext::FastRandomContext(const uint256& seed) noexcept : requires_seed(false), rng(MakeByteSpan(seed)), bitbuf_size(0) {}
 
+bool RandomIsStronglySeeded() noexcept
+{
+    return GetRNGState().IsStronglySeeded();
+}
+
 bool Random_SanityCheck()
 {
     uint64_t start = GetPerformanceCounter();
@@ -730,6 +742,12 @@ bool Random_SanityCheck()
     to_add.Write((const unsigned char*)&stop, sizeof(stop));
     GetRNGState().MixExtract(nullptr, 0, std::move(to_add), false);
 
+    if (!GetRNGState().IsStronglySeeded()) {
+        unsigned char buf[32];
+        GetStrongRandBytes(buf);
+        memory_cleanse(buf, sizeof(buf));
+    }
+    if (!GetRNGState().IsStronglySeeded()) return false;
     return true;
 }
 
@@ -755,9 +773,10 @@ FastRandomContext& FastRandomContext::operator=(FastRandomContext&& from) noexce
 
 void RandomInit()
 {
-    // Invoke RNG code to trigger initialization (if not already performed)
-    ProcRand(nullptr, 0, RNGLevel::FAST);
-
+    ProcRand(nullptr, 0, RNGLevel::SLOW);
+    if (!GetRNGState().IsStronglySeeded()) {
+        RandFailure();
+    }
     ReportHardwareRand();
 }
 
