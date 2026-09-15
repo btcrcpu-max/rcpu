@@ -247,14 +247,17 @@ jobs:
           echo "OK: Windows rcpud.exe enforces explicit-coinbase rule"
       - name: Package Windows
         run: |
+          PKGVER=$(sed -n 's/^PACKAGE_VERSION = //p' Makefile | head -1)
+          echo "PACKAGE_VERSION=$PKGVER"
+          test -n "$PKGVER" || { echo "ERROR: PKGVER empty"; exit 1; }
           echo "=== looking for installer / exe ==="
           find . -maxdepth 3 -iname 'setup.exe' -o -iname 'rcpu-qt.exe' -o -iname 'rcpud.exe' | head -50
           ls -la . src src/qt 2>/dev/null | head -80
 
           EXE=$(ls -1t win64-setup.exe *win-setup.exe bitcoin--win64-setup.exe rcpu-*-win64-setup.exe 2>/dev/null | head -1)
           if [ -n "$EXE" ]; then
-            zip "${EXE%.exe}.zip" "$EXE"
-            sha256sum "$EXE" "${EXE%.exe}.zip" > SHA256SUMS-windows.txt
+            zip "rcpu-${PKGVER}-win64-setup.zip" "$EXE"
+            sha256sum "$EXE" "rcpu-${PKGVER}-win64-setup.zip" > SHA256SUMS-windows.txt
             exit 0
           fi
 
@@ -263,8 +266,8 @@ jobs:
           cp -v src/qt/rcpu-qt.exe dist/ 2>/dev/null || cp -v src/rcpu-qt.exe dist/
           cp -v src/rcpud.exe src/rcpu-cli.exe src/rcpu-tx.exe src/rcpu-wallet.exe dist/ 2>/dev/null || true
           test -f dist/rcpu-qt.exe
-          zip -j rcpu-win64-portable.zip dist/*
-          sha256sum rcpu-win64-portable.zip > SHA256SUMS-windows.txt
+          zip -j "rcpu-${PKGVER}-win64-portable.zip" dist/*
+          sha256sum "rcpu-${PKGVER}-win64-portable.zip" > SHA256SUMS-windows.txt
       - uses: actions/upload-artifact@v4
         with:
           name: windows-package

@@ -2,6 +2,7 @@
 
 RCPU Core release notes live in [doc/release-notes/](release-notes/):
 
+- [v1.0.13](release-notes/v1.0.13.md) — security: ECDH constant-time blinding; notify no longer via shell
 - [v1.0.12](release-notes/v1.0.12.md) — consensus change: fee outputs excluded from UTXO set
 - [v1.0.11](release-notes/v1.0.11.md) — docs / hygiene cleanup, version bump; no consensus changes
 - [v1.0.10](release-notes/v1.0.10.md) — build / docs / test / branding cleanup, no consensus changes
