@@ -24,7 +24,9 @@
 #include <malloc.h>
 #endif
 
+#include <cerrno>
 #include <cstdlib>
+#include <cstring>
 #include <locale>
 #include <stdexcept>
 #include <string>
@@ -48,7 +50,6 @@ std::string ShellEscape(const std::string& arg)
 #include <sys/wait.h>
 #include <unistd.h>
 #include <vector>
-#include <wordexp.h>
 #else
 #include <windows.h>
 #endif
