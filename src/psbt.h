@@ -96,7 +96,7 @@ void SerializeToVector(Stream& s, const X&... args)
 }
 
 // Takes a stream and multiple arguments and unserializes them first as a vector then each object individually in the order provided in the arguments
-template<typename Stream, typename... X>
+template <typename Stream, typename... X>
 void UnserializeFromVector(Stream& s, X&&... args)
 {
     size_t expected_size = ReadCompactSize(s);
@@ -107,6 +107,30 @@ void UnserializeFromVector(Stream& s, X&&... args)
         throw std::ios_base::failure("Size of value was not the stated size");
     }
 }
+
+/** RCPU CT: explicit-mode serialization adapters for CTxOut inside PSBT.
+ *  PSBT carries no per-output version, and the former thread-local mode
+ *  selector is gone, so the caller must supply the mode derived from the
+ *  PSBT's global unsigned transaction.
+ *
+ *  These are raw structs with MEMBER functions, not free-function overloads:
+ *  (Un)SerializeMany dispatch through ::Serialize/::Unserialize (qualified
+ *  names, serialize.h), which only see the generic member-fallback overloads
+ *  (Serializable/Unserializable concepts) declared before theirs. A free
+ *  function defined later in psbt.h would be invisible at that point and
+ *  the code would not compile. */
+struct PSBTCtxOutSerialize {
+    const CTxOut& out;
+    bool fCT;
+    template <typename Stream>
+    void Serialize(Stream& s) const { out.Serialize(s, fCT); }
+};
+struct PSBTCtxOutUnserialize {
+    CTxOut& out;
+    bool fCT;
+    template <typename Stream>
+    void Unserialize(Stream& s) { out.Unserialize(s, fCT); }
+};
 
 // Deserialize bytes of given length from the stream as a KeyOriginInfo
 template<typename Stream>
@@ -194,6 +218,11 @@ struct PSBTInput
 {
     CTransactionRef non_witness_utxo;
     CTxOut witness_utxo;
+    // RCPU CT: serialization mode for witness_utxo, derived from the PSBT
+    // global unsigned tx version by PartiallySignedTransaction::{Serialize,
+    // Unserialize} before each input is (de)serialized. Mutable so the
+    // hint can be attached through the const path used by stream output.
+    mutable bool fCTSerialization{false};
     CScript redeem_script;
     CScript witness_script;
     CScript final_script_sig;
@@ -232,7 +261,7 @@ struct PSBTInput
         }
         if (!witness_utxo.IsNull()) {
             SerializeToVector(s, CompactSizeWriter(PSBT_IN_WITNESS_UTXO));
-            SerializeToVector(s, witness_utxo);
+            SerializeToVector(s, PSBTCtxOutSerialize{witness_utxo, fCTSerialization});
         }
 
         if (final_script_sig.empty() && final_script_witness.IsNull()) {
@@ -404,7 +433,7 @@ struct PSBTInput
                     } else if (key.size() != 1) {
                         throw std::ios_base::failure("Witness utxo key is more than one byte type");
                     }
-                    UnserializeFromVector(s, witness_utxo);
+                    UnserializeFromVector(s, PSBTCtxOutUnserialize{witness_utxo, fCTSerialization});
                     break;
                 case PSBT_IN_PARTIAL_SIG:
                 {
@@ -1021,6 +1050,7 @@ struct PartiallySignedTransaction
 
         // Write inputs
         for (const PSBTInput& input : inputs) {
+            input.fCTSerialization = tx ? (tx->nVersion >= CT_VERSION) : false;
             s << input;
         }
         // Write outputs
@@ -1169,6 +1199,7 @@ struct PartiallySignedTransaction
         unsigned int i = 0;
         while (!s.empty() && i < tx->vin.size()) {
             PSBTInput input;
+            input.fCTSerialization = tx->nVersion >= CT_VERSION;
             s >> input;
             inputs.push_back(input);
 
