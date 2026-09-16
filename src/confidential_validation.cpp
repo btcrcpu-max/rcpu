@@ -5,6 +5,7 @@
 #include <confidential_validation.h>
 
 #include <consensus/amount.h>
+#include <consensus/consensus.h>
 #include <primitives/confidential.h>
 #include <random.h>
 #include <secp256k1.h>
@@ -53,6 +54,9 @@ bool VerifyRangeProof(const CTxOut& out)
         return true;
     }
     if (out.vchRangeproof.empty()) {
+        return false;
+    }
+    if (out.vchRangeproof.size() > MAX_RANGEPROOF_SIZE) {
         return false;
     }
     secp256k1_pedersen_commitment commit;
