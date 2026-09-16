@@ -197,6 +197,17 @@ bool Consensus::CheckTxInputs(const CTransaction& tx, TxValidationState& state, 
         prevouts.push_back(coin.out);
     }
 
+    // B2: v2 (and any non-CT version) must not spend a confidential commitment.
+    if (tx.nVersion != CT_VERSION) {
+        for (const CTxOut& prevout : prevouts) {
+            if (!prevout.nValue.IsExplicit()) {
+                return state.Invalid(TxValidationResult::TX_CONSENSUS,
+                    "bad-txns-v2-spend-ct",
+                    "non-CT transaction spends a confidential output");
+            }
+        }
+    }
+
     // RCPU: defense in depth. If we reach here with a v3 transaction but
     // g_con_elementsmode is disabled, reject the transaction rather than
     // crashing on GetAmount() for confidential inputs.
