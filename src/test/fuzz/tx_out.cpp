@@ -15,7 +15,7 @@ FUZZ_TARGET(tx_out)
     DataStream ds{buffer};
     CTxOut tx_out;
     try {
-        ds >> tx_out;
+        tx_out.Unserialize(ds, /*fCT=*/false);
     } catch (const std::ios_base::failure&) {
         return;
     }
