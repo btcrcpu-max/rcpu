@@ -2,6 +2,7 @@
 
 RCPU Core release notes live in [doc/release-notes/](release-notes/):
 
+- [v1.0.16](release-notes/v1.0.16.md) — consensus soft fork: B2 reject v2-spend-CT, A2 rangeproof cap
 - [v1.0.15](release-notes/v1.0.15.md) — security fixes: blind skip, fee output value, ASERT clamp, RNG strong seed
 - [v1.0.14](release-notes/v1.0.14.md) — security: constant-time CKey compare; walletnotify %w unescaped
 - [v1.0.12](release-notes/v1.0.12.md) — consensus change: fee outputs excluded from UTXO set
