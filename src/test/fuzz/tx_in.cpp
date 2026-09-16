@@ -16,13 +16,13 @@ FUZZ_TARGET(tx_in)
     DataStream ds{buffer};
     CTxIn tx_in;
     try {
-        ds >> tx_in;
+        tx_in.Unserialize(ds, false);
     } catch (const std::ios_base::failure&) {
         return;
     }
 
-    (void)GetTransactionInputWeight(tx_in);
-    (void)GetVirtualTransactionInputSize(tx_in);
+    (void)GetTransactionInputWeight(tx_in, false);
+    (void)GetVirtualTransactionInputSize(tx_in, false);
     (void)RecursiveDynamicUsage(tx_in);
 
     (void)tx_in.ToString();

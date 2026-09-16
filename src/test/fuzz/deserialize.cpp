@@ -176,8 +176,18 @@ FUZZ_TARGET_DESERIALIZE(script_deserialize, {
 })
 FUZZ_TARGET_DESERIALIZE(tx_in_deserialize, {
     CTxIn tx_in;
-    DeserializeFromFuzzingInput(buffer, tx_in);
-    AssertEqualAfterSerializeDeserialize(tx_in);
+    DataStream ds{buffer};
+    try {
+        tx_in.Unserialize(ds, false);
+    } catch (const std::ios_base::failure&) {
+        throw invalid_fuzzing_input_exception();
+    }
+    DataStream ss{};
+    tx_in.Serialize(ss, false);
+    CTxIn roundtrip;
+    DataStream ds2{ss};
+    roundtrip.Unserialize(ds2, false);
+    assert(roundtrip == tx_in);
 })
 FUZZ_TARGET_DESERIALIZE(flat_file_pos_deserialize, {
     FlatFilePos flat_file_pos;

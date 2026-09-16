@@ -1877,10 +1877,16 @@ static RPCHelpMan getblockstats()
 
         CAmount tx_total_out = 0;
         if (loop_outputs) {
-            for (const CTxOut& out : tx->vout) {
+for (const CTxOut& out : tx->vout) {
                 tx_total_out += out.nValue.GetAmount();
 
-                size_t out_size = GetSerializeSize(out) + PER_UTXO_OVERHEAD;
+                size_t out_size;
+                {
+                    SizeComputer sc;
+                    out.Serialize(sc, false);
+                    out_size = sc.size();
+                }
+                out_size += PER_UTXO_OVERHEAD;
                 utxo_size_inc += out_size;
 
                 // The Genesis block and the repeated BIP30 block coinbases don't change the UTXO
@@ -1929,10 +1935,16 @@ static RPCHelpMan getblockstats()
             CAmount tx_total_in = 0;
             const auto& txundo = blockUndo.vtxundo.at(i - 1);
             for (const Coin& coin: txundo.vprevout) {
-                const CTxOut& prevoutput = coin.out;
+const CTxOut& prevoutput = coin.out;
 
                 tx_total_in += prevoutput.nValue.GetAmount();
-                size_t prevout_size = GetSerializeSize(prevoutput) + PER_UTXO_OVERHEAD;
+                size_t prevout_size;
+                {
+                    SizeComputer sc;
+                    prevoutput.Serialize(sc, false);
+                    prevout_size = sc.size();
+                }
+                prevout_size += PER_UTXO_OVERHEAD;
                 utxo_size_inc -= prevout_size;
                 utxo_size_inc_actual -= prevout_size;
             }

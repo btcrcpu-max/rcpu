@@ -86,7 +86,15 @@ FUZZ_TARGET(script_sign, .init = initialize_script_sign)
 
     {
         const std::optional<CMutableTransaction> mutable_transaction = ConsumeDeserializable<CMutableTransaction>(fuzzed_data_provider, TX_WITH_WITNESS);
-        const std::optional<CTxOut> tx_out = ConsumeDeserializable<CTxOut>(fuzzed_data_provider);
+        const std::vector<uint8_t> tx_out_buffer{ConsumeRandomLengthByteVector(fuzzed_data_provider)};
+        DataStream tx_out_ds{tx_out_buffer};
+        CTxOut tx_out_obj;
+        std::optional<CTxOut> tx_out;
+        try {
+            tx_out_obj.Unserialize(tx_out_ds, false);
+            tx_out = std::move(tx_out_obj);
+        } catch (const std::ios_base::failure&) {
+        }
         const unsigned int n_in = fuzzed_data_provider.ConsumeIntegral<unsigned int>();
         if (mutable_transaction && tx_out && mutable_transaction->vin.size() > n_in) {
             SignatureData signature_data_1 = DataFromTransaction(*mutable_transaction, n_in, *tx_out);

@@ -66,9 +66,10 @@ std::vector<CTxOut> TxOutsFromJSON(const UniValue& univalue)
     if (!univalue.isArray()) throw std::runtime_error("Prevouts must be array");
     std::vector<CTxOut> prevouts;
     for (size_t i = 0; i < univalue.size(); ++i) {
-        CTxOut txout;
+CTxOut txout;
         try {
-            SpanReader{CheckedParseHex(univalue[i].get_str())} >> txout;
+            SpanReader sr{CheckedParseHex(univalue[i].get_str())};
+            txout.Unserialize(sr, false);
         } catch (const std::ios_base::failure&) {
             throw std::runtime_error("Prevout invalid format");
         }

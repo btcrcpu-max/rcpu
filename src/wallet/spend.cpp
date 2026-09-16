@@ -143,11 +143,15 @@ TxSize CalculateMaximumSignedTxSize(const CTransaction &tx, const CWallet *walle
         if (desc) return IsSegwit(*desc);
         return false;
     });
-    // Segwit marker and flag
+// Segwit marker and flag
     if (is_segwit) weight += 2;
 
     // Add the size of the transaction outputs.
-    for (const auto& txo : tx.vout) weight += GetSerializeSize(txo) * WITNESS_SCALE_FACTOR;
+    for (const auto& txo : tx.vout) {
+        SizeComputer sc;
+        txo.Serialize(sc, false);
+        weight += sc.size() * WITNESS_SCALE_FACTOR;
+    }
 
     // Add the size of the transaction inputs as if they were signed.
     for (uint32_t i = 0; i < txouts.size(); i++) {
@@ -1058,10 +1062,14 @@ static util::Result<CreatedTransactionResult> CreateTransactionInternal(
         // A valid destination implies a change script (and
         // vice-versa). An empty change script will abort later, if the
         // change keypool ran out, but change is required.
-        CHECK_NONFATAL(IsValidDestination(dest) != scriptChange.empty());
+CHECK_NONFATAL(IsValidDestination(dest) != scriptChange.empty());
     }
     CTxOut change_prototype_txout(0, scriptChange);
-    coin_selection_params.change_output_size = GetSerializeSize(change_prototype_txout);
+    {
+        SizeComputer sc;
+        change_prototype_txout.Serialize(sc, false);
+        coin_selection_params.change_output_size = sc.size();
+    }
     // RCPU CT: add CT output overhead to change output size
     if (g_con_elementsmode) {
         coin_selection_params.change_output_size += 700;
@@ -1117,10 +1125,14 @@ static util::Result<CreatedTransactionResult> CreateTransactionInternal(
     // vouts to the payees
     for (const auto& recipient : vecSend)
     {
-        CTxOut txout(recipient.nAmount, GetScriptForDestination(recipient.dest));
+CTxOut txout(recipient.nAmount, GetScriptForDestination(recipient.dest));
 
         // Include the fee cost for outputs.
-        coin_selection_params.tx_noinputs_size += ::GetSerializeSize(txout);
+        {
+            SizeComputer sc;
+            txout.Serialize(sc, false);
+            coin_selection_params.tx_noinputs_size += sc.size();
+        }
 
         if (IsDust(txout, wallet.chain().relayDustFee())) {
             return util::Error{_("Transaction amount too small")};

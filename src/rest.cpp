@@ -61,10 +61,20 @@ struct CCoin {
     CCoin() : nHeight(0) {}
     explicit CCoin(Coin&& in) : nHeight(in.nHeight), out(std::move(in.out)) {}
 
-    SERIALIZE_METHODS(CCoin, obj)
+    template <typename Stream>
+    void Serialize(Stream& s) const
     {
         uint32_t nTxVerDummy = 0;
-        READWRITE(nTxVerDummy, obj.nHeight, obj.out);
+        s << nTxVerDummy << nHeight;
+        out.Serialize(s, false);
+    }
+
+    template <typename Stream>
+    void Unserialize(Stream& s)
+    {
+        uint32_t nTxVerDummy = 0;
+        s >> nTxVerDummy >> nHeight;
+        out.Unserialize(s, false);
     }
 };
 

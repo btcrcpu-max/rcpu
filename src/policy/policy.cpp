@@ -42,7 +42,12 @@ CAmount GetDustThreshold(const CTxOut& txout, const CFeeRate& dustRelayFeeIn)
     if (txout.scriptPubKey.IsUnspendable())
         return 0;
 
-    size_t nSize = GetSerializeSize(txout);
+    size_t nSize;
+    {
+        SizeComputer sc;
+        txout.Serialize(sc, false);
+        nSize = sc.size();
+    }
     int witnessversion = 0;
     std::vector<unsigned char> witnessprogram;
 
@@ -324,7 +329,7 @@ int64_t GetVirtualTransactionSize(const CTransaction& tx, int64_t nSigOpCost, un
     return GetVirtualTransactionSize(GetTransactionWeight(tx), nSigOpCost, bytes_per_sigop);
 }
 
-int64_t GetVirtualTransactionInputSize(const CTxIn& txin, int64_t nSigOpCost, unsigned int bytes_per_sigop)
+int64_t GetVirtualTransactionInputSize(const CTxIn& txin, int64_t nSigOpCost, unsigned int bytes_per_sigop, bool fCT)
 {
-    return GetVirtualTransactionSize(GetTransactionInputWeight(txin), nSigOpCost, bytes_per_sigop);
+    return GetVirtualTransactionSize(GetTransactionInputWeight(txin, fCT), nSigOpCost, bytes_per_sigop);
 }

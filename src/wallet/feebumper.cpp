@@ -221,7 +221,7 @@ Result CreateRateBumpTransaction(CWallet& wallet, const uint256& txid, const CCo
 
         if (new_coin_control.IsExternalSelected(txin.prevout)) {
             // For external inputs, we estimate the size using the size of this input
-            int64_t input_weight = GetTransactionInputWeight(txin);
+            int64_t input_weight = GetTransactionInputWeight(txin, wtx.tx->nVersion >= CT_VERSION);
             // Because signatures can have different sizes, we need to figure out all of the
             // signature sizes and replace them with the max sized signature.
             // In order to do this, we verify the script with a special SignatureChecker which

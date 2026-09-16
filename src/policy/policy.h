@@ -161,16 +161,16 @@ bool IsWitnessStandard(const CTransaction& tx, const CCoinsViewCache& mapInputs)
 /** Compute the virtual transaction size (weight reinterpreted as bytes). */
 int64_t GetVirtualTransactionSize(int64_t nWeight, int64_t nSigOpCost, unsigned int bytes_per_sigop);
 int64_t GetVirtualTransactionSize(const CTransaction& tx, int64_t nSigOpCost, unsigned int bytes_per_sigop);
-int64_t GetVirtualTransactionInputSize(const CTxIn& tx, int64_t nSigOpCost, unsigned int bytes_per_sigop);
+int64_t GetVirtualTransactionInputSize(const CTxIn& tx, int64_t nSigOpCost, unsigned int bytes_per_sigop, bool fCT);
 
 static inline int64_t GetVirtualTransactionSize(const CTransaction& tx)
 {
     return GetVirtualTransactionSize(tx, 0, 0);
 }
 
-static inline int64_t GetVirtualTransactionInputSize(const CTxIn& tx)
+static inline int64_t GetVirtualTransactionInputSize(const CTxIn& tx, bool fCT)
 {
-    return GetVirtualTransactionInputSize(tx, 0, 0);
+    return GetVirtualTransactionInputSize(tx, 0, 0, fCT);
 }
 
 #endif // BITCOIN_POLICY_POLICY_H

@@ -154,10 +154,14 @@ static inline int64_t GetBlockWeight(const CBlock& block)
 {
     return ::GetSerializeSize(TX_NO_WITNESS(block)) * (WITNESS_SCALE_FACTOR - 1) + ::GetSerializeSize(TX_WITH_WITNESS(block));
 }
-static inline int64_t GetTransactionInputWeight(const CTxIn& txin)
+static inline int64_t GetTransactionInputWeight(const CTxIn& txin, bool fCT)
 {
     // scriptWitness size is added here because witnesses and txins are split up in segwit serialization.
-    return ::GetSerializeSize(TX_NO_WITNESS(txin)) * (WITNESS_SCALE_FACTOR - 1) + ::GetSerializeSize(TX_WITH_WITNESS(txin)) + ::GetSerializeSize(txin.scriptWitness.stack);
+    size_t nSize = GetSerializeSize(txin.prevout) + GetSerializeSize(txin.scriptSig) + GetSerializeSize(txin.nSequence);
+    if (fCT) {
+        nSize += GetSerializeSize(txin.nValue);
+    }
+    return nSize * (WITNESS_SCALE_FACTOR - 1) + nSize + GetSerializeSize(txin.scriptWitness.stack);
 }
 
 /** Compute at which vout of the block's coinbase transaction the witness commitment occurs, or -1 if not found */
