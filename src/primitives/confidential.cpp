@@ -7,7 +7,6 @@
 #include <crypto/common.h>
 
 bool g_con_elementsmode = false;
-thread_local bool g_ct_serialization = false;
 
 void CConfidentialValue::SetToAmount(const CAmount amount)
 {

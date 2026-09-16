@@ -1327,11 +1327,16 @@ public:
     /** Serialize an output of txTo */
     template<typename S>
     void SerializeOutput(S &s, unsigned int nOutput) const {
-        if (fHashSingle && nOutput != nIn)
+        // RCPU CT: explicit mode keeps legacy sighash byte-identical to the
+        // previous implicit mode decision.
+        const bool fCT = txTo.nVersion >= CT_VERSION;
+        if (fHashSingle && nOutput != nIn) {
             // Do not lock-in the txout payee at other indices as txin
-            ::Serialize(s, CTxOut());
-        else
-            ::Serialize(s, txTo.vout[nOutput]);
+            CTxOut blank;
+            blank.Serialize(s, fCT);
+        } else {
+            txTo.vout[nOutput].Serialize(s, fCT);
+        }
     }
 
     /** Serialize txTo */
@@ -1380,10 +1385,12 @@ uint256 GetSequencesSHA256(const T& txTo)
 template <class T>
 uint256 GetOutputsSHA256(const T& txTo)
 {
-    CTModeScope ct_scope(txTo.nVersion >= CT_VERSION);
+    // RCPU CT: serialize txouts with an explicit mode derived from the tx
+    // version (was: a mode scope over a thread-local global).
+    const bool fCT = txTo.nVersion >= CT_VERSION;
     HashWriter ss{};
     for (const auto& txout : txTo.vout) {
-        ss << txout;
+        txout.Serialize(ss, fCT);
     }
     return ss.GetSHA256();
 }
@@ -1545,11 +1552,11 @@ bool SignatureHashSchnorr(uint256& hash_out, ScriptExecutionData& execdata, cons
     // Data about the input/prevout being spent
     assert(execdata.m_annex_init);
     const bool have_annex = execdata.m_annex_present;
-    const uint8_t spend_type = (ext_flag << 1) + (have_annex ? 1 : 0); // The low bit indicates whether an annex is present.
+const uint8_t spend_type = (ext_flag << 1) + (have_annex ? 1 : 0); // The low bit indicates whether an annex is present.
     ss << spend_type;
     if (input_type == SIGHASH_ANYONECANPAY) {
         ss << tx_to.vin[in_pos].prevout;
-        ss << cache.m_spent_outputs[in_pos];
+        cache.m_spent_outputs[in_pos].Serialize(ss, false);
         ss << tx_to.vin[in_pos].nSequence;
     } else {
         ss << in_pos;
@@ -1558,12 +1565,12 @@ bool SignatureHashSchnorr(uint256& hash_out, ScriptExecutionData& execdata, cons
         ss << execdata.m_annex_hash;
     }
 
-    // Data about the output (if only one).
+// Data about the output (if only one).
     if (output_type == SIGHASH_SINGLE) {
         if (in_pos >= tx_to.vout.size()) return false;
         if (!execdata.m_output_hash) {
             HashWriter sha_single_output{};
-            sha_single_output << tx_to.vout[in_pos];
+            tx_to.vout[in_pos].Serialize(sha_single_output, false);
             execdata.m_output_hash = sha_single_output.GetSHA256();
         }
         ss << execdata.m_output_hash.value();
@@ -1587,7 +1594,7 @@ uint256 SignatureHash(const CScript& scriptCode, const T& txTo, unsigned int nIn
 {
     assert(nIn < txTo.vin.size());
 
-    CTModeScope ct_scope(txTo.nVersion >= CT_VERSION);
+    const bool fCT = txTo.nVersion >= CT_VERSION;
 
     if (sigversion == SigVersion::WITNESS_V0) {
         uint256 hashPrevouts;
@@ -1608,7 +1615,7 @@ uint256 SignatureHash(const CScript& scriptCode, const T& txTo, unsigned int nIn
             hashOutputs = cacheready ? cache->hashOutputs : SHA256Uint256(GetOutputsSHA256(txTo));
         } else if ((nHashType & 0x1f) == SIGHASH_SINGLE && nIn < txTo.vout.size()) {
             HashWriter ss{};
-            ss << txTo.vout[nIn];
+            txTo.vout[nIn].Serialize(ss, fCT);
             hashOutputs = ss.GetHash();
         }
 

@@ -16,9 +16,6 @@
 /** Global flag: confidential-transaction mode (Elements-style g_con_elementsmode). */
 extern bool g_con_elementsmode;
 
-/** Thread-local flag: whether the transaction currently being (de)serialized is in CT format. */
-extern thread_local bool g_ct_serialization;
-
 /**
  * Confidential values and nonces share enough code in common that it makes
  * sense to define a common abstract base class.

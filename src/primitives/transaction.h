@@ -67,13 +67,49 @@ public:
 // RCPU: transaction version marking confidential-transactions (CT) serialization.
 static constexpr int32_t CT_VERSION = 3;
 
-/** RAII guard that sets the CT serialization mode for the duration of a scope. */
-struct CTModeScope
+/**
+ * Serialization modes are now passed explicitly to CTxIn/CTxOut
+ * (de)serialization instead of being read from hidden thread-local state.
+ * The mode is derived from the transaction version at a single decision point
+ * (see SerializeTransaction/UnserializeTransaction) and, where a CTxOut is
+ * serialized directly (sighash hashes, PSBT), from the governing transaction's
+ * version as well. A missed mode can no longer silently serialize a
+ * confidential output in legacy format (dropping commitment, nonce and
+ * rangeproof), because omitting the argument is a compile error.
+ */
+
+/** Serialize a vector of CTxIn/CTxOut in explicit CT or legacy mode.
+ *  Wire format is identical to the default vector serialization: a
+ *  compact-size length prefix followed by each element. */
+template <typename Stream, typename T>
+void SerializeVec(Stream& s, const std::vector<T>& v, bool fCT)
 {
-    const bool prev;
-    explicit CTModeScope(bool ct) : prev(g_ct_serialization) { g_ct_serialization = ct; }
-    ~CTModeScope() { g_ct_serialization = prev; }
-};
+    WriteCompactSize(s, v.size());
+    for (const auto& e : v) {
+        e.Serialize(s, fCT);
+    }
+}
+
+/** Inverse of SerializeVec. Mirrors the default vector deserialization
+ *  (serialize.h VectorFormatter): ReadCompactSize bounds the element count,
+ *  and memory is allocated in 5 MiB batches so an attacker must actually
+ *  provide X bytes before we allocate X+5 MiB. */
+template <typename Stream, typename T>
+void UnserializeVec(Stream& s, std::vector<T>& v, bool fCT)
+{
+    v.clear();
+    const size_t nSize = ReadCompactSize(s);
+    size_t allocated = 0;
+    while (allocated < nSize) {
+        static_assert(sizeof(T) <= MAX_VECTOR_ALLOCATE, "Vector element size too large");
+        allocated = std::min(nSize, allocated + MAX_VECTOR_ALLOCATE / sizeof(T));
+        v.reserve(allocated);
+        while (v.size() < allocated) {
+            v.emplace_back();
+            v.back().Unserialize(s, fCT);
+        }
+    }
+}
 
 class CTxIn
 {
@@ -140,16 +176,16 @@ public:
     CTxIn(Txid hashPrevTx, uint32_t nOut, CScript scriptSigIn=CScript(), uint32_t nSequenceIn=SEQUENCE_FINAL);
 
     template <typename Stream>
-    inline void Serialize(Stream& s) const {
+    inline void Serialize(Stream& s, bool fCT) const {
         s << prevout << scriptSig << nSequence;
-        if (g_ct_serialization) {
+        if (fCT) {
             s << nValue;
         }
     }
     template <typename Stream>
-    inline void Unserialize(Stream& s) {
+    inline void Unserialize(Stream& s, bool fCT) {
         s >> prevout >> scriptSig >> nSequence;
-        if (g_ct_serialization) {
+        if (fCT) {
             s >> nValue;
         } else {
             nValue.SetNull();
@@ -158,9 +194,13 @@ public:
 
     friend bool operator==(const CTxIn& a, const CTxIn& b)
     {
+        // RCPU CT: nValue (the spent output's commitment) is part of the input
+        // identity in CT mode. For legacy transactions nValue is always null
+        // on both sides, so this comparison is a no-op there.
         return (a.prevout   == b.prevout &&
                 a.scriptSig == b.scriptSig &&
-                a.nSequence == b.nSequence);
+                a.nSequence == b.nSequence &&
+                a.nValue    == b.nValue);
     }
 
     friend bool operator!=(const CTxIn& a, const CTxIn& b)
@@ -190,8 +230,8 @@ public:
     CTxOut(const CAmount& nValueIn, CScript scriptPubKeyIn);
 
     template <typename Stream>
-    inline void Serialize(Stream& s) const {
-        if (g_ct_serialization) {
+    inline void Serialize(Stream& s, bool fCT) const {
+        if (fCT) {
             s << nValue;
             s << nNonce;
             s << vchRangeproof;
@@ -201,8 +241,8 @@ public:
         s << scriptPubKey;
     }
     template <typename Stream>
-    inline void Unserialize(Stream& s) {
-        if (g_ct_serialization) {
+    inline void Unserialize(Stream& s, bool fCT) {
+        if (fCT) {
             s >> nValue;
             s >> nNonce;
             s >> vchRangeproof;
@@ -240,9 +280,12 @@ public:
 
     friend bool operator==(const CTxOut& a, const CTxOut& b)
     {
-        return (a.nValue       == b.nValue &&
-                a.nNonce       == b.nNonce &&
-                a.scriptPubKey == b.scriptPubKey);
+        // RCPU CT: two outputs with identical commitment and nonce but
+        // different rangeproofs are distinct UTXO semantic objects.
+        return (a.nValue        == b.nValue &&
+                a.nNonce        == b.nNonce &&
+                a.vchRangeproof == b.vchRangeproof &&
+                a.scriptPubKey  == b.scriptPubKey);
     }
 
     friend bool operator!=(const CTxOut& a, const CTxOut& b)
@@ -285,22 +328,24 @@ void UnserializeTransaction(TxType& tx, Stream& s, const TransactionSerParams& p
     const bool fAllowWitness = params.allow_witness;
 
     s >> tx.nVersion;
-    CTModeScope ct_scope(tx.nVersion >= CT_VERSION);
+    // Single decision point: the transaction version selects the serialization
+    // mode for every input and output below.
+    const bool fCT = tx.nVersion >= CT_VERSION;
     unsigned char flags = 0;
     tx.vin.clear();
     tx.vout.clear();
     /* Try to read the vin. In case the dummy is there, this will be read as an empty vector. */
-    s >> tx.vin;
+    UnserializeVec(s, tx.vin, fCT);
     if (tx.vin.size() == 0 && fAllowWitness) {
         /* We read a dummy or an empty vin. */
         s >> flags;
         if (flags != 0) {
-            s >> tx.vin;
-            s >> tx.vout;
+            UnserializeVec(s, tx.vin, fCT);
+            UnserializeVec(s, tx.vout, fCT);
         }
     } else {
         /* We read a non-empty vin. Assume a normal vout follows. */
-        s >> tx.vout;
+        UnserializeVec(s, tx.vout, fCT);
     }
     if ((flags & 1) && fAllowWitness) {
         /* The witness flag is present, and we support witnesses. */
@@ -325,7 +370,7 @@ void SerializeTransaction(const TxType& tx, Stream& s, const TransactionSerParam
 {
     const bool fAllowWitness = params.allow_witness;
 
-    CTModeScope ct_scope(tx.nVersion >= CT_VERSION);
+    const bool fCT = tx.nVersion >= CT_VERSION;
     s << tx.nVersion;
     unsigned char flags = 0;
     // Consistency check
@@ -338,11 +383,11 @@ void SerializeTransaction(const TxType& tx, Stream& s, const TransactionSerParam
     if (flags) {
         /* Use extended format in case witnesses are to be serialized. */
         std::vector<CTxIn> vinDummy;
-        s << vinDummy;
+        SerializeVec(s, vinDummy, fCT);
         s << flags;
     }
-    s << tx.vin;
-    s << tx.vout;
+    SerializeVec(s, tx.vin, fCT);
+    SerializeVec(s, tx.vout, fCT);
     if (flags & 1) {
         for (size_t i = 0; i < tx.vin.size(); i++) {
             s << tx.vin[i].scriptWitness.stack;
