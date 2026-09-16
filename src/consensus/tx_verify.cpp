@@ -217,6 +217,15 @@ bool Consensus::CheckTxInputs(const CTransaction& tx, TxValidationState& state, 
     }
 
     if (g_con_elementsmode && tx.nVersion == CT_VERSION) {
+        // A2: reject oversized range proofs before balance verification
+        for (const CTxOut& out : tx.vout) {
+            if (out.vchRangeproof.size() > MAX_RANGEPROOF_SIZE) {
+                return state.Invalid(TxValidationResult::TX_CONSENSUS,
+                    "bad-txns-rangeproof-too-large",
+                    strprintf("rangeproof too large (%d > %d)", out.vchRangeproof.size(), MAX_RANGEPROOF_SIZE));
+            }
+        }
+
         // CT mode: confidential value balance + range proof verification
         if (!VerifyAmounts(prevouts, tx, txfee)) {
             return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-txns-ct-balance",

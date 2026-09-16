@@ -19,6 +19,8 @@ static const int64_t MAX_BLOCK_SIGOPS_COST = 80000;
 static const int COINBASE_MATURITY = 100;
 /** RCPU: block height at which confidential transactions (tx version >= CT_VERSION) activate. */
 static const int CT_FORK_HEIGHT = 8000;
+/** RCPU: maximum allowed range proof size in bytes for a confidential output. */
+static constexpr size_t MAX_RANGEPROOF_SIZE = 5134;
 
 static const int WITNESS_SCALE_FACTOR = 4;
 

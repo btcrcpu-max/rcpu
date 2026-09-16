@@ -182,4 +182,61 @@ BOOST_AUTO_TEST_CASE(v3_commitment_spend_not_governed_by_b2)
     }
 }
 
+// A2: range proof at exactly the max size (5134) must NOT be rejected as
+// "too-large".  It may still fail later (balance / verification), but the
+// size gate must let it through.
+BOOST_AUTO_TEST_CASE(rangeproof_exactly_max_ok)
+{
+    const COutPoint prevout{TxidFromString("0x6666"), 0};
+
+    CCoinsViewTest base;
+    base.Add(prevout, MakeExplicitCoin(1000 * COIN));
+
+    CCoinsViewCache view{&base};
+    CMutableTransaction mtx = MakeLegacySpend({prevout}, 1000 * COIN);
+    mtx.nVersion = CT_VERSION;
+    mtx.vout[0].vchRangeproof.assign(MAX_RANGEPROOF_SIZE, 0x00);
+
+    const CTransaction tx{mtx};
+    TxValidationState state;
+    CAmount txfee = -1;
+
+    const bool old_ct_mode = g_con_elementsmode;
+    g_con_elementsmode = true;
+    if (!Consensus::CheckTxInputs(tx, state, view, /*nSpendHeight=*/200, txfee)) {
+        BOOST_CHECK_NE(state.GetRejectReason(), "bad-txns-rangeproof-too-large");
+    }
+    g_con_elementsmode = old_ct_mode;
+}
+
+// A2: range proof one byte over the max is rejected immediately before
+// any balance verification.
+BOOST_AUTO_TEST_CASE(rangeproof_over_max_rejected)
+{
+    const COutPoint prevout{TxidFromString("0x7777"), 0};
+
+    CCoinsViewTest base;
+    base.Add(prevout, MakeExplicitCoin(1000 * COIN));
+
+    CCoinsViewCache view{&base};
+    CMutableTransaction mtx = MakeLegacySpend({prevout}, 1000 * COIN);
+    mtx.nVersion = CT_VERSION;
+    mtx.vout[0].vchRangeproof.assign(MAX_RANGEPROOF_SIZE + 1, 0x00);
+
+    const CTransaction tx{mtx};
+    TxValidationState state;
+    CAmount txfee = -1;
+
+    const bool old_ct_mode = g_con_elementsmode;
+    g_con_elementsmode = true;
+    BOOST_CHECK(!Consensus::CheckTxInputs(tx, state, view, /*nSpendHeight=*/200, txfee));
+    g_con_elementsmode = old_ct_mode;
+
+    BOOST_CHECK(state.IsInvalid());
+    BOOST_CHECK_EQUAL(state.GetResult(), TxValidationResult::TX_CONSENSUS);
+    BOOST_CHECK_EQUAL(state.GetRejectReason(), "bad-txns-rangeproof-too-large");
+    BOOST_CHECK(state.GetDebugMessage().find("rangeproof too large") != std::string::npos);
+    BOOST_CHECK(state.GetDebugMessage().find("5135") != std::string::npos);
+}
+
 BOOST_AUTO_TEST_SUITE_END()
