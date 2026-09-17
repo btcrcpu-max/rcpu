@@ -15,6 +15,7 @@
 
 #include <cassert>
 #include <cstring>
+#include <optional>
 
 // !RCPU FIX H-1: secp256k1_ecdh hash callback. Copies x32 directly to output
 // (no SHA256) to match the original nonce derivation for backward compatibility.
@@ -59,12 +60,13 @@ void SetNonce(CConfidentialNonce& nc, const uint256& nonce)
     std::memcpy(&nc.vchCommitment[1], nonce.begin(), 32);
 }
 
-// Decode a 33-byte CConfidentialNonce back to a 32-byte nonce.
-uint256 GetNonce(const CConfidentialNonce& nc)
+// Path A commits to the raw nonce with a fixed 0x02 prefix (BlindOutput /
+// SetNonce). Any other encoding — including the ECDH path B carried in a
+// 33-byte ephemeral pubkey (0x02/0x03) — must not be treated as a plaintext
+// nonce: GetNonce() would silently decode garbage into the rangeproof rewind.
+static bool IsLegacyNonceCommit(const CConfidentialNonce& nc)
 {
-    uint256 nonce;
-    std::memcpy(nonce.begin(), &nc.vchCommitment[1], 32);
-    return nonce;
+    return nc.vchCommitment.size() == 33 && nc.vchCommitment[0] == 0x02;
 }
 
 static bool ComputeECDHNonce(const CKey& privkey, const CPubKey& pubkey, uint256& nonce_out)
@@ -81,6 +83,20 @@ static bool ComputeECDHNonce(const CKey& privkey, const CPubKey& pubkey, uint256
 }
 
 } // namespace
+
+// Decode a 33-byte CConfidentialNonce back to a 32-byte nonce. Only valid for
+// path A (0x02 prefix + nonce); malformed commitments yield the zero nonce so
+// callers must gate on IsLegacyNonceCommit before deriving anything from the
+// result.
+uint256 GetNonce(const CConfidentialNonce& nc)
+{
+    uint256 nonce;
+    if (!IsLegacyNonceCommit(nc)) {
+        return uint256();
+    }
+    std::memcpy(nonce.begin(), &nc.vchCommitment[1], 32);
+    return nonce;
+}
 
 bool BlindOutput(CConfidentialValue& conf_value, CConfidentialNonce& nonce_commit,
                  std::vector<unsigned char>& rangeproof, uint256& blind, uint256& nonce,
@@ -120,7 +136,10 @@ bool BlindOutput(CConfidentialValue& conf_value, CConfidentialNonce& nonce_commi
 bool UnblindValue(const CConfidentialValue& conf_value, const CConfidentialNonce& nonce_commit,
                   const std::vector<unsigned char>& rangeproof, CAmount& amount_out, uint256& blind_out)
 {
-    if (!conf_value.IsCommitment() || nonce_commit.vchCommitment.size() != 33 || rangeproof.empty()) {
+    // Path A only: the nonce commitment must be a well-formed legacy nonce
+    // (0x02 prefix + 32 bytes). A malformed commitment must never silently
+    // rewind into a garbage amount.
+    if (!conf_value.IsCommitment() || !IsLegacyNonceCommit(nonce_commit) || rangeproof.empty()) {
         return false;
     }
     secp256k1_context* ctx = GetBlindContext();
@@ -142,7 +161,7 @@ bool UnblindValue(const CConfidentialValue& conf_value, const CConfidentialNonce
     return true;
 }
 
-CAmount GetOutputAmount(const CTxOut& txout)
+std::optional<CAmount> GetOutputAmount(const CTxOut& txout)
 {
     if (txout.nValue.IsExplicit()) {
         return txout.nValue.GetAmount();
@@ -152,7 +171,9 @@ CAmount GetOutputAmount(const CTxOut& txout)
     if (UnblindValue(txout.nValue, txout.nNonce, txout.vchRangeproof, amount, blind)) {
         return amount;
     }
-    return 0;
+    // Unblind failure must not be conflated with a genuine zero amount: the
+    // commitment may be malformed (bad nonce prefix / length / empty proof).
+    return std::nullopt;
 }
 
 bool BlindTransaction(const std::vector<uint256>& input_blinds, CMutableTransaction& tx,

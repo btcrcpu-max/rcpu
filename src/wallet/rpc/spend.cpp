@@ -23,6 +23,12 @@
 #include <util/fees.h>
 #include <util/rbf.h>
 #include <util/translation.h>
+
+// MSVC CRT (corecrt_math.h) defines DOMAIN as a matherr error-code macro;
+// it collides with the silent-payment domain-separation constant below.
+#ifdef DOMAIN
+#undef DOMAIN
+#endif
 #include <util/vector.h>
 #include <wallet/coincontrol.h>
 #include <wallet/feebumper.h>

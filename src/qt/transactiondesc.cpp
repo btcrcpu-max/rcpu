@@ -253,9 +253,9 @@ QString TransactionDesc::toHTML(interfaces::Node& node, interfaces::Wallet& wall
                     }
                 }
 
-                strHTML += "<b>" + tr("Debit") + ":</b> " + BitcoinUnits::formatHtmlWithUnit(unit, -GetOutputAmount(txout)) + "<br>";
+strHTML += "<b>" + tr("Debit") + ":</b> " + BitcoinUnits::formatHtmlWithUnit(unit, -GetOutputAmount(txout).value_or(0)) + "<br>";
                 if(toSelf)
-                    strHTML += "<b>" + tr("Credit") + ":</b> " + BitcoinUnits::formatHtmlWithUnit(unit, GetOutputAmount(txout)) + "<br>";
+                    strHTML += "<b>" + tr("Credit") + ":</b> " + BitcoinUnits::formatHtmlWithUnit(unit, GetOutputAmount(txout).value_or(0)) + "<br>";
             }
 
             if (fAllToMe)
@@ -379,7 +379,7 @@ QString TransactionDesc::toHTML(interfaces::Node& node, interfaces::Wallet& wall
                             strHTML += GUIUtil::HtmlEscape(name) + " ";
                         strHTML += QString::fromStdString(EncodeDestination(address));
                     }
-                    strHTML = strHTML + " " + tr("Amount") + "=" + BitcoinUnits::formatHtmlWithUnit(unit, GetOutputAmount(vout));
+                    strHTML = strHTML + " " + tr("Amount") + "=" + BitcoinUnits::formatHtmlWithUnit(unit, GetOutputAmount(vout).value_or(0));
                     strHTML = strHTML + " IsMine=" + (wallet.txoutIsMine(vout) & ISMINE_SPENDABLE ? tr("true") : tr("false")) + "</li>";
                     strHTML = strHTML + " IsWatchOnly=" + (wallet.txoutIsMine(vout) & ISMINE_WATCH_ONLY ? tr("true") : tr("false")) + "</li>";
                 }
