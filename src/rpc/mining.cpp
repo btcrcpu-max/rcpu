@@ -134,23 +134,33 @@ static bool GenerateBlock(ChainstateManager& chainman, CBlock& block, uint64_t& 
     block.hashMerkleRoot = BlockMerkleRoot(block);
 
     // !RCPU
+    // CheckProofOfWorkRandomX only writes outHash on success (see pow.cpp), so
+    // track success explicitly instead of relying on the leftover value of
+    // rxHash. On failure this function must report "no block generated"
+    // (returning false) rather than returning true with an unset block_out,
+    // which previously made generateBlocks() spin without making progress
+    // when the nonce range was fully searched.
     uint256 rxHash;
     rxHash.SetNull();
+    bool fPoWFound = false;
     while (max_tries > 0 &&
            block.nNonce < std::numeric_limits<uint32_t>::max() &&
-           !CheckProofOfWorkRandomX(block, chainman.GetConsensus(), POW_VERIFY_MINING, &rxHash)) {
-        ++block.nNonce;
-        --max_tries;
+           !fPoWFound) {
+        if (CheckProofOfWorkRandomX(block, chainman.GetConsensus(), POW_VERIFY_MINING, &rxHash)) {
+            fPoWFound = true;
+        } else {
+            ++block.nNonce;
+            --max_tries;
+        }
+    }
+    if (!fPoWFound || chainman.m_interrupt) {
+        // No valid PoW found (max_tries exhausted, nonce range fully
+        // searched, or shutdown requested). Leave block_out unset and let
+        // the caller treat this as "block was not generated".
+        return false;
     }
     block.hashRandomX = rxHash;
     // !RCPU END
-
-    if (max_tries == 0 || chainman.m_interrupt) {
-        return false;
-    }
-    if (block.nNonce == std::numeric_limits<uint32_t>::max()) {
-        return true;
-    }
 
     block_out = std::make_shared<const CBlock>(block);
 
