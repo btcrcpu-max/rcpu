@@ -13,6 +13,7 @@
     <ClCompile Include="..\..\src\consensus\tx_check.cpp" />
     <ClCompile Include="..\..\src\hash.cpp" />
     <ClCompile Include="..\..\src\primitives\block.cpp" />
+    <ClCompile Include="..\..\src\primitives\confidential.cpp" />
     <ClCompile Include="..\..\src\primitives\transaction.cpp" />
     <ClCompile Include="..\..\src\pubkey.cpp" />
     <ClCompile Include="..\..\src\script\bitcoinconsensus.cpp" />

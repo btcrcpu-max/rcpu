@@ -41,6 +41,9 @@
 /* Define this symbol to enable ZMQ functions */
 #define ENABLE_ZMQ 1
 
+/* Define to 1 if evhttp_connection_get_peer takes const char** (libevent >= 2.1.8) */
+#define HAVE_EVHTTP_CONNECTION_GET_PEER_CONST_CHAR 1
+
 /* Define to 1 if you have the declaration of `be16toh', and to 0 if you
    don't. */
 #define HAVE_DECL_BE16TOH 0
