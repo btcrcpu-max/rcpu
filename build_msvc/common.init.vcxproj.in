@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
 <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
 
@@ -83,7 +83,12 @@
     </ClCompile>
   </ItemDefinitionGroup>
 
-  <ItemDefinitionGroup>
+    <PropertyGroup>
+    <RandomXIncDir Condition="'$(RandomXIncDir)' == ''">$(RANDOMX_INC_DIR)</RandomXIncDir>
+    <RandomXLibDir Condition="'$(RandomXLibDir)' == ''">$(RANDOMX_LIB_DIR)</RandomXLibDir>
+    <BoostComputeIncDir Condition="'$(BoostComputeIncDir)' == ''">$(BOOST_COMPUTE_INC_DIR)</BoostComputeIncDir>
+  </PropertyGroup>
+<ItemDefinitionGroup>
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
@@ -91,12 +96,12 @@
       <DisableSpecificWarnings>4018;4244;4267;4715;4805</DisableSpecificWarnings>
       <TreatWarningAsError>true</TreatWarningAsError>
       <PreprocessorDefinitions>_SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING;SECP256K1_STATIC;ZMQ_STATIC;NOMINMAX;WIN32;HAVE_CONFIG_H;_CRT_SECURE_NO_WARNINGS;_CONSOLE;_WIN32_WINNT=0x0601;_WIN32_IE=0x0501;WIN32_LEAN_AND_MEAN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>C:\randomx\include;C:\boost-compute\include;..\..\src;..\..\src\minisketch\include;..\..\src\univalue\include;..\..\src\secp256k1\include;..\..\src\leveldb\include;..\..\src\leveldb\helpers\memenv;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(RandomXIncDir);$(BoostComputeIncDir);..\..\src;..\..\src\minisketch\include;..\..\src\univalue\include;..\..\src\secp256k1\include;..\..\src\leveldb\include;..\..\src\leveldb\helpers\memenv;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
-      <AdditionalDependencies>randomx.lib;Iphlpapi.lib;ws2_32.lib;Shlwapi.lib;kernel32.lib;user32.lib;gdi32.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalLibraryDirectories>C:\randomx\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>bcrypt.lib;randomx.lib;Iphlpapi.lib;ws2_32.lib;Shlwapi.lib;kernel32.lib;user32.lib;gdi32.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(RandomXLibDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <RandomizedBaseAddress>true</RandomizedBaseAddress>
     </Link>
   </ItemDefinitionGroup>
