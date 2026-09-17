@@ -124,3 +124,5 @@ src/test/data/*.json.h
 src/test/data/*.hex.h
 src/test/data/asmap.raw.h
 src/minisketch/test/
+
+build_msvc/common.init.vcxproj.user
