@@ -68,9 +68,21 @@ def parse_config_into_btc_config():
     config_info = [c for c in config_info if not c.startswith("COPYRIGHT_HOLDERS")]
 
     config_dict = dict(item.split(", ") for item in config_info)
-    config_dict["PACKAGE_VERSION"] = f"\"{config_dict['CLIENT_VERSION_MAJOR']}.{config_dict['CLIENT_VERSION_MINOR']}.{config_dict['CLIENT_VERSION_BUILD']}\""
+    # RCPU uses RCPU_ prefix for version macros (find_between strips the leading
+    # underscore), create aliases without prefix so bitcoin_config.h.in can match.
+    for key in list(config_dict.keys()):
+        if key.startswith('RCPU_CLIENT_VERSION_'):
+            config_dict[key.replace('RCPU_CLIENT_VERSION_', 'CLIENT_VERSION_')] = config_dict[key]
+        elif key.startswith('_CLIENT_VERSION_'):
+            config_dict[key.replace('_CLIENT_VERSION_', 'CLIENT_VERSION_')] = config_dict[key]
+        elif key.startswith('COPYRIGHT_YEAR'):
+            config_dict[key.lstrip('_')] = config_dict[key]
+    vmaj = config_dict.get('CLIENT_VERSION_MAJOR', '0')
+    vmin = config_dict.get('CLIENT_VERSION_MINOR', '0')
+    vbuild = config_dict.get('CLIENT_VERSION_BUILD', '0')
+    config_dict["PACKAGE_VERSION"] = f"\"{vmaj}.{vmin}.{vbuild}\""
     version = config_dict["PACKAGE_VERSION"].strip('"')
-    config_dict["PACKAGE_STRING"] = f"\"Bitcoin Core {version}\""
+    config_dict["PACKAGE_STRING"] = f"\"RCPU Core {version}\""
 
     with open(os.path.join(SOURCE_DIR,'../build_msvc/bitcoin_config.h.in'), "r", encoding="utf8") as template_file:
         template = template_file.readlines()
