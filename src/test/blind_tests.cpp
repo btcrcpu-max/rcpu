@@ -14,6 +14,7 @@
 #include <test/util/setup_common.h>
 #include <uint256.h>
 
+#include <optional>
 #include <vector>
 
 BOOST_FIXTURE_TEST_SUITE(blind_tests, BasicTestingSetup)
@@ -327,6 +328,137 @@ BOOST_AUTO_TEST_CASE(blind_tx_empty_vout)
     std::vector<uint256> out_blinds;
     std::vector<uint256> out_nonces;
     BOOST_CHECK(!BlindTransaction(in_blinds, tx, out_blinds, out_nonces));
+}
+
+// Default path B (recipient ECDH): when every output carries a recipient
+// public key, the nonce commitment holds an ephemeral compressed pubkey
+// (odd-Y, 0x03 prefix) instead of the path-A plaintext nonce. A key-less
+// UnblindValue / GetNonce must fail closed, while each recipient's own
+// private key recovers the exact amount and blinding factor.
+//
+// Amounts follow the fixed vector for this test family
+// (B1: pay + change) and deliberately differ from the legacy path-A cases
+// above so the two suites never share numbers: amount_B = 123456789,
+// change_amount = 50000000, fee_explicit = 10000.
+BOOST_AUTO_TEST_CASE(blind_tx_path_b_recipient_key)
+{
+    CKey recv_key;
+    recv_key.MakeNewKey(true);
+    BOOST_REQUIRE(recv_key.IsValid());
+    const CPubKey recv_pub = recv_key.GetPubKey();
+
+    CKey change_key;
+    change_key.MakeNewKey(true);
+    BOOST_REQUIRE(change_key.IsValid());
+    const CPubKey change_pub = change_key.GetPubKey();
+
+    CMutableTransaction tx;
+    tx.vout.push_back(MakeExplicitOut(123456789));
+    tx.vout.push_back(MakeExplicitOut(50000000));
+
+    std::vector<uint256> in_blinds(1);
+    std::vector<uint256> out_blinds, out_nonces;
+    std::vector<std::optional<CPubKey>> recipient_keys = {recv_pub, change_pub};
+    BOOST_REQUIRE(BlindTransaction(in_blinds, tx, out_blinds, out_nonces, recipient_keys));
+    BOOST_REQUIRE_EQUAL(out_blinds.size(), 2U);
+
+    for (size_t i = 0; i < tx.vout.size(); ++i) {
+        BOOST_CHECK(!tx.vout[i].IsFee());
+        BOOST_CHECK(tx.vout[i].nValue.IsCommitment());
+
+        // Path B marker: 33-byte ephemeral pubkey with 0x03 (odd-Y) prefix,
+        // never the 0x02 plaintext-nonce legacy shape. A path-A decoder
+        // (0x02-only, IsLegacyNonceCommit) cannot treat this as a raw nonce.
+        BOOST_CHECK_EQUAL(tx.vout[i].nNonce.vchCommitment.size(), 33U);
+        BOOST_CHECK_EQUAL(tx.vout[i].nNonce.vchCommitment[0], 0x03);
+
+        // A key-less observer cannot decode the nonce or rewind the amount.
+        BOOST_CHECK(GetNonce(tx.vout[i].nNonce).IsNull());
+        CAmount amt = -1;
+        uint256 b;
+        BOOST_CHECK(!UnblindValue(tx.vout[i].nValue, tx.vout[i].nNonce,
+                                  tx.vout[i].vchRangeproof, amt, b));
+        // Failed rewind must surface as nullopt, never as a "zero" amount.
+        BOOST_CHECK(!GetOutputAmount(tx.vout[i]).has_value());
+
+        // Each recipient's own private key recovers the exact amount + blind.
+        const CKey& own_key = (i == 0 ? recv_key : change_key);
+        const CAmount expected = (i == 0 ? 123456789 : 50000000);
+        CAmount recovered = -1;
+        uint256 blind_out;
+        BOOST_REQUIRE(UnblindValueWithKey(own_key, tx.vout[i].nValue, tx.vout[i].nNonce,
+                                          tx.vout[i].vchRangeproof, recovered, blind_out));
+        BOOST_CHECK_EQUAL(recovered, expected);
+        BOOST_CHECK(blind_out == out_blinds[i]);
+
+        // A wrong private key (B2) must not unblind, and must not clobber the
+        // output amount with bogus data.
+        CKey wrong_key;
+        wrong_key.MakeNewKey(true);
+        CAmount wrong_recovered = -1;
+        uint256 wrong_blind;
+        BOOST_CHECK(!UnblindValueWithKey(wrong_key, tx.vout[i].nValue, tx.vout[i].nNonce,
+                                         tx.vout[i].vchRangeproof, wrong_recovered, wrong_blind));
+        BOOST_CHECK_EQUAL(wrong_recovered, -1);
+    }
+}
+
+// Fail closed: once a key list is engaged, every non-fee output must carry a
+// recipient public key. A missing key (nullopt) or a length mismatch must
+// abort the transaction instead of silently downgrading to path A. The
+// outputs must not be rewritten into the 0x02 path-A shape on failure.
+BOOST_AUTO_TEST_CASE(blind_tx_path_b_missing_key_fails)
+{
+    CMutableTransaction tx;
+    tx.vout.push_back(MakeExplicitOut(123456789));
+
+    std::vector<uint256> in_blinds(1);
+    std::vector<uint256> out_blinds, out_nonces;
+
+    // Engaged key list but this output has no key: rejected, and the output
+    // must not have been converted into a path-A commitment.
+    std::vector<std::optional<CPubKey>> keys_with_nullopt = {std::nullopt};
+    BOOST_CHECK(!BlindTransaction(in_blinds, tx, out_blinds, out_nonces, keys_with_nullopt));
+    BOOST_CHECK(tx.vout[0].nValue.IsExplicit());
+    BOOST_CHECK(tx.vout[0].nNonce.vchCommitment.empty());
+
+    // Key-list length does not line up with the outputs: rejected.
+    CMutableTransaction tx2;
+    tx2.vout.push_back(MakeExplicitOut(123456789));
+    tx2.vout.push_back(MakeExplicitOut(50000000));
+    std::vector<std::optional<CPubKey>> keys_too_short = {std::nullopt};
+    BOOST_CHECK(!BlindTransaction(in_blinds, tx2, out_blinds, out_nonces, keys_too_short));
+}
+
+// Fee outputs are exempt: they carry no commitment and need no key. A key
+// list may carry a nullopt slot on the fee position as long as the length
+// matches and every non-fee output has a key. The fee stays explicit
+// (fee_explicit = 10000) and is not part of the "must have a key" set.
+BOOST_AUTO_TEST_CASE(blind_tx_path_b_fee_exempt)
+{
+    CKey recv_key;
+    recv_key.MakeNewKey(true);
+    const CPubKey recv_pub = recv_key.GetPubKey();
+
+    CMutableTransaction tx;
+    tx.vout.push_back(MakeExplicitOut(123456789));
+    tx.vout.push_back(MakeFeeOut(10000));
+
+    std::vector<uint256> in_blinds(1);
+    std::vector<uint256> out_blinds, out_nonces;
+    std::vector<std::optional<CPubKey>> recipient_keys = {recv_pub, std::nullopt};
+    BOOST_REQUIRE(BlindTransaction(in_blinds, tx, out_blinds, out_nonces, recipient_keys));
+
+    BOOST_CHECK(tx.vout[1].IsFee());
+    BOOST_CHECK(tx.vout[1].nValue.IsExplicit());
+    BOOST_CHECK_EQUAL(tx.vout[1].nValue.GetAmount(), 10000);
+
+    CAmount recovered = -1;
+    uint256 blind_out;
+    BOOST_REQUIRE(UnblindValueWithKey(recv_key, tx.vout[0].nValue, tx.vout[0].nNonce,
+                                      tx.vout[0].vchRangeproof, recovered, blind_out));
+    BOOST_CHECK_EQUAL(recovered, 123456789);
+    BOOST_CHECK(blind_out == out_blinds[0]);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

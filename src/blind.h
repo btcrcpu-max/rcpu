@@ -8,13 +8,13 @@
 #include <consensus/amount.h>
 #include <primitives/confidential.h>
 #include <primitives/transaction.h>
+#include <pubkey.h>
 #include <uint256.h>
 
-#include <vector>
 #include <optional>
+#include <vector>
 
 class CKey;
-class CPubKey;
 
 /**
  * Blind a single output: generate a blinding factor and a nonce, create the
@@ -60,11 +60,21 @@ std::optional<CAmount> GetOutputAmount(const CTxOut& txout);
  * @param[in,out] tx   transaction whose outputs are to be blinded (outputs must
  *                     currently carry explicit amounts)
  * @param[out] output_blinds the resulting blinding factor of each output
- * @param[out] output_nonces the nonce of each output
+ * @param[out] output_nonces the nonce of each output (path A) or the ephemeral
+ *                           ECDH nonce (path B); path B nonces are also carried
+ *                           implicitly by the recipient's key derivation
+ * @param[in] recipient_keys optional per-output recipient public keys, indexed
+ *                           by output position. When empty (or when every
+ *                           entry is std::nullopt) the legacy path A is used
+ *                           for all outputs. When an entry is engaged, that
+ *                           output is blinded to the recipient via ECDH
+ *                           (path B). The vector length must equal the number
+ *                           of outputs, otherwise the call fails.
  * @return true on success
  */
 bool BlindTransaction(const std::vector<uint256>& input_blinds, CMutableTransaction& tx,
-                      std::vector<uint256>& output_blinds, std::vector<uint256>& output_nonces);
+                      std::vector<uint256>& output_blinds, std::vector<uint256>& output_nonces,
+                      const std::vector<std::optional<CPubKey>>& recipient_keys = {});
 
 /**
  * Blind an output to a specific recipient using ECDH. The nonce commitment

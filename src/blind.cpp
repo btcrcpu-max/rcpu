@@ -177,11 +177,16 @@ std::optional<CAmount> GetOutputAmount(const CTxOut& txout)
 }
 
 bool BlindTransaction(const std::vector<uint256>& input_blinds, CMutableTransaction& tx,
-                      std::vector<uint256>& output_blinds, std::vector<uint256>& output_nonces)
+                      std::vector<uint256>& output_blinds, std::vector<uint256>& output_nonces,
+                      const std::vector<std::optional<CPubKey>>& recipient_keys)
 {
     secp256k1_context* ctx = GetBlindContext();
     const size_t n = tx.vout.size();
     if (n == 0) {
+        return false;
+    }
+    if (!recipient_keys.empty() && recipient_keys.size() != n) {
+        // Per-output recipient key list must line up with the outputs.
         return false;
     }
     output_blinds.resize(n);
@@ -228,7 +233,43 @@ bool BlindTransaction(const std::vector<uint256>& input_blinds, CMutableTransact
         if (amount < 0 || !MoneyRange(amount)) {
             return false;
         }
-        Rand32(output_nonces[i]);
+
+        const bool path_b = !recipient_keys.empty() && recipient_keys[i].has_value();
+        uint256 nonce;
+        if (path_b) {
+            // Path B (recipient ECDH): the nonce commitment carries the
+            // ephemeral public key; the recipient derives the nonce from
+            // their own private key (UnblindValueWithKey) — no out-of-band
+            // nonce required. Non-fee outputs without an engaged key fail
+            // closed: an external output must not silently fall back to the
+            // plaintext-nonce path A.
+            CKey ephemeral;
+            CPubKey ephemeral_pub;
+            // Force an odd-Y compressed pubkey (0x03 prefix): a 0x02 prefix
+            // would be misdetected as a legacy plaintext-nonce commitment by
+            // IsLegacyNonceCommit, letting a third party feed the pubkey X
+            // bytes into GetNonce() and attempt a garbage rewind. With a
+            // 0x03 prefix the commitment is never legacy-shaped.
+            do {
+                ephemeral.MakeNewKey(true);
+                ephemeral_pub = ephemeral.GetPubKey();
+            } while (ephemeral_pub.size() != 33 || ephemeral_pub.data()[0] == 0x02);
+            tx.vout[i].nNonce.vchCommitment.assign(ephemeral_pub.begin(), ephemeral_pub.end());
+
+            if (!ComputeECDHNonce(ephemeral, *recipient_keys[i], nonce)) {
+                return false;
+            }
+            output_nonces[i] = uint256(); // ECDH-derived; not a stored nonce
+        } else {
+            if (!recipient_keys.empty()) {
+                // Engaged key list but this output has none: reject rather
+                // than blinding an external recipient with the legacy path.
+                return false;
+            }
+            Rand32(output_nonces[i]);
+            SetNonce(tx.vout[i].nNonce, output_nonces[i]);
+            nonce = output_nonces[i];
+        }
 
         secp256k1_pedersen_commitment commit;
         if (secp256k1_pedersen_commit(ctx, &commit, output_blinds[i].begin(), static_cast<uint64_t>(amount), secp256k1_generator_h) != 1) {
@@ -239,11 +280,9 @@ bool BlindTransaction(const std::vector<uint256>& input_blinds, CMutableTransact
         secp256k1_pedersen_commitment_serialize(ctx, ser, &commit);
         tx.vout[i].nValue.vchCommitment.assign(ser, ser + 33);
 
-        SetNonce(tx.vout[i].nNonce, output_nonces[i]);
-
         unsigned char proof[5134];
         size_t plen = sizeof(proof);
-        if (secp256k1_rangeproof_sign(ctx, proof, &plen, 0, &commit, output_blinds[i].begin(), output_nonces[i].begin(),
+        if (secp256k1_rangeproof_sign(ctx, proof, &plen, 0, &commit, output_blinds[i].begin(), nonce.begin(),
                                       0, 0, static_cast<uint64_t>(amount), nullptr, 0, nullptr, 0,
                                       secp256k1_generator_h) != 1) {
             return false;

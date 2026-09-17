@@ -3,16 +3,19 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <algorithm>
+#include <addresstype.h>
 #include <common/args.h>
 #include <common/system.h>
 #include <consensus/amount.h>
 #include <consensus/validation.h>
 #include <interfaces/chain.h>
 #include <numeric>
+#include <optional>
 #include <policy/policy.h>
 #include <blind.h>
 #include <primitives/confidential.h>
 #include <primitives/transaction.h>
+#include <pubkey.h>
 #include <script/script.h>
 #include <script/signingprovider.h>
 #include <script/solver.h>
@@ -998,6 +1001,34 @@ static void DiscourageFeeSniping(CMutableTransaction& tx, FastRandomContext& rng
     }
 }
 
+// RCPU CT: resolve the public key a confidential (path B / ECDH) output should
+// be blinded to. Hash-only destinations (P2PKH / P2WPKH / P2TR etc.) can only
+// be resolved for addresses this wallet itself owns; foreign addresses and
+// scripted outputs (P2SH / P2WSH / unknown witness programs) yield nullopt.
+static std::optional<CPubKey> GetRecipientPubKey(const CWallet& wallet, const CTxDestination& dest, const CScript& script)
+{
+    if (const auto* pk = std::get_if<PubKeyDestination>(&dest)) {
+        return pk->GetPubKey();
+    }
+    if (const auto* tr = std::get_if<WitnessV1Taproot>(&dest)) {
+        return tr->GetEvenCorrespondingCPubKey();
+    }
+    CKeyID keyid;
+    if (const auto* pkh = std::get_if<PKHash>(&dest)) {
+        keyid = ToKeyID(*pkh);
+    } else if (const auto* wpkh = std::get_if<WitnessV0KeyHash>(&dest)) {
+        keyid = ToKeyID(*wpkh);
+    } else {
+        return std::nullopt; // P2SH, P2WSH, unknown witness, bare scripts
+    }
+    CPubKey pubkey;
+    for (const auto* spkman : wallet.GetScriptPubKeyMans(script)) {
+        const auto provider = spkman->GetSolvingProvider(script);
+        if (provider && provider->GetPubKey(keyid, pubkey)) return pubkey;
+    }
+    return std::nullopt;
+}
+
 static util::Result<CreatedTransactionResult> CreateTransactionInternal(
         CWallet& wallet,
         const std::vector<CRecipient>& vecSend,
@@ -1367,7 +1398,31 @@ CTxOut txout(recipient.nAmount, GetScriptForDestination(recipient.dest));
             }
         }
         std::vector<uint256> output_blinds, output_nonces;
-        if (!BlindTransaction(input_blinds, txNew, output_blinds, output_nonces)) {
+        // RCPU CT: by default (unless -ctlegacy=1) every output -- payees and
+        // change alike -- is blinded to its recipient's public key via ECDH
+        // (path B). A payee whose public key cannot be resolved (e.g. a
+        // foreign P2WPKH/P2PKH address this wallet does not own) makes the
+        // send fail instead of silently downgrading to the plaintext-nonce
+        // path A. Change is this wallet's own key, so it always resolves.
+        std::vector<std::optional<CPubKey>> recipient_keys;
+        if (!gArgs.GetBoolArg("-ctlegacy", false)) {
+            recipient_keys.reserve(txNew.vout.size());
+            for (const auto& txout : txNew.vout) {
+                CTxDestination dest;
+                std::optional<CPubKey> pubkey;
+                if (ExtractDestination(txout.scriptPubKey, dest)) {
+                    pubkey = GetRecipientPubKey(wallet, dest, txout.scriptPubKey);
+                }
+                recipient_keys.push_back(pubkey);
+            }
+            for (size_t oi = 0; oi < recipient_keys.size(); ++oi) {
+                if (!recipient_keys[oi]) {
+                    LogPrintf("WARNING: cannot resolve a recipient public key for output %u; refusing to downgrade to legacy (path A) blinding. Use -ctlegacy=1 to force it.\n", oi);
+                    return util::Error{_("Cannot resolve a recipient public key for a confidential output; refusing to downgrade to legacy blinding. Use -ctlegacy=1 to force legacy blinding.")};
+                }
+            }
+        }
+        if (!BlindTransaction(input_blinds, txNew, output_blinds, output_nonces, recipient_keys)) {
             return util::Error{_("Confidential transaction blinding failed")};
         }
         // Add an explicit fee output (empty, unspendable scriptPubKey).

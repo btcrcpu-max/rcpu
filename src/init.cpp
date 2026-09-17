@@ -529,6 +529,7 @@ void SetupServerArgs(ArgsManager& argsman)
 #endif
     argsman.AddArg("-txindex", strprintf("Maintain a full transaction index, used by the getrawtransaction rpc call (default: %u)", DEFAULT_TXINDEX), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-ctmode", "Enable confidential transactions mode (RCPU)", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
+    argsman.AddArg("-ctlegacy", "Force legacy (path A, plaintext-nonce) CT blinding for all outputs. For testing and compatibility only; path A stores a rewind nonce on-chain and is not confidential (default: 0)", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-blockfilterindex=<type>",
                  strprintf("Maintain an index of compact filters by block (default: %s, values: %s).", DEFAULT_BLOCKFILTERINDEX, ListBlockFilterTypes()) +
                  " If <type> is not supplied or if <type> = 1, indexes for all known types are enabled.",
