@@ -52,7 +52,7 @@ void WalletModelTransaction::reassignAmounts(int nChangePosRet)
         {
             if (i == nChangePosRet)
                 i++;
-            rcp.amount = GetOutputAmount(walletTransaction->vout[i]);
+            rcp.amount = GetOutputAmount(walletTransaction->vout[i]).value_or(0);
             i++;
         }
     }

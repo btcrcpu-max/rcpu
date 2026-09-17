@@ -11,6 +11,7 @@
 #include <uint256.h>
 
 #include <vector>
+#include <optional>
 
 class CKey;
 class CPubKey;
@@ -32,9 +33,23 @@ bool BlindOutput(CConfidentialValue& conf_value, CConfidentialNonce& nonce_commi
 bool UnblindValue(const CConfidentialValue& conf_value, const CConfidentialNonce& nonce_commit,
                   const std::vector<unsigned char>& rangeproof, CAmount& amount_out, uint256& blind_out);
 
-/** Get the amount of a txout, unblinding confidential outputs via range-proof
- * rewind. Returns 0 if the output is confidential and unblinding fails. */
-CAmount GetOutputAmount(const CTxOut& txout);
+/**
+ * Decode a 33-byte legacy (path A) nonce commitment (0x02 prefix + 32 bytes)
+ * back to the raw nonce. Malformed commitments (wrong length or prefix) yield
+ * the zero nonce; callers must not treat that as a valid nonce and should
+ * gate on the exact 33-byte / 0x02 encoding before use. Path B (recipient
+ * ECDH) carries an ephemeral pubkey in the same 33 bytes and must go through
+ * UnblindValueWithKey instead.
+ */
+uint256 GetNonce(const CConfidentialNonce& nc);
+
+/**
+ * Get the amount of a txout, unblinding confidential outputs via range-proof
+ * rewind. Returns nullopt if the output is confidential and unblinding fails
+ * (malformed nonce commitment / empty or invalid range proof); failure must
+ * not be conflated with a truthful zero amount.
+ */
+std::optional<CAmount> GetOutputAmount(const CTxOut& txout);
 
 /**
  * Blind every output of a transaction (single-asset).

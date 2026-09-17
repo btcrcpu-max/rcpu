@@ -265,7 +265,7 @@ Result CreateRateBumpTransaction(CWallet& wallet, const uint256& txid, const CCo
             CRecipient recipient = {dest, output.nValue.IsExplicit() ? output.nValue.GetAmount() : 0, false};
             recipients.push_back(recipient);
         }
-        new_outputs_value += GetOutputAmount(output);
+        new_outputs_value += GetOutputAmount(output).value_or(0);
     }
 
     // If no recipients, means that we are sending coins to a change address

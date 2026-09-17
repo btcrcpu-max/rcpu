@@ -68,6 +68,79 @@ BOOST_AUTO_TEST_CASE(blind_to_recipient_roundtrip)
     BOOST_CHECK(blind_out == blind);
 }
 
+// GetNonce / UnblindValue must reject malformed nonce commitments instead of
+// silently unwinding garbage. Path A (plaintext nonce) uses the 0x02 prefix;
+// anything else -- wrong length or wrong prefix -- must fail closed.
+BOOST_AUTO_TEST_CASE(unblind_rejects_bad_nonce_prefix)
+{
+    const CAmount amount = 123 * COIN;
+
+    CConfidentialValue conf_value;
+    CConfidentialNonce nonce_commit;
+    std::vector<unsigned char> rangeproof;
+    uint256 blind;
+    uint256 nonce;
+
+    BOOST_REQUIRE(BlindOutput(conf_value, nonce_commit, rangeproof, blind, nonce, amount));
+    BOOST_REQUIRE_EQUAL(nonce_commit.vchCommitment[0], 0x02);
+
+    CAmount amt = -1;
+    uint256 b;
+    // Well-formed commitment from BlindOutput: rewinds fine.
+    BOOST_REQUIRE(UnblindValue(conf_value, nonce_commit, rangeproof, amt, b));
+
+    // Wrong prefix for path A: must fail, not parse the bytes as a nonce.
+    CConfidentialNonce bad_prefix = nonce_commit;
+    bad_prefix.vchCommitment[0] = 0x04;
+    BOOST_CHECK(!UnblindValue(conf_value, bad_prefix, rangeproof, amt, b));
+
+    // Wrong length: must fail before any memcpy.
+    CConfidentialNonce short_nonce;
+    short_nonce.vchCommitment.assign(nonce_commit.vchCommitment.begin(), nonce_commit.vchCommitment.begin() + 32);
+    BOOST_CHECK(!UnblindValue(conf_value, short_nonce, rangeproof, amt, b));
+
+    // GetNonce stays closed on the malformed variants.
+    BOOST_CHECK(GetNonce(nonce_commit) == nonce);
+    BOOST_CHECK(GetNonce(bad_prefix).IsNull());
+    BOOST_CHECK(GetNonce(short_nonce).IsNull());
+}
+
+// GetOutputAmount must not conflate "unblind failed" with "amount is 0".
+// Regression for the old signature that returned 0 on failure.
+BOOST_AUTO_TEST_CASE(get_output_amount_optional_semantics)
+{
+    // Explicit output: exact amount.
+    CTxOut explicit_out(777, CScript() << OP_TRUE);
+    auto explicit_amt = GetOutputAmount(explicit_out);
+    BOOST_REQUIRE(explicit_amt.has_value());
+    BOOST_CHECK_EQUAL(*explicit_amt, 777);
+
+    // Confidential output with a well-formed nonce: rewinds.
+    const CAmount amount = 555;
+    CConfidentialValue conf_value;
+    CConfidentialNonce nonce_commit;
+    std::vector<unsigned char> rangeproof;
+    uint256 blind;
+    uint256 nonce;
+    BOOST_REQUIRE(BlindOutput(conf_value, nonce_commit, rangeproof, blind, nonce, amount));
+
+    CTxOut ct_out;
+    ct_out.nValue = conf_value;
+    ct_out.nNonce = nonce_commit;
+    ct_out.vchRangeproof = rangeproof;
+    ct_out.scriptPubKey = CScript() << OP_TRUE;
+
+    auto ct_amt = GetOutputAmount(ct_out);
+    BOOST_REQUIRE(ct_amt.has_value());
+    BOOST_CHECK_EQUAL(*ct_amt, amount);
+
+    // Corrupted prefix: must be nullopt, not 0 (callers then treat it as
+    // "cannot determine", e.g. .value_or(0) at the specific call site).
+    CTxOut bad_ct_out = ct_out;
+    bad_ct_out.nNonce.vchCommitment[0] = 0x04;
+    BOOST_CHECK(!GetOutputAmount(bad_ct_out).has_value());
+}
+
 // Regression test for the VerifyDB (level 3) "coin database inconsistencies
 // found" failure on CT chains. Coin serialization used to route through
 // TxOutCompression, which only persisted nValue and scriptPubKey and dropped
