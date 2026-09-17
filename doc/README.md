@@ -9,7 +9,7 @@ transactions, and stores the blockchain history.
 
 ### Disk usage
 
-The RCPU blockchain is relatively young (launched February 2024) and lightweight.
+The RCPU blockchain is relatively young (launched September 2026) and lightweight.
 As of late 2026 the full chain is well under **1 GB** and a full node can run
 comfortably on a small VPS with 10 GB of disk space. SSD is recommended but not
 required.
@@ -21,7 +21,7 @@ hardware - not days.
 
 Pre-built binaries are available on the GitHub Releases page:
 
-  <https://github.com/RCPUcoin/RCPU/releases>
+  <https://github.com/btcrcpu-max/rcpu/releases>
 
 Verify the SHA256 checksums and GPG signature before running. The signing key is
 published in each release as `RCPU-DEV-GPG-KEY.asc`.
@@ -47,7 +47,7 @@ Drag RCPU Core to your Applications folder, then run it.
 ### Need Help?
 
 * Read the rest of the documentation in this `doc/` directory.
-* Open an issue on GitHub: <https://github.com/RCPUcoin/RCPU/issues>
+* Open an issue on GitHub: <https://github.com/btcrcpu-max/rcpu/issues>
 * Join the community:
   - Telegram: <https://t.me/btc_rcpu>
   - X / Twitter: <https://x.com/btc_rcpu>

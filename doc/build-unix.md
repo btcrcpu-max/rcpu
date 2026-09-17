@@ -203,7 +203,7 @@ Setup and Build Example: Arch Linux
 This example lists the steps necessary to setup and build a command line only distribution of the latest changes on Arch Linux:
 
     pacman --sync --needed autoconf automake boost gcc git libevent libtool make pkgconf python sqlite
-    git clone https://github.com/RCPUcoin/RCPU.git
+    git clone https://github.com/btcrcpu-max/rcpu.git
     cd bitcoin/
     ./autogen.sh
     ./configure

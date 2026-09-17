@@ -85,9 +85,9 @@ OpenRC).
 ### macOS
 
     Binary:              /usr/local/bin/rcpud
-    Configuration file:  ~/Library/Application Support/Bitcoin/rcpu.conf
-    Data directory:      ~/Library/Application Support/Bitcoin
-    Lock file:           ~/Library/Application Support/Bitcoin/.lock
+Configuration file:  ~/Library/Application Support/RCPU/rcpu.conf
+    Data directory:      ~/Library/Application Support/RCPU
+    Lock file:           ~/Library/Application Support/RCPU/.lock
 
 Installing Service Configuration
 -----------------------------------

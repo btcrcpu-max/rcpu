@@ -19,9 +19,9 @@ By default, wallets are created in the `wallets` folder of the data directory, w
 
 | Operating System | Default wallet directory                                    |
 | -----------------|:------------------------------------------------------------|
-| Linux            | `/home/<user>/.bitcoin/wallets`                             |
-| Windows          | `C:\Users\<user>\AppData\Roaming\Bitcoin\wallets`           |
-| macOS            | `/Users/<user>/Library/Application Support/Bitcoin/wallets` |
+| Linux            | `/home/<user>/.rcpu/wallets`                             |
+| Windows          | `C:\Users\<user>\AppData\Roaming\RCPU\wallets`           |
+| macOS            | `/Users/<user>/Library/Application Support/RCPU/wallets` |
 
 ### 1.2 Encrypting the Wallet
 

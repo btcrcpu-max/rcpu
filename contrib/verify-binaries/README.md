@@ -23,7 +23,7 @@ You can obtain these keys by
 #### Usage
 
 This script attempts to download the checksum file (`SHA256SUMS`) and corresponding
-signature file `SHA256SUMS.asc` from https://github.com/RCPUcoin/RCPU/releases.
+signature file `SHA256SUMS.asc` from https://github.com/btcrcpu-max/rcpu/releases.
 
 It first checks if the checksum file is valid based upon a plurality of signatures, and
 then downloads the release files specified in the checksum file, and checks if the

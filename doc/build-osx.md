@@ -58,7 +58,7 @@ Now that all the required dependencies are installed, let's clone the RCPU Core 
 All build scripts and commands will run from this directory.
 
 ``` bash
-git clone https://github.com/RCPUcoin/RCPU.git
+git clone https://github.com/btcrcpu-max/rcpu.git
 ```
 
 ### 5. Install Optional Dependencies

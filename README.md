@@ -93,11 +93,11 @@ sudo bash scripts/build-randomx.sh   # pinned v1.2.1, same as CI/Docker
 make -j$(nproc)
 make check
 
-# Run node
-./src/rcpud -daemon -rpcuser=rcpurpc -rpcpassword=YOUR_PASSWORD
+# Run node (RPC auth via .cookie file; never put a password on the command line)
+./src/rcpud -daemon
 
-# Query chain state
-./src/rcpu-cli -rpcuser=rcpurpc -rpcpassword=YOUR_PASSWORD getblockchaininfo
+# Query chain state (rcpu-cli reads the .cookie file automatically)
+./src/rcpu-cli getblockchaininfo
 ```
 
 ## Network
