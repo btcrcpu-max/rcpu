@@ -438,15 +438,24 @@ void AddrManImpl::SwapRandom(unsigned int nRndPos1, unsigned int nRndPos2) const
     if (nRndPos1 == nRndPos2)
         return;
 
-    assert(nRndPos1 < vRandom.size() && nRndPos2 < vRandom.size());
+    // !RCPU
+    // Defensive bounds checks instead of assert(): vRandom[] must not be
+    // indexed out of bounds even if an internal invariant is violated.
+    if (nRndPos1 >= vRandom.size() || nRndPos2 >= vRandom.size()) {
+        LogPrint(BCLog::ADDRMAN, "SwapRandom: invalid positions %u/%u (vRandom size %u), skipping\n",
+                 nRndPos1, nRndPos2, vRandom.size());
+        return;
+    }
 
     int nId1 = vRandom[nRndPos1];
     int nId2 = vRandom[nRndPos2];
 
     const auto it_1{mapInfo.find(nId1)};
     const auto it_2{mapInfo.find(nId2)};
-    assert(it_1 != mapInfo.end());
-    assert(it_2 != mapInfo.end());
+    if (it_1 == mapInfo.end() || it_2 == mapInfo.end()) {
+        LogPrint(BCLog::ADDRMAN, "SwapRandom: entry %d/%d missing from mapInfo, skipping\n", nId1, nId2);
+        return;
+    }
 
     it_1->second.nRandomPos = nRndPos2;
     it_2->second.nRandomPos = nRndPos1;
@@ -774,7 +783,10 @@ std::pair<CAddress, NodeSeconds> AddrManImpl::Select_(bool new_only, std::option
 
         // Find the entry to return.
         const auto it_found{mapInfo.find(node_id)};
-        assert(it_found != mapInfo.end());
+        // !RCPU Defensive: the id must exist in mapInfo, otherwise the
+        // addrman internal state is inconsistent; treat as an empty bucket
+        // instead of dereferencing end().
+        if (it_found == mapInfo.end()) continue;
         const AddrInfo& info{it_found->second};
 
         // With probability GetChance() * chance_factor, return the entry.
@@ -827,7 +839,9 @@ std::vector<CAddress> AddrManImpl::GetAddr_(size_t max_addresses, size_t max_pct
         int nRndPos = insecure_rand.randrange(vRandom.size() - n) + n;
         SwapRandom(n, nRndPos);
         const auto it{mapInfo.find(vRandom[n])};
-        assert(it != mapInfo.end());
+        // !RCPU Defensive: skip the entry if it is missing from mapInfo,
+        // instead of dereferencing end().
+        if (it == mapInfo.end()) continue;
 
         const AddrInfo& ai{it->second};
 
