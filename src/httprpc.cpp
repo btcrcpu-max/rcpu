@@ -242,15 +242,14 @@ static bool HTTPReq_JSONRPC(const std::any& context, HTTPRequest* req)
 
 static bool InitRPCAuthentication()
 {
-    if (gArgs.GetArg("-rpcpassword", "") == "")
-    {
-        LogPrintf("Using random cookie authentication.\n");
-        if (!GenerateAuthCookie(&strRPCUserColonPass)) {
-            return false;
-        }
-    } else {
-        LogPrintf("Config options rpcuser and rpcpassword will soon be deprecated. Locally-run instances may remove rpcuser to use cookie-based auth, or may be replaced with rpcauth. Please see share/rpcauth for rpcauth auth generation.\n");
-        strRPCUserColonPass = gArgs.GetArg("-rpcuser", "") + ":" + gArgs.GetArg("-rpcpassword", "");
+    // !RCPU
+    // -rpcpassword is no longer supported (M-7): it was removed from
+    // ArgumentsManager, so passing it on the command line is rejected and
+    // configuring it in the config file is ignored. Authentication is done
+    // either via the auth cookie (default) or via -rpcauth.
+    LogPrintf("Using random cookie authentication.\n");
+    if (!GenerateAuthCookie(&strRPCUserColonPass)) {
+        return false;
     }
     if (gArgs.GetArg("-rpcauth", "") != "") {
         LogPrintf("Using rpcauth authentication.\n");

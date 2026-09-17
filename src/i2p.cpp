@@ -373,6 +373,17 @@ void Session::GenerateAndSavePrivateKey(const Sock& sock)
         throw std::runtime_error(
             strprintf("Cannot save I2P private key to %s", fs::quoted(fs::PathToString(m_private_key_file))));
     }
+
+    // !RCPU
+    // Do not rely on the process umask alone: explicitly restrict the private
+    // key file to owner read/write (0600) so that group/other users never get
+    // access even if the umask is more permissive.
+    std::error_code ec;
+    fs::permissions(m_private_key_file, fs::perms::owner_read | fs::perms::owner_write, ec);
+    if (ec) {
+        LogPrintf("I2P: Cannot set permissions on private key file %s: %s\n", fs::quoted(fs::PathToString(m_private_key_file)), ec.message());
+    }
+    // !RCPU END
 }
 
 Binary Session::MyDestination() const
