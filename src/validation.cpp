@@ -2444,8 +2444,15 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
     // in multiple threads). Preallocate the vector size so a new allocation
     // doesn't invalidate pointers into the vector, and keep txsdata in scope
     // for as long as `control`.
-    CCheckQueueControl<CScriptCheck> control(fScriptChecks && parallel_script_checks ? &m_chainman.GetCheckQueue() : nullptr);
+    //
+    // CVE-2024-52911 (backport): txsdata must be constructed BEFORE control.
+    // C++ destroys in reverse declaration order, so with txsdata declared
+    // first it is destroyed last: CCheckQueueControl's destructor Wait()s for
+    // in-flight script checks that read txsdata[i], and those reads must see
+    // live memory even when ConnectBlock fails early and returns without an
+    // explicit control.Wait().
     std::vector<PrecomputedTransactionData> txsdata(block.vtx.size());
+    CCheckQueueControl<CScriptCheck> control(fScriptChecks && parallel_script_checks ? &m_chainman.GetCheckQueue() : nullptr);
 
     std::vector<int> prevheights;
     CAmount nFees = 0;
@@ -2454,6 +2461,10 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
     blockundo.vtxundo.reserve(block.vtx.size() - 1);
     for (unsigned int i = 0; i < block.vtx.size(); i++)
     {
+        // CVE-2024-52911 (backport): single-exit discipline. Failures below
+        // set state and break; control.Wait() runs afterwards so in-flight
+        // script checks cannot outlive txsdata.
+        if (!state.IsValid()) break;
         const CTransaction &tx = *(block.vtx[i]);
 
         nInputs += tx.vin.size();
@@ -2466,12 +2477,14 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
                 // Any transaction validation failure in ConnectBlock is a block consensus failure
                 state.Invalid(BlockValidationResult::BLOCK_CONSENSUS,
                             tx_state.GetRejectReason(), tx_state.GetDebugMessage());
-                return error("%s: Consensus::CheckTxInputs: %s, %s", __func__, tx.GetHash().ToString(), state.ToString());
+                LogPrint(BCLog::VALIDATION, "%s: Consensus::CheckTxInputs: %s, %s\n", __func__, tx.GetHash().ToString(), state.ToString());
+                break;
             }
             nFees += txfee;
             if (!MoneyRange(nFees)) {
                 LogPrintf("ERROR: %s: accumulated fee in the block out of range.\n", __func__);
-                return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-txns-accumulated-fee-outofrange");
+                state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-txns-accumulated-fee-outofrange");
+                break;
             }
 
             // Check that transaction is BIP68 final
@@ -2484,7 +2497,8 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
 
             if (!SequenceLocks(tx, nLockTimeFlags, prevheights, *pindex)) {
                 LogPrintf("ERROR: %s: contains a non-BIP68-final transaction\n", __func__);
-                return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-txns-nonfinal");
+                state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-txns-nonfinal");
+                break;
             }
         }
 
@@ -2495,7 +2509,8 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
         nSigOpsCost += GetTransactionSigOpCost(tx, view, flags);
         if (nSigOpsCost > MAX_BLOCK_SIGOPS_COST) {
             LogPrintf("ERROR: ConnectBlock(): too many sigops\n");
-            return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-blk-sigops");
+            state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-blk-sigops");
+            break;
         }
 
         if (!tx.IsCoinBase())
@@ -2507,8 +2522,9 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
                 // Any transaction validation failure in ConnectBlock is a block consensus failure
                 state.Invalid(BlockValidationResult::BLOCK_CONSENSUS,
                               tx_state.GetRejectReason(), tx_state.GetDebugMessage());
-                return error("ConnectBlock(): CheckInputScripts on %s failed with %s",
+                LogPrint(BCLog::VALIDATION, "ConnectBlock(): CheckInputScripts on %s failed with %s\n",
                     tx.GetHash().ToString(), state.ToString());
+                break;
             }
             control.Add(std::move(vChecks));
         }
@@ -2534,17 +2550,30 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
     // a block already stored by an older binary. GetValueOut() counts
     // confidential commitments as 0, so an explicit check here is the only
     // thing standing between a malicious coinbase and free-minted supply.
-    // Failure returns before view is committed, rolling back the whole block.
-    if (!CheckCoinbaseOutputsExplicit(*block.vtx[0], state))
-        return false;
-    if (block.vtx[0]->GetValueOut() > blockReward) {
-        LogPrintf("ERROR: ConnectBlock(): coinbase pays too much (actual=%d vs limit=%d)\n", block.vtx[0]->GetValueOut(), blockReward);
-        return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-cb-amount");
+    // CVE-2024-52911 (backport): neither coinbase failure returns early. state
+    // is set and control.Wait() still runs below, so in-flight script checks
+    // never outlive txsdata; the single exit gate handles the rest. On failure
+    // the view is not committed, rolling back the whole block.
+    if (state.IsValid()) {
+        if (!CheckCoinbaseOutputsExplicit(*block.vtx[0], state)) {
+            // state already set by CheckCoinbaseOutputsExplicit; skip the
+            // GetValueOut() check below so the first error is not overwritten
+            // (ValidationState::Invalid() replaces reject reason unconditionally).
+        } else if (block.vtx[0]->GetValueOut() > blockReward) {
+            LogPrintf("ERROR: ConnectBlock(): coinbase pays too much (actual=%d vs limit=%d)\n", block.vtx[0]->GetValueOut(), blockReward);
+            state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-cb-amount");
+        }
     }
 
     if (!control.Wait()) {
         LogPrintf("ERROR: %s: CheckQueue failed\n", __func__);
-        return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "block-validation-failed");
+        if (state.IsValid()) {
+            state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "block-validation-failed");
+        }
+    }
+    if (!state.IsValid()) {
+        LogPrintf("ERROR: %s: %s\n", __func__, state.ToString());
+        return false;
     }
     const auto time_4{SteadyClock::now()};
     time_verify += time_4 - time_2;

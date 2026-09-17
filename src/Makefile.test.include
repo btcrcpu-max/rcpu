@@ -178,7 +178,8 @@ BITCOIN_TESTS =\
   test/util_threadnames_tests.cpp \
   test/validation_block_tests.cpp \
   test/validation_chainstate_tests.cpp \
-  test/validation_chainstatemanager_tests.cpp \
+test/validation_chainstatemanager_tests.cpp \
+  test/validation_cve_52911_tests.cpp \
   test/validation_flush_tests.cpp \
   test/validation_tests.cpp \
   test/validationinterface_tests.cpp \

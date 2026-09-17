@@ -21,6 +21,11 @@ jobs:
             pkg-config bsdmainutils python3 autoconf-archive cmake \
             libssl-dev libevent-dev libboost-all-dev \
             libsqlite3-dev libdb-dev libdb++-dev
+      - name: Lint - CVE-2024-52911 ConnectBlock structural guard
+        run: |
+          # Fail the build if ConnectBlock reintroduces an early return while
+          # CCheckQueueControl is live (CVE-2024-52911 UAF window).
+          bash test/lint/lint-cve-52911-connectblock.sh
       - name: Build RandomX dependency
         run: |
           curl --fail -L -o /tmp/randomx-src.tar.gz https://github.com/tevador/RandomX/archive/refs/tags/v1.2.1.tar.gz
