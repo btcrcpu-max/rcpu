@@ -14,10 +14,4 @@ static const uint8_t chainparams_seed_main[] = {
     0x01,0x04,0x2b,0x9f,0x33,0x17,0x1c,0x3b,
 };
 
-static const uint8_t chainparams_seed_test[] = {
-};
-
-static const uint8_t chainparams_seed_signet[] = {
-};
-
 #endif // RCPU_CHAINPARAMSSEEDS_H
