@@ -30,24 +30,34 @@ ignore_list = [
 lib_sources = {}
 
 
+def _add_sources_from_line(lib, line):
+    for tok in line.replace('\\', ' ').split():
+        if tok.endswith('.cpp') and not tok.startswith('$') and tok not in ignore_list:
+            source_filename = tok.replace('/', '\\')
+            object_filename = tok.replace('/', '_')[:-4] + ".obj"
+            item = (source_filename, object_filename)
+            if item not in lib_sources[lib]:
+                lib_sources[lib].append(item)
+
 def parse_makefile(makefile):
     with open(makefile, 'r', encoding='utf-8') as file:
         current_lib = ''
         for line in file.read().splitlines():
             if current_lib:
-                source = line.split()[0]
-                if source.endswith('.cpp') and not source.startswith('$') and source not in ignore_list:
-                    source_filename = source.replace('/', '\\')
-                    object_filename = source.replace('/', '_')[:-4] + ".obj"
-                    lib_sources[current_lib].append((source_filename, object_filename))
-                if not line.endswith('\\'):
+                _add_sources_from_line(current_lib, line)
+                if not line.rstrip().endswith('\\'):
                     current_lib = ''
                 continue
             for lib in libs:
                 _lib = lib.replace('-', '_')
-                if re.search(_lib + '.*_SOURCES \\= \\\\', line):
+                # Allow both multi-line (trailing backslash) and single-line SOURCES definitions.
+                # Also tolerate Makefile.in conditional prefixes like @ENABLE_ZMQ_TRUE@.
+                if re.search(r'(?:^|\s)' + re.escape(_lib) + r'.*_SOURCES\s*=', line):
                     current_lib = lib
-                    lib_sources[current_lib] = []
+                    lib_sources.setdefault(current_lib, [])
+                    _add_sources_from_line(current_lib, line)
+                    if not line.rstrip().endswith('\\'):
+                        current_lib = ''
                     break
 
 def parse_config_into_btc_config():
