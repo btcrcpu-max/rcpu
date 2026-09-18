@@ -2525,6 +2525,21 @@ void PeerManagerImpl::SendBlockTransactions(CNode& pfrom, Peer& peer, const CBlo
 
 bool PeerManagerImpl::CheckHeadersPoW(const std::vector<CBlockHeader>& headers, const Consensus::Params& consensusParams, Peer& peer)
 {
+    // !RCPU
+    // Anti-DoS (P0-2): a batch whose first header does not connect to anything
+    // in our block index is treated as orphan / unconnecting -- do NOT spend
+    // RandomX work on it. The caller (ProcessHeadersMessage) classifies such
+    // a batch as unconnecting headers immediately after this check (getheaders
+    // or misbehavior 10), so skipping the commitment pass here costs nothing
+    // and reduces the per-batch RandomX load from 2000 commitments to zero for
+    // fake batches. The single full RandomX verification happens exactly once
+    // per header, inside AcceptBlockHeader.
+    const CBlockIndex* chain_start{WITH_LOCK(::cs_main, return m_chainman.m_blockman.LookupBlockIndex(headers[0].hashPrevBlock))};
+    if (chain_start == nullptr) {
+        return true; // unknown ancestor: zero RandomX here, handled downstream
+    }
+    // !RCPU END
+
     // Do these headers have proof-of-work matching what's claimed?
     if (!HasValidProofOfWork(headers, consensusParams)) {
         Misbehaving(peer, 100, "header with invalid proof of work");

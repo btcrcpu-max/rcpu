@@ -4181,20 +4181,11 @@ bool ChainstateManager::AcceptBlockHeader(const CBlockHeader& block, BlockValida
             return true;
         }
 
-        // !RCPU
-        // Sanity check the pow commitment meets the target (cheap)
-        if (g_isRandomX && !CheckProofOfWorkRandomX(block, GetConsensus(), POW_VERIFY_COMMITMENT_ONLY)) {
-            state.Invalid(BlockValidationResult::BLOCK_INVALID_HEADER, "high-hash", "proof of work failed");
-            LogPrint(BCLog::VALIDATION, "%s: Consensus::CheckBlockHeader: %s, %s\n", __func__, hash.ToString(), state.ToString());
-            return false;
-        }
-        else if (!CheckBlockHeader(block, state, GetConsensus())) {
-            LogPrint(BCLog::VALIDATION, "%s: Consensus::CheckBlockHeader: %s, %s\n", __func__, hash.ToString(), state.ToString());
-            return false;
-        }
-        // !RCPU END
-
-        // Get prev block index
+// !RCPU
+        // Anti-DoS (P0-2): look up the previous block BEFORE any RandomX
+        // computation. A header whose ancestor is not in our index is rejected
+        // here with zero RandomX cost (previously the commitment-only pass ran
+        // first, so a peer could flood unknown-prev headers to burn node CPU).
         CBlockIndex* pindexPrev = nullptr;
         BlockMap::iterator mi{m_blockman.m_block_index.find(block.hashPrevBlock)};
         if (mi == m_blockman.m_block_index.end()) {
@@ -4206,14 +4197,28 @@ bool ChainstateManager::AcceptBlockHeader(const CBlockHeader& block, BlockValida
             LogPrint(BCLog::VALIDATION, "header %s has prev block invalid: %s\n", hash.ToString(), block.hashPrevBlock.ToString());
             return state.Invalid(BlockValidationResult::BLOCK_INVALID_PREV, "bad-prevblk");
         }
+
+        // Legacy (non-RandomX) chains keep their cheap sha256d PoW check here.
+        if (!g_isRandomX && !CheckBlockHeader(block, state, GetConsensus())) {
+            LogPrint(BCLog::VALIDATION, "%s: Consensus::CheckBlockHeader: %s, %s\n", __func__, hash.ToString(), state.ToString());
+            return false;
+        }
+        // !RCPU END
+
         if (!ContextualCheckBlockHeader(block, state, m_blockman, *this, pindexPrev)) {
             LogPrint(BCLog::VALIDATION, "%s: Consensus::ContextualCheckBlockHeader: %s, %s\n", __func__, hash.ToString(), state.ToString());
             return false;
         }
 
-        // !RCPU
-        // Verify timestamp (and thus the epoch) in contextual check above, before performing full pow verification.
-        // This ordering help prevents resource denial when -randomxfastmode=1, as VM creation is based on epoch.
+// !RCPU
+        // Single full RandomX verification point (anti-DoS, P0-2).
+        // The previous block lookup and the ContextualCheckBlockHeader above
+        // (nBits, timestamp and thus epoch) have already passed, and
+        // POW_VERIFY_FULL performs the commitment check internally before the
+        // full hash (see CheckProofOfWorkRandomX), so this is the ONLY place
+        // where expensive RandomX work is spent per header. A header reaching
+        // this point with a forged hashRandomX gets misbehavior points via
+        // BLOCK_INVALID_HEADER downstream.
         if (g_isRandomX && !CheckBlockHeader(block, state, GetConsensus())) {
             LogPrint(BCLog::VALIDATION, "%s: Consensus::CheckBlockHeader: %s, %s\n", __func__, hash.ToString(), state.ToString());
             return false;
