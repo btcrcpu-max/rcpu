@@ -6,6 +6,7 @@
 
 #include <pow.h>
 
+#include <algorithm>
 #include <arith_uint256.h>
 #include <chain.h>
 #include <primitives/block.h>
@@ -612,25 +613,46 @@ static void CreateFastVM(uint32_t nEpoch, RandomXCacheRef myCache)
         const auto start{SteadyClock::now()};
 
         randomx_init_dataset(pDataset, myCache->cache, 0, randomx_dataset_item_count());
-        myDataset = std::make_shared<RandomXDatasetWrapper>(pDataset);
+        RandomXDatasetRef newDataset = std::make_shared<RandomXDatasetWrapper>(pDataset);
         {
             LOCK(rx_caches_mutex);
-            cache_rx_dataset->insert(nEpoch, myDataset);
+            // Double-checked locking: another dataset builder thread may have
+            // completed while we were initializing; reuse it and release ours.
+            RandomXDatasetRef existing;
+            if (cache_rx_dataset->try_get(nEpoch, existing)) {
+                myDataset = existing;
+            } else {
+                cache_rx_dataset->insert(nEpoch, newDataset);
+                myDataset = newDataset;
+            }
         }
 
         LogPrintf("Created RandomX dataset: %.2fs\n", Ticks<SecondsDouble>(SteadyClock::now() - start));
+    }
 
+    if (!myDataset) {
+        // Paranoia: never dereference a null dataset (defensive, P2 C-4).
+        LogPrintf("Error: no RandomX dataset available for epoch %d\n", nEpoch);
+        return;
     }
 
     randomx_vm* myVM = nullptr;
-    myVM = randomx_create_vm(flags, NULL, myDataset.get()->dataset);
+    myVM = randomx_create_vm(flags, NULL, myDataset->dataset);
     if (!myVM) {
         LogPrintf("Error: randomx_create_vm() failed\n");
         return;
     }
 
-    LOCK(rx_caches_mutex);
-    cache_rx_vm_fast->insert(nEpoch, std::make_shared<RandomXVMWrapper>(myVM, nullptr, myDataset));
+    {
+        LOCK(rx_caches_mutex);
+        // Double-checked locking: another fast VM builder may have won the race.
+        RandomXVMRef existing;
+        if (cache_rx_vm_fast->try_get(nEpoch, existing)) {
+            randomx_destroy_vm(myVM); // drop the duplicate we just built
+            return;
+        }
+        cache_rx_vm_fast->insert(nEpoch, std::make_shared<RandomXVMWrapper>(myVM, nullptr, myDataset));
+    }
 }
 
 // Get VM for a given epoch, creating and caching if necessary.
@@ -673,9 +695,9 @@ static std::optional<RandomXVMRef> GetVM(int32_t nEpoch)
     // No VM exists, so create light mode VM first and create fast mode VM in background thread.
     randomx_flags flags = randomx_get_flags();
 
-    LOCK(rx_caches_mutex);
-
-    // Create randomx cache if requred
+    // Create randomx cache if required. The expensive cache init happens
+    // OUTSIDE the global lock (P2 C-4); the lock only guards lookup and
+    // insertion, using double-checked locking to avoid duplicate work.
     RandomXCacheRef myCache = nullptr;
     if (!cache_rx_cache->try_get(nEpoch, myCache)) {
         randomx_cache* pCache = randomx_alloc_cache(flags);
@@ -684,20 +706,41 @@ static std::optional<RandomXVMRef> GetVM(int32_t nEpoch)
             return std::nullopt;
         }
         randomx_init_cache(pCache, seedHash.data(), seedHash.size());
-        myCache = std::make_shared<RandomXCacheWrapper>(pCache);
-        cache_rx_cache->insert(nEpoch, myCache); // store in LRU cache
+        RandomXCacheRef newCache = std::make_shared<RandomXCacheWrapper>(pCache);
+        {
+            LOCK(rx_caches_mutex);
+            // Double-checked locking: another thread may have inserted one while
+            // we were initializing; reuse it and let ours be released.
+            RandomXCacheRef existing;
+            if (cache_rx_cache->try_get(nEpoch, existing)) {
+                myCache = existing;
+            } else {
+                cache_rx_cache->insert(nEpoch, newCache); // store in LRU cache
+                myCache = newCache;
+            }
+        }
     }
 
-    // Create light VM using randomx cache
-    randomx_vm* myVM = nullptr;
-    myVM = randomx_create_vm(flags, myCache->cache, NULL);
+    // Create light VM using randomx cache. VM creation itself is not guarded by
+    // the cache mutex (randomx_create_vm does not touch the caches); only the
+    // insert takes the lock, again with double-checked locking.
+    randomx_vm* myVM = randomx_create_vm(flags, myCache->cache, NULL);
     if (!myVM) {
         LogPrintf("Error: randomx_create_vm() failed\n");
         return std::nullopt;
     }
 
     RandomXVMRef vmRef = std::make_shared<RandomXVMWrapper>(myVM, myCache, nullptr);
-    cache_rx_vm_light->insert(nEpoch, vmRef);
+    {
+        LOCK(rx_caches_mutex);
+        // Double-checked locking: another thread may have inserted a light VM
+        // for this epoch while we were creating it; reuse that one.
+        RandomXVMRef existing;
+        if (cache_rx_vm_light->try_get(nEpoch, existing)) {
+            return existing;
+        }
+        cache_rx_vm_light->insert(nEpoch, vmRef);
+    }
 
     // When IBD has finished, allow background thread to create fast mode VM (can be disabled to reduce memory usage)
     if (g_isIBDFinished && gArgs.GetBoolArg("-randomxfastmode", DEFAULT_RANDOMX_FAST_MODE)) {
@@ -730,9 +773,13 @@ uint256 rx_hash = inHash==nullptr ? block.hashRandomX : *inHash;
  *            POW_VERIFY_FULL is 'full' verification. Checks both RandomX hash and commitment values.
  *            POW_VERIFY_MINING calculates both RandomX hash and commitment values from block header template.
  * @param[out] outHash If the block is valid, return RandomX hash for the block. Optional, but required for POW_VERIFY_MINING.
+ * @param[in] prevBlockTime Timestamp of the previous block, or 0 if unknown. When non-zero, the
+ *            epoch is computed from min(block.nTime, prevBlockTime + MAX_FUTURE_BLOCK_TIME) so a
+ *            miner cannot jump to an arbitrarily far-future epoch by setting an extreme nTime
+ *            (which would force the node to build an extra RandomX dataset) -- P2 N-5.
  * @return True if the RandomX commitment value meets target. Set outHash parameter to RandomX hash value.
  */
-bool CheckProofOfWorkRandomX(const CBlockHeader& block, const Consensus::Params& params, POWVerifyMode verifyMode, uint256 *outHash)
+bool CheckProofOfWorkRandomX(const CBlockHeader& block, const Consensus::Params& params, POWVerifyMode verifyMode, uint256 *outHash, uint32_t prevBlockTime)
 {
     // Legacy chains continue to use original sha256d PoW
     if (!params.fPowRandomX) {
@@ -779,7 +826,16 @@ bool CheckProofOfWorkRandomX(const CBlockHeader& block, const Consensus::Params&
 
     // Compute RandomX hash if necessary
     if (verifyMode == POW_VERIFY_FULL || verifyMode == POW_VERIFY_MINING) {
-        int32_t nEpoch = GetEpoch(block.nTime, params.nRandomXEpochDuration);
+        // P2 N-5: clamp the timestamp used for epoch selection to
+        // min(block.nTime, prevBlockTime + MAX_FUTURE_BLOCK_TIME) so a miner
+        // cannot force the node to build a RandomX cache/dataset for an
+        // arbitrarily far-future epoch by setting an extreme nTime (each minted
+        // epoch triggers an expensive dataset initialization).
+        uint32_t nEpochTime = block.nTime;
+        if (prevBlockTime != 0) {
+            nEpochTime = std::min<uint32_t>(block.nTime, prevBlockTime + static_cast<uint32_t>(MAX_FUTURE_BLOCK_TIME));
+        }
+        int32_t nEpoch = GetEpoch(nEpochTime, params.nRandomXEpochDuration);
         std::optional<RandomXVMRef> vmRef = GetVM(nEpoch);
         if (!vmRef) {
             LogPrintf("Error: Could not obtain VM for RandomX\n");

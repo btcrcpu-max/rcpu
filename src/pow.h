@@ -61,8 +61,14 @@ uint256 GetSeedHash(uint32_t nEpoch);
 /** Join and clear background RandomX fast-VM creation threads. Safe to call at shutdown. */
 void StopRandomXThreads();
 
-/** Check if RandomX commitment of block satisfies the proof-of-work requirement specified by nBits */
-bool CheckProofOfWorkRandomX(const CBlockHeader& block, const Consensus::Params& params, POWVerifyMode mode = POW_VERIFY_FULL, uint256 *outHash = nullptr);
+/**
+ * Check if RandomX commitment of block satisfies the proof-of-work requirement specified by nBits.
+ * @param[in] prevBlockTime Timestamp of the previous block (0 = unknown). When non-zero, the
+ *            epoch is computed from min(block.nTime, prevBlockTime + MAX_FUTURE_BLOCK_TIME) so a
+ *            miner cannot force honest nodes to build a dataset for an arbitrarily far-future epoch
+ *            by setting an extreme nTime (network wallet warning N-5).
+ */
+bool CheckProofOfWorkRandomX(const CBlockHeader& block, const Consensus::Params& params, POWVerifyMode mode = POW_VERIFY_FULL, uint256 *outHash = nullptr, uint32_t prevBlockTime = 0);
 
 /** Calculate RandomX commitment of block */
 uint256 GetRandomXCommitment(const CBlockHeader& block, uint256 *inHash = nullptr);

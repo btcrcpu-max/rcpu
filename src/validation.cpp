@@ -3772,11 +3772,17 @@ void ChainstateManager::ReceivedBlockTransactions(const CBlock& block, CBlockInd
     }
 }
 
-static bool CheckBlockHeader(const CBlockHeader& block, BlockValidationState& state, const Consensus::Params& consensusParams, bool fCheckPOW = true)
+// !RCPU
+// P2-5 (N-5): prevBlockTime allows the RandomX epoch to be computed as
+// min(block.nTime, prevBlockTime + MAX_FUTURE_BLOCK_TIME) so an attacker
+// cannot force the node to build a RandomX dataset for an arbitrary future
+// epoch by setting an extreme nTime. 0 means "unknown" (no clamping).
+// !RCPU END
+static bool CheckBlockHeader(const CBlockHeader& block, BlockValidationState& state, const Consensus::Params& consensusParams, bool fCheckPOW = true, uint32_t prevBlockTime = 0)
 {
     // Check proof of work matches claimed amount
     // !RCPU
-    if (fCheckPOW && !CheckProofOfWorkRandomX(block, consensusParams, POW_VERIFY_FULL))
+    if (fCheckPOW && !CheckProofOfWorkRandomX(block, consensusParams, POW_VERIFY_FULL, nullptr, prevBlockTime))
     // !RCPU END
         return state.Invalid(BlockValidationResult::BLOCK_INVALID_HEADER, "high-hash", "proof of work failed");
 
@@ -4219,7 +4225,7 @@ bool ChainstateManager::AcceptBlockHeader(const CBlockHeader& block, BlockValida
         // where expensive RandomX work is spent per header. A header reaching
         // this point with a forged hashRandomX gets misbehavior points via
         // BLOCK_INVALID_HEADER downstream.
-        if (g_isRandomX && !CheckBlockHeader(block, state, GetConsensus())) {
+        if (g_isRandomX && !CheckBlockHeader(block, state, GetConsensus(), /*fCheckPOW=*/true, pindexPrev->GetBlockTime())) {
             LogPrint(BCLog::VALIDATION, "%s: Consensus::CheckBlockHeader: %s, %s\n", __func__, hash.ToString(), state.ToString());
             return false;
         }

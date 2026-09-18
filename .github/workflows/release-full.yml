@@ -294,9 +294,33 @@ jobs:
         run: |
           cat linux/SHA256SUMS-linux.txt windows/SHA256SUMS-windows.txt > SHA256SUMS.txt
           cat SHA256SUMS.txt
+
+      - name: Sign with GPG (if key configured)
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          # P2 E-1: without a GPG key we must NOT publish an empty .asc
+          # placeholder (a broken signature). The file list below therefore
+          # only includes the .asc when one was actually produced.
+          {
+            echo "RELEASE_FILES<<EOF"
+            echo "linux/*"
+            echo "windows/*"
+            echo "SHA256SUMS.txt"
+            if [ -n "$GPG_PRIVATE_KEY" ]; then
+              echo "$GPG_PRIVATE_KEY" | gpg --batch --yes --import
+              echo "$GPG_PASSPHRASE" | gpg --batch --yes --passphrase-fd 0 \
+                --pinentry-mode loopback \
+                --output SHA256SUMS.txt.asc \
+                --detach-sig SHA256SUMS.txt
+              echo "SHA256SUMS.txt.asc"
+            else
+              echo "No GPG key configured, skipping signature"
+            fi
+            echo "EOF"
+          } >> "$GITHUB_ENV"
+
       - uses: softprops/action-gh-release@v2
         with:
-          files: |
-            linux/*
-            windows/*
-            SHA256SUMS.txt
+          files: ${{ env.RELEASE_FILES }}
