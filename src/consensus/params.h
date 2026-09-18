@@ -169,6 +169,17 @@ struct Params {
      */
     int nBanPathAHeight{std::numeric_limits<int>::max()};
 
+    /**
+     * RCPU: block height from which the canonical 112-byte hash domain
+     * (serialized header including hashRandomX) is used for RandomX inputs and
+     * block-header hashing. The canonical serialization is byte-identical to
+     * the legacy raw-memory layout (asserted in primitives/block.h), so the
+     * activation does not change any hash value on already-live chains; this
+     * parameter is the versioning guard if the header layout ever grows
+     * padding or new fields in the future (P1-1).
+     */
+    int nHashDomainActivationHeight{std::numeric_limits<int>::max()};
+
     /** Used by the ASERT DAA */
     int nASERTActivationHeight; // Block height at which ASERT DAA becomes active, if asertAnchorParams is set.
     int64_t nASERTHalfLife;

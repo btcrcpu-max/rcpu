@@ -292,7 +292,10 @@ BOOST_AUTO_TEST_CASE(Check_RandomX_BlockHeader)
     const auto chainParams = CreateChainParams(*m_node.args, ChainType::RCPUTESTNET);
     const auto consensus = chainParams->GetConsensus();
 
-    // Sanity check: block header GetHash() function includes RandomX field when running as RCPU
+    // RCPU (P1-1): on RCPU chains GetHash() uses the canonical 112-byte hash
+    // domain (including hashRandomX) via an explicit field-wise serialization;
+    // the flag only selects the domain for Bitcoin-compatible chains and is
+    // constant for the process lifetime.
     assert(!g_isRandomX);
     BOOST_CHECK_NE(consensus.hashGenesisBlock, chainParams->GenesisBlock().GetHash());
     g_isRandomX = true;

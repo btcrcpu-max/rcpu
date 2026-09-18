@@ -9,6 +9,7 @@
 #include <arith_uint256.h>
 #include <chain.h>
 #include <primitives/block.h>
+#include <streams.h>
 #include <uint256.h>
 
 // !RCPU
@@ -23,6 +24,30 @@
 #include <stdexcept>
 #include <thread>
 #include <vector>
+
+// !RCPU
+// RCPU canonical RandomX input domain (P1-1): the 112-byte header including
+// hashRandomX, serialized canonically (not raw memory). hashRandomX is always
+// nulled for hashing inputs, matching legacy behavior. The canonical bytes are
+// identical to the legacy raw-memory layout (see static_asserts in
+// primitives/block.h), so this is not a consensus change; it removes the
+// reliance on in-memory object layout for consensus-critical input bytes.
+static DataStream SerializeRandomXHeader(const CBlockHeader& hdr_in)
+{
+    CBlockHeader hdr{};
+    hdr.nVersion        = hdr_in.nVersion;
+    hdr.hashPrevBlock   = hdr_in.hashPrevBlock;
+    hdr.hashMerkleRoot  = hdr_in.hashMerkleRoot;
+    hdr.nTime           = hdr_in.nTime;
+    hdr.nBits           = hdr_in.nBits;
+    hdr.nNonce          = hdr_in.nNonce;
+    // hashRandomX intentionally left null: set to null when hashing
+
+    DataStream ss{};
+    ss << hdr.nVersion << hdr.hashPrevBlock << hdr.hashMerkleRoot << hdr.nTime << hdr.nBits << hdr.nNonce << hdr.hashRandomX;
+    return ss;
+}
+// !RCPU END
 
 static Mutex rx_caches_mutex;
 
@@ -686,11 +711,11 @@ static std::optional<RandomXVMRef> GetVM(int32_t nEpoch)
 
 // Compute randomx commitment from block header. If inHash parameter is not provided, use hash from block header.
 uint256 GetRandomXCommitment(const CBlockHeader& block, uint256 *inHash) {
-    uint256 rx_hash = inHash==nullptr ? block.hashRandomX : *inHash;
-    CBlockHeader rx_blockHeader(block);
-    rx_blockHeader.hashRandomX.SetNull();   // set to null when hashing
+uint256 rx_hash = inHash==nullptr ? block.hashRandomX : *inHash;
     char rx_cm[RANDOMX_HASH_SIZE];
-    randomx_calculate_commitment(&rx_blockHeader, sizeof(rx_blockHeader), rx_hash.data(), rx_cm);
+    // RCPU: canonical serialization input (P1-1); hashRandomX nulled inside.
+    const DataStream rx_input = SerializeRandomXHeader(block);
+    randomx_calculate_commitment(rx_input.data(), rx_input.size(), rx_hash.data(), rx_cm);
     return uint256(std::vector<unsigned char>(rx_cm, rx_cm + sizeof(rx_cm)));
 }
 
@@ -761,15 +786,15 @@ bool CheckProofOfWorkRandomX(const CBlockHeader& block, const Consensus::Params&
             return false;
         }
 
-	    char rx_hash[RANDOMX_HASH_SIZE];
+char rx_hash[RANDOMX_HASH_SIZE];
 
-        CBlockHeader tmp(block);
-        tmp.hashRandomX.SetNull();   // set to null when hashing
+        // RCPU: canonical serialization input (P1-1); hashRandomX nulled inside.
+        const DataStream rx_input = SerializeRandomXHeader(block);
 
         {
             AssertLockNotHeld((*vmRef)->m_hashing_mutex);
             LOCK((*vmRef)->m_hashing_mutex);
-            randomx_calculate_hash((*vmRef)->vm, &tmp, sizeof(tmp), rx_hash);
+            randomx_calculate_hash((*vmRef)->vm, rx_input.data(), rx_input.size(), rx_hash);
         }
 
         // If not mining, compare hash in block header with our computed value

@@ -17,6 +17,7 @@
 #include <primitives/transaction.h>
 #include <script/interpreter.h>
 #include <script/script.h>
+#include <streams.h>
 #include <uint256.h>
 #include <util/chaintype.h>
 #include <util/strencodings.h>
@@ -527,9 +528,14 @@ std::unique_ptr<const CChainParams> CChainParams::TestNet()
 
 // Compute block hash over entire header (including RandomX fields) even if global flag is not set
 static uint256 GetHashOfRcpuGenesisBlock(const CBlock& genesis) {
-    CBlockHeader rx_blockHeader(genesis);
+    // RCPU (P1-1): canonical 112-byte serialization domain. Byte-identical to
+    // the legacy raw-memory header layout (see static_asserts in
+    // primitives/block.h), so genesis hashes are unchanged.
+    const CBlockHeader& hdr = genesis;
+    DataStream ss{};
+    ss << hdr.nVersion << hdr.hashPrevBlock << hdr.hashMerkleRoot << hdr.nTime << hdr.nBits << hdr.nNonce << hdr.hashRandomX;
     unsigned char hash[32];
-    CHash256().Write({(unsigned char *)&rx_blockHeader, sizeof(rx_blockHeader)}).Finalize(hash);
+    CHash256().Write({UCharCast(ss.data()), ss.size()}).Finalize(hash);
     return uint256(hash);
 }
 
@@ -615,6 +621,12 @@ consensus.fPowRandomX = true;
         // 20000 = ~69 days of 5-minute blocks from tip ~5100 (2026-09-18);
         // re-confirm against the actual tip before release.
         consensus.nBanPathAHeight = 20000;
+        // RCPU (P1-1): canonical hash domain is byte-identical to the live
+        // raw-memory domain (static_asserts in primitives/block.h), so no
+        // consensus change occurs at this height; it is the versioning guard
+        // for future header-layout changes. TODO(deployment): align with
+        // nBanPathAHeight deployment review above.
+        consensus.nHashDomainActivationHeight = 20000;
         // RCPU mainnet only. Consensus values below are frozen for this
         // release; change them only with a versioned hardening PR.
         // Genesis coinbase text is a frozen artifact (2024 news string).
@@ -738,6 +750,9 @@ consensus.fPowRandomX = true;
         // RCPU hardening (P1-2): ban path-A plaintext nonces early on testnet
         // so the soft-fork rule is exercised well before mainnet deployment.
         consensus.nBanPathAHeight = 0;  // testnet: active from genesis height
+        // RCPU (P1-1): testnet uses the canonical 112-byte hash domain from
+        // genesis height (byte-identical to the legacy domain).
+        consensus.nHashDomainActivationHeight = 0;
         genesis = CreateRcpuGenesisBlock(1708750000, 1, 0x1e7fffff, 1, 50 * COIN, "22/Feb/2024 RCPU Testnet Genesis - Independent Chain");
         genesis.hashRandomX = uint256{};
         consensus.hashGenesisBlock = GetHashOfRcpuGenesisBlock(genesis);
@@ -848,6 +863,8 @@ public:
 
         consensus.fPowRandomX = true;
         consensus.nRandomXEpochDuration = 24 * 60 * 60;     // one day
+        // RCPU (P1-1): regtest uses the canonical hash domain from genesis.
+        consensus.nHashDomainActivationHeight = 0;
         genesis = CreateRcpuGenesisBlock(1296688602, 1, 0x207fffff, 1, 50 * COIN);
         genesis.hashRandomX = uint256S("0x177a9deba97f0dae00a6bf55e03671ec6bce7051d6a5054db49237598b803f93");
         consensus.hashGenesisBlock = GetHashOfRcpuGenesisBlock(genesis);
