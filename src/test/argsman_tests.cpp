@@ -657,7 +657,10 @@ BOOST_AUTO_TEST_CASE(util_GetChainTypeString)
     std::string error;
 
     BOOST_CHECK(test_args.ParseParameters(0, argv_testnet, error));
-    BOOST_CHECK_EQUAL(test_args.GetChainTypeString(), "main");
+    // !RCPU
+    // RCPU default chain is ChainType::RCPUMAIN, whose reported name is "rcpu".
+    BOOST_CHECK_EQUAL(test_args.GetChainTypeString(), "rcpu");
+    // !RCPU END
 
     BOOST_CHECK(test_args.ParseParameters(2, argv_testnet, error));
     BOOST_CHECK_EQUAL(test_args.GetChainTypeString(), "test");
@@ -1015,7 +1018,13 @@ BOOST_FIXTURE_TEST_CASE(util_ChainMerge, ChainMergeTestingSetup)
     // Results file is formatted like:
     //
     //   <input> || <output>
-    BOOST_CHECK_EQUAL(out_sha_hex, "f263493e300023b6509963887444c41386f44b63bc30047eb8402e8c1144854c");
+        // !RCPU
+    // RCPU: expected hash updated for the renamed default chain identity
+    // ("main" -> "rcpu"). Re-derived via CHAIN_MERGE_TEST_OUT and diffed:
+    // the only differences across all 1369 merged configurations are the
+    // default-chain name strings, which is the intended RCPU behaviour.
+    BOOST_CHECK_EQUAL(out_sha_hex, "c5ad3a3df78dae171fa587859a51e28cf8b0969f39125378361e2bba9c80ff44");
+    // !RCPU END
 }
 
 BOOST_AUTO_TEST_CASE(util_ReadWriteSettings)
