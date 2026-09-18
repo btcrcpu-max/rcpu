@@ -166,7 +166,7 @@ int64_t GetTransactionSigOpCost(const CTransaction& tx, const CCoinsViewCache& i
     return nSigOps;
 }
 
-bool Consensus::CheckTxInputs(const CTransaction& tx, TxValidationState& state, const CCoinsViewCache& inputs, int nSpendHeight, CAmount& txfee, int nCTActivationHeight)
+bool Consensus::CheckTxInputs(const CTransaction& tx, TxValidationState& state, const CCoinsViewCache& inputs, int nSpendHeight, CAmount& txfee, int nCTActivationHeight, int nBanPathAHeight)
 {
     // RCPU: single predicate for "is this a confidential transaction". The
     // serialization format keys off nVersion >= CT_VERSION, so the consensus
@@ -222,6 +222,16 @@ bool Consensus::CheckTxInputs(const CTransaction& tx, TxValidationState& state, 
                     "non-CT transaction spends a confidential output");
             }
         }
+        // Defense in depth mirroring CheckTransaction(): a non-CT transaction
+        // must not create a confidential (commitment) output either, or the
+        // legacy plaintext accounting would ignore it and mint value.
+        for (const CTxOut& out : tx.vout) {
+            if (!out.nValue.IsExplicit()) {
+                return state.Invalid(TxValidationResult::TX_CONSENSUS,
+                    "bad-txns-nonct-commitment",
+                    "non-CT transaction creates a confidential output");
+            }
+        }
     }
 
     // RCPU: defense in depth. If we reach here with a v3 transaction but
@@ -232,13 +242,24 @@ if (fIsCT && !g_con_elementsmode) {
             "confidential transaction received but CT mode is not enabled");
     }
 
-    if (g_con_elementsmode && fIsCT) {
+if (g_con_elementsmode && fIsCT) {
         // A2: reject oversized range proofs before balance verification
         for (const CTxOut& out : tx.vout) {
             if (out.vchRangeproof.size() > MAX_RANGEPROOF_SIZE) {
                 return state.Invalid(TxValidationResult::TX_CONSENSUS,
                     "bad-txns-rangeproof-too-large",
                     strprintf("rangeproof too large (%d > %d)", out.vchRangeproof.size(), MAX_RANGEPROOF_SIZE));
+            }
+            // RCPU hardening (P1-2): from nBanPathAHeight onward reject the
+            // legacy path-A plaintext-nonce encoding (0x02 || 32-byte nonce).
+            // Path A stores the rewind nonce on-chain, leaking amount and
+            // blinding factor. The check mirrors IsLegacyNonceCommit() in
+            // blind.cpp but must live here (consensus layer) as a soft-fork
+            // rule, independent of the wallet.
+            if (nSpendHeight >= nBanPathAHeight &&
+                out.nNonce.vchCommitment.size() == 33 && out.nNonce.vchCommitment[0] == 0x02) {
+                return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-ct-legacy-nonce",
+                    "legacy path-A plaintext CT nonce banned at this height");
             }
         }
 

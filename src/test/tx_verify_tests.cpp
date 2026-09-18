@@ -353,4 +353,87 @@ BOOST_AUTO_TEST_CASE(v3_explicit_spend_passes_verifyamounts)
     BOOST_CHECK_EQUAL(txfee, 400 * COIN);
 }
 
+// RCPU hardening (P1-2): from nBanPathAHeight onward the legacy path-A
+// plaintext-nonce encoding (33-byte CConfidentialNonce with 0x02 prefix,
+// leaking the rewind nonce on-chain) must be rejected at the consensus
+// layer with `bad-ct-legacy-nonce`. Below the activation height the same
+// output remains legal (soft-fork, does not burn existing UTXOs).
+BOOST_AUTO_TEST_CASE(path_a_plaintext_nonce_banned_from_height)
+{
+    const COutPoint prevout{TxidFromString("0xcccc"), 0};
+
+    CCoinsViewTest base;
+    base.Add(prevout, MakeExplicitCoin(1000 * COIN));
+
+    CCoinsViewCache view{&base};
+
+    // v3 CT tx: 1 explicit input -> 1 explicit output + 1 fee output.
+    // The first output carries the legacy path-A nonce encoding.
+    CMutableTransaction mtx = MakeLegacySpend({prevout}, 600 * COIN);
+    mtx.nVersion = CT_VERSION;
+    mtx.vout[0].nNonce.vchCommitment.assign(33, 0x00);
+    mtx.vout[0].nNonce.vchCommitment[0] = 0x02;
+    CTxOut fee_out;
+    fee_out.nValue.SetToAmount(400 * COIN);
+    mtx.vout.push_back(std::move(fee_out));
+
+    const CTransaction tx{mtx};
+    const bool old_ct_mode = g_con_elementsmode;
+    g_con_elementsmode = true;
+
+    // Below activation height: legal.
+    TxValidationState state_below;
+    CAmount txfee = -1;
+    BOOST_CHECK(Consensus::CheckTxInputs(tx, state_below, view, /*nSpendHeight=*/199, txfee,
+        /*nCTActivationHeight=*/0, /*nBanPathAHeight=*/200));
+    BOOST_CHECK(state_below.IsValid());
+
+    // At/above activation height: rejected as bad-ct-legacy-nonce.
+    TxValidationState state_banned;
+    CAmount txfee2 = -1;
+    BOOST_CHECK(!Consensus::CheckTxInputs(tx, state_banned, view, /*nSpendHeight=*/200, txfee2,
+        /*nCTActivationHeight=*/0, /*nBanPathAHeight=*/200));
+    BOOST_CHECK(state_banned.IsInvalid());
+    BOOST_CHECK_EQUAL(state_banned.GetResult(), TxValidationResult::TX_CONSENSUS);
+    BOOST_CHECK_EQUAL(state_banned.GetRejectReason(), "bad-ct-legacy-nonce");
+
+    g_con_elementsmode = old_ct_mode;
+}
+
+// RCPU hardening (P1-2): a legal path-B nonce (33-byte 0x03 prefix, ECDH
+// ephemeral pubkey) must NOT be rejected even above nBanPathAHeight. Only
+// the 0x02 plaintext-nonce prefix is banned.
+BOOST_AUTO_TEST_CASE(path_b_nonce_allowed_after_height)
+{
+    const COutPoint prevout{TxidFromString("0xdddd"), 0};
+
+    CCoinsViewTest base;
+    base.Add(prevout, MakeExplicitCoin(1000 * COIN));
+
+    CCoinsViewCache view{&base};
+
+    CMutableTransaction mtx = MakeLegacySpend({prevout}, 600 * COIN);
+    mtx.nVersion = CT_VERSION;
+    // Path B: 33-byte encoding with 0x03 prefix (odd Y pubkey).
+    mtx.vout[0].nNonce.vchCommitment.assign(33, 0x00);
+    mtx.vout[0].nNonce.vchCommitment[0] = 0x03;
+    mtx.vout[0].nNonce.vchCommitment[1] = 0x01; // keep bytes non-trivial
+    CTxOut fee_out;
+    fee_out.nValue.SetToAmount(400 * COIN);
+    mtx.vout.push_back(std::move(fee_out));
+
+    const CTransaction tx{mtx};
+    const bool old_ct_mode = g_con_elementsmode;
+    g_con_elementsmode = true;
+
+    TxValidationState state;
+    CAmount txfee = -1;
+    BOOST_CHECK(Consensus::CheckTxInputs(tx, state, view, /*nSpendHeight=*/200, txfee,
+        /*nCTActivationHeight=*/0, /*nBanPathAHeight=*/0));
+    BOOST_CHECK(state.IsValid());
+    BOOST_CHECK_NE(state.GetRejectReason(), "bad-ct-legacy-nonce");
+
+    g_con_elementsmode = old_ct_mode;
+}
+
 BOOST_AUTO_TEST_SUITE_END()

@@ -605,9 +605,16 @@ public:
         m_assumed_blockchain_size = 0;
         m_assumed_chain_state_size = 0;
 
-        consensus.fPowRandomX = true;
+consensus.fPowRandomX = true;
         consensus.nRandomXEpochDuration = 7 * 24 * 60 * 60;     // one week
         consensus.nCTActivationHeight = 0;  // RCPU: Confidential Transactions active from genesis
+        // RCPU hardening (P1-2): ban the legacy path-A (plaintext-nonce) CT
+        // nonce encoding from this height onward. Soft-fork: only outputs in
+        // blocks at or above this height are checked, so already-mined path-A
+        // UTXOs are untouched and can be migrated off-chain. TODO(deployment):
+        // 20000 = ~69 days of 5-minute blocks from tip ~5100 (2026-09-18);
+        // re-confirm against the actual tip before release.
+        consensus.nBanPathAHeight = 20000;
         // RCPU mainnet only. Consensus values below are frozen for this
         // release; change them only with a versioned hardening PR.
         // Genesis coinbase text is a frozen artifact (2024 news string).
@@ -725,9 +732,12 @@ public:
         m_assumed_blockchain_size = 0;
         m_assumed_chain_state_size = 0;
 
-        consensus.fPowRandomX = true;
+consensus.fPowRandomX = true;
         consensus.nRandomXEpochDuration = 7 * 24 * 60 * 60;     // one week
         consensus.nCTActivationHeight = 0;  // Testnet: CT always active
+        // RCPU hardening (P1-2): ban path-A plaintext nonces early on testnet
+        // so the soft-fork rule is exercised well before mainnet deployment.
+        consensus.nBanPathAHeight = 0;  // testnet: active from genesis height
         genesis = CreateRcpuGenesisBlock(1708750000, 1, 0x1e7fffff, 1, 50 * COIN, "22/Feb/2024 RCPU Testnet Genesis - Independent Chain");
         genesis.hashRandomX = uint256{};
         consensus.hashGenesisBlock = GetHashOfRcpuGenesisBlock(genesis);

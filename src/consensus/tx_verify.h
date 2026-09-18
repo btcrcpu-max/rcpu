@@ -7,6 +7,7 @@
 
 #include <consensus/amount.h>
 
+#include <limits>
 #include <stdint.h>
 #include <vector>
 
@@ -22,9 +23,12 @@ namespace Consensus {
  * Check whether all inputs of this transaction are valid (no double spends and amounts)
  * This does not modify the UTXO set. This does not check scripts and sigs.
  * @param[out] txfee Set to the transaction fee if successful.
+ * @param[in] nBanPathAHeight RCPU: from this spend height onward reject CT
+ *   outputs carrying the legacy path-A plaintext-nonce encoding (33-byte
+ *   nonce with 0x02 prefix); path A leaks the rewind nonce on-chain.
  * Preconditions: tx.IsCoinBase() is false.
  */
-[[nodiscard]] bool CheckTxInputs(const CTransaction& tx, TxValidationState& state, const CCoinsViewCache& inputs, int nSpendHeight, CAmount& txfee, int nCTActivationHeight = 0);
+[[nodiscard]] bool CheckTxInputs(const CTransaction& tx, TxValidationState& state, const CCoinsViewCache& inputs, int nSpendHeight, CAmount& txfee, int nCTActivationHeight = 0, int nBanPathAHeight = std::numeric_limits<int>::max());
 } // namespace Consensus
 
 /** Auxiliary functions for transaction validation (ideally should not be exposed) */
