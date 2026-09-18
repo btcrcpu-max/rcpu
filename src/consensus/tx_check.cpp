@@ -7,10 +7,41 @@
 #include <consensus/amount.h>
 #include <primitives/transaction.h>
 #include <consensus/validation.h>
+#include <tinyformat.h>
+#include <util/string.h>
 
 bool CheckTransaction(const CTransaction& tx, TxValidationState& state)
 {
     // Basic checks that don't depend on any context
+
+    // RCPU: consensus version whitelist. Serialization treats nVersion >=
+    // CT_VERSION as the confidential (CT) wire format, but consensus
+    // validation only handles nVersion == CT_VERSION (VerifyAmounts) and the
+    // legacy plaintext versions. Without this whitelist, a v4+ transaction
+    // would be deserialized as CT yet validated as legacy, allowing an
+    // arbitrary-value commitment output to bypass VerifyAmounts and enter the
+    // UTXO set (unlimited mint). Reject anything outside [1, CT_VERSION] at
+    // the consensus layer; this is a tightening rule (soft-fork compatible:
+    // no historical block carries nVersion > 3).
+    if (tx.nVersion < 1 || tx.nVersion > CT_VERSION) {
+        return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-txns-version",
+            strprintf("transaction version %d not allowed", tx.nVersion));
+    }
+
+    // RCPU: defense in depth. A legacy (non-CT) transaction must never carry
+    // confidential outputs: commitment outputs would be invisible to the
+    // legacy GetValueOut()/GetAmount() accounting and could never be spent by
+    // a legacy tx. If CheckTxInputs is ever refactored, this guarantees a
+    // non-CT tx cannot smuggle a commitment into the UTXO set.
+    if (tx.nVersion != CT_VERSION) {
+        for (const auto& txout : tx.vout) {
+            if (txout.nValue.IsCommitment() || !txout.vchRangeproof.empty()) {
+                return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-txns-nonct-commitment",
+                    "non-CT transaction carries a confidential output");
+            }
+        }
+    }
+
     if (tx.vin.empty())
         return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-txns-vin-empty");
     if (tx.vout.empty())

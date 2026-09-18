@@ -168,8 +168,24 @@ int64_t GetTransactionSigOpCost(const CTransaction& tx, const CCoinsViewCache& i
 
 bool Consensus::CheckTxInputs(const CTransaction& tx, TxValidationState& state, const CCoinsViewCache& inputs, int nSpendHeight, CAmount& txfee, int nCTActivationHeight)
 {
+    // RCPU: single predicate for "is this a confidential transaction". The
+    // serialization format keys off nVersion >= CT_VERSION, so the consensus
+    // checks must use the same predicate everywhere: a version outside the
+    // defined set (1-2 legacy, 3 CT) must never fall through to the legacy
+    // plaintext accounting, which would ignore commitment outputs.
+    const bool fIsCT = tx.nVersion == CT_VERSION;
+
+    // Defense in depth: CheckTransaction() already rejects nVersion outside
+    // [1, CT_VERSION] at the consensus layer. Reject here too so that any
+    // future caller that skips CheckTransaction() cannot create a mix where a
+    // v4+ transaction deserialized as CT is validated as legacy.
+    if (tx.nVersion < 1 || tx.nVersion > CT_VERSION) {
+        return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-txns-version",
+            strprintf("transaction version %d not allowed", tx.nVersion));
+    }
+
     // RCPU: reject confidential (v3) transactions before the CT activation height.
-    if (tx.nVersion == CT_VERSION && nSpendHeight < nCTActivationHeight) {
+    if (fIsCT && nSpendHeight < nCTActivationHeight) {
         return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-ct-before-activation",
             strprintf("confidential transaction before activation height %d", nCTActivationHeight));
     }
@@ -197,8 +213,8 @@ bool Consensus::CheckTxInputs(const CTransaction& tx, TxValidationState& state, 
         prevouts.push_back(coin.out);
     }
 
-    // B2: v2 (and any non-CT version) must not spend a confidential commitment.
-    if (tx.nVersion != CT_VERSION) {
+// B2: non-CT version must not spend a confidential commitment.
+    if (!fIsCT) {
         for (const CTxOut& prevout : prevouts) {
             if (!prevout.nValue.IsExplicit()) {
                 return state.Invalid(TxValidationResult::TX_CONSENSUS,
@@ -211,12 +227,12 @@ bool Consensus::CheckTxInputs(const CTransaction& tx, TxValidationState& state, 
     // RCPU: defense in depth. If we reach here with a v3 transaction but
     // g_con_elementsmode is disabled, reject the transaction rather than
     // crashing on GetAmount() for confidential inputs.
-    if (tx.nVersion == CT_VERSION && !g_con_elementsmode) {
+if (fIsCT && !g_con_elementsmode) {
         return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-txns-ct-mode-disabled",
             "confidential transaction received but CT mode is not enabled");
     }
 
-    if (g_con_elementsmode && tx.nVersion == CT_VERSION) {
+    if (g_con_elementsmode && fIsCT) {
         // A2: reject oversized range proofs before balance verification
         for (const CTxOut& out : tx.vout) {
             if (out.vchRangeproof.size() > MAX_RANGEPROOF_SIZE) {

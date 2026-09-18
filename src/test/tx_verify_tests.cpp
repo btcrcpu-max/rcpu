@@ -7,6 +7,7 @@
 #include <blind.h>
 #include <coins.h>
 #include <consensus/amount.h>
+#include <consensus/tx_check.h>
 #include <consensus/tx_verify.h>
 #include <consensus/validation.h>
 #include <primitives/transaction.h>
@@ -237,6 +238,119 @@ BOOST_AUTO_TEST_CASE(rangeproof_over_max_rejected)
     BOOST_CHECK_EQUAL(state.GetRejectReason(), "bad-txns-rangeproof-too-large");
     BOOST_CHECK(state.GetDebugMessage().find("rangeproof too large") != std::string::npos);
     BOOST_CHECK(state.GetDebugMessage().find("5135") != std::string::npos);
+}
+
+// RCPU hardening (C-1): an undefined transaction version (v4+) deserializes
+// with the CT wire format (nVersion >= CT_VERSION) but is only validated for
+// nVersion == CT_VERSION. Without the version whitelist it would fall through
+// to the legacy accounting, ignoring commitment outputs: a v4 tx carrying a
+// 500 RCPU commitment would effectively spend it from nothing (unlimited
+// mint). Both the consensus entry CheckTransaction and the defense-in-depth
+// CheckTxInputs must reject it.
+BOOST_AUTO_TEST_CASE(v4_mint_rejected)
+{
+    const COutPoint prevout{TxidFromString("0x8888"), 0};
+
+    CCoinsViewTest base;
+    base.Add(prevout, MakeExplicitCoin(1000 * COIN));
+
+    CCoinsViewCache view{&base};
+
+    // v4: 1 explicit input -> 1 explicit output + 1 commitment output.
+    CMutableTransaction mtx = MakeLegacySpend({prevout}, 500 * COIN);
+    mtx.nVersion = CT_VERSION + 1;
+    CTxOut comm_out;
+    uint256 blind, nonce;
+    BOOST_REQUIRE(BlindOutput(comm_out.nValue, comm_out.nNonce, comm_out.vchRangeproof, blind, nonce, 500 * COIN));
+    comm_out.scriptPubKey = CScript() << OP_TRUE;
+    mtx.vout.push_back(std::move(comm_out));
+
+    const CTransaction tx{mtx};
+
+    // Consensus entry point: `bad-txns-version`.
+    TxValidationState state_tx;
+    BOOST_CHECK(!CheckTransaction(tx, state_tx));
+    BOOST_CHECK(state_tx.IsInvalid());
+    BOOST_CHECK_EQUAL(state_tx.GetResult(), TxValidationResult::TX_CONSENSUS);
+    BOOST_CHECK_EQUAL(state_tx.GetRejectReason(), "bad-txns-version");
+
+    // Defense in depth: CheckTxInputs also rejects the undefined version.
+    TxValidationState state_inputs;
+    CAmount txfee = -1;
+    BOOST_CHECK(!Consensus::CheckTxInputs(tx, state_inputs, view, /*nSpendHeight=*/200, txfee));
+    BOOST_CHECK(state_inputs.IsInvalid());
+    BOOST_CHECK_EQUAL(state_inputs.GetResult(), TxValidationResult::TX_CONSENSUS);
+    BOOST_CHECK_EQUAL(state_inputs.GetRejectReason(), "bad-txns-version");
+}
+
+// RCPU hardening (C-1): a legacy (non-CT) transaction carrying a commitment
+// output must be rejected at the consensus entry point. Even if the version
+// whitelist were ever loosened, this guarantees a non-CT tx can never smuggle
+// a commitment into the UTXO set.
+BOOST_AUTO_TEST_CASE(nonct_commitment_output_rejected)
+{
+    const COutPoint prevout{TxidFromString("0x9999"), 0};
+
+    CCoinsViewTest base;
+    base.Add(prevout, MakeExplicitCoin(1000 * COIN));
+
+    CCoinsViewCache view{&base};
+
+    // v2 with an explicit output + a commitment output.
+    CMutableTransaction mtx = MakeLegacySpend({prevout}, 500 * COIN);
+    CTxOut comm_out;
+    uint256 blind, nonce;
+    BOOST_REQUIRE(BlindOutput(comm_out.nValue, comm_out.nNonce, comm_out.vchRangeproof, blind, nonce, 500 * COIN));
+    comm_out.scriptPubKey = CScript() << OP_TRUE;
+    mtx.vout.push_back(std::move(comm_out));
+    BOOST_CHECK_EQUAL(mtx.nVersion, 2);
+
+    const CTransaction tx{mtx};
+
+    TxValidationState state;
+    BOOST_CHECK(!CheckTransaction(tx, state));
+    BOOST_CHECK(state.IsInvalid());
+    BOOST_CHECK_EQUAL(state.GetResult(), TxValidationResult::TX_CONSENSUS);
+    BOOST_CHECK_EQUAL(state.GetRejectReason(), "bad-txns-nonct-commitment");
+
+    // Defense in depth: CheckTxInputs rejects it too (B2 input rule fires on
+    // the explicit input, but the version whitelist already ran, so this must
+    // still be a consensus rejection, not a crash on GetAmount()).
+    TxValidationState state_inputs;
+    CAmount txfee = -1;
+    BOOST_CHECK(!Consensus::CheckTxInputs(tx, state_inputs, view, /*nSpendHeight=*/200, txfee));
+    BOOST_CHECK(state_inputs.IsInvalid());
+}
+
+// Regression: the C-1 hardening must not disturb legal v3 CT transactions.
+// A v3 tx spending an explicit input to an explicit output plus an explicit
+// fee output still passes VerifyAmounts (tally balance).
+BOOST_AUTO_TEST_CASE(v3_explicit_spend_passes_verifyamounts)
+{
+    const COutPoint prevout{TxidFromString("0xaaaa"), 0};
+
+    CCoinsViewTest base;
+    base.Add(prevout, MakeExplicitCoin(1000 * COIN));
+
+    CCoinsViewCache view{&base};
+    CMutableTransaction mtx = MakeLegacySpend({prevout}, 600 * COIN);
+    mtx.nVersion = CT_VERSION;
+    // Second output: fee-only output (explicit value, empty scriptPubKey).
+    CTxOut fee_out;
+    fee_out.nValue.SetToAmount(400 * COIN);
+    mtx.vout.push_back(std::move(fee_out));
+
+    const CTransaction tx{mtx};
+    TxValidationState state;
+    CAmount txfee = -1;
+
+    const bool old_ct_mode = g_con_elementsmode;
+    g_con_elementsmode = true;
+    BOOST_CHECK(Consensus::CheckTxInputs(tx, state, view, /*nSpendHeight=*/200, txfee));
+    g_con_elementsmode = old_ct_mode;
+
+    BOOST_CHECK(state.IsValid());
+    BOOST_CHECK_EQUAL(txfee, 400 * COIN);
 }
 
 BOOST_AUTO_TEST_SUITE_END()
