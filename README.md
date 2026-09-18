@@ -70,13 +70,15 @@ make -j$(nproc)
 ./src/qt/rcpu-qt
 ```
 
-> **Note:** Official GitHub Releases currently provide headless binaries only.
-> GUI must be built from source or wait for automated packaging (AppImage).
+> **Note:** Official GitHub Releases provide **both** headless binaries
+> (Linux/macOS tarball + Windows installer/portable zip) and a GUI AppImage
+> (`rcpu-qt`). The GUI can still be built from source for custom
+> configurations.
 >
 > If `libminiupnpc.so` is missing at runtime:
 > ```bash
 > sudo apt-get install -y libminiupnpc17
-> # Or disable UPnP
+> # Or disable UPnP (it is off by default)
 > ./src/qt/rcpu-qt -upnp=0
 > ```
 

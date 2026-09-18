@@ -103,22 +103,29 @@ jobs:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
         run: |
-          if [ -z "$GPG_PRIVATE_KEY" ]; then
-            echo "No GPG key configured, creating empty placeholder"
-            touch "$APPIMAGE_ASSET.asc"
-            exit 0
-          fi
-          echo "$GPG_PRIVATE_KEY" | gpg --batch --yes --import
-          echo "$GPG_PASSPHRASE" | gpg --batch --yes --passphrase-fd 0 \
-            --pinentry-mode loopback \
-            --output "$APPIMAGE_ASSET.asc" \
-            --detach-sig "$APPIMAGE_ASSET"
+          # P2 E-1: without a GPG key we must NOT publish an empty .asc
+          # placeholder (a broken signature). The file list below therefore
+          # only includes the .asc when one was actually produced.
+          {
+            echo "RELEASE_FILES<<EOF"
+            echo "${{ env.APPIMAGE_ASSET }}"
+            echo "${{ env.APPIMAGE_ASSET }}.sha256"
+            if [ -n "$GPG_PRIVATE_KEY" ]; then
+              echo "$GPG_PRIVATE_KEY" | gpg --batch --yes --import
+              echo "$GPG_PASSPHRASE" | gpg --batch --yes --passphrase-fd 0 \
+                --pinentry-mode loopback \
+                --output "${{ env.APPIMAGE_ASSET }}.asc" \
+                --detach-sig "${{ env.APPIMAGE_ASSET }}"
+              echo "${{ env.APPIMAGE_ASSET }}.asc"
+            else
+              echo "No GPG key configured, skipping signature"
+            fi
+            echo "EOF"
+          } >> "$GITHUB_ENV"
 
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          files: |
-            ${{ env.APPIMAGE_ASSET }}
-            ${{ env.APPIMAGE_ASSET }}.sha256
+          files: ${{ env.RELEASE_FILES }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

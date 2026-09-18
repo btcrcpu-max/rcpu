@@ -24,6 +24,8 @@ They are listed here so other docs have one place to copy from.
 | Approx. mined by first 10 halvings | ~2.10B RCPU | 50 + 5000 * 210000 * (1 + 1/2 + … + 1/512) |
 | Tail emission after height 2,100,000 | ~105,120 RCPU / year | 1 RCPU * 288 blocks/day * 365 |
 | CT activation height | **0** (genesis) | `src/kernel/chainparams.cpp` (`nCTActivationHeight`) |
+| Hash domain activation height | **20,000** (mainnet; testnet/regtest: 0) | `src/kernel/chainparams.cpp` (`nHashDomainActivationHeight`) |
+| Path A (legacy nonce) ban height | **20,000** (mainnet; testnet: 0, regtest: 0) | `src/kernel/chainparams.cpp` (`nBanPathAHeight`) |
 | ASERT activation height | **0** (genesis) | `src/kernel/chainparams.cpp` (`nASERTActivationHeight`) |
 | ASERT anchor block | 0 (genesis) | `src/kernel/chainparams.cpp` (`asertAnchorParams`) |
 | ASERT half-life | **2 days (172,800 s)** | `src/kernel/chainparams.cpp` (`nASERTHalfLife`) |

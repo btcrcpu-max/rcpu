@@ -13,6 +13,8 @@
 #include <util/time.h>
 
 #include <atomic>
+#include <cstddef>
+#include <type_traits>
 
 // !RCPU
 // Atomics so readers (validation threads, RPC) and writers (init, IBD
@@ -47,7 +49,7 @@ public:
         SetNull();
     }
 
-    SERIALIZE_METHODS(CBlockHeader, obj) { 
+SERIALIZE_METHODS(CBlockHeader, obj) { 
         READWRITE(obj.nVersion, obj.hashPrevBlock, obj.hashMerkleRoot, obj.nTime, obj.nBits, obj.nNonce);
         // !RCPU
         if (g_isRandomX) {
@@ -81,11 +83,26 @@ public:
         return NodeSeconds{std::chrono::seconds{nTime}};
     }
 
-    int64_t GetBlockTime() const
+int64_t GetBlockTime() const
     {
         return (int64_t)nTime;
     }
 };
+
+// !RCPU
+// Canonical 112-byte header layout (P1-1). Fields are packed with no padding
+// on all supported platforms, so the legacy raw-memory hash input and the
+// canonical serialization domain are byte-identical.
+static_assert(std::is_standard_layout_v<CBlockHeader>);
+static_assert(offsetof(CBlockHeader, nVersion) == 0);
+static_assert(offsetof(CBlockHeader, hashPrevBlock) == 4);
+static_assert(offsetof(CBlockHeader, hashMerkleRoot) == 36);
+static_assert(offsetof(CBlockHeader, nTime) == 68);
+static_assert(offsetof(CBlockHeader, nBits) == 72);
+static_assert(offsetof(CBlockHeader, nNonce) == 76);
+static_assert(offsetof(CBlockHeader, hashRandomX) == 80);
+static_assert(sizeof(CBlockHeader) == 112);
+// !RCPU END
 
 
 class CBlock : public CBlockHeader

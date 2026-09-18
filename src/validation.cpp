@@ -856,8 +856,8 @@ bool MemPoolAccept::PreChecks(ATMPArgs& args, Workspace& ws)
         return state.Invalid(TxValidationResult::TX_PREMATURE_SPEND, "non-BIP68-final");
     }
 
-    // The mempool holds txs for the next block, so pass height+1 to CheckTxInputs
-    if (!Consensus::CheckTxInputs(tx, state, m_view, m_active_chainstate.m_chain.Height() + 1, ws.m_base_fees, m_active_chainstate.m_chainman.GetParams().GetConsensus().nCTActivationHeight)) {
+// The mempool holds txs for the next block, so pass height+1 to CheckTxInputs
+    if (!Consensus::CheckTxInputs(tx, state, m_view, m_active_chainstate.m_chain.Height() + 1, ws.m_base_fees, m_active_chainstate.m_chainman.GetParams().GetConsensus().nCTActivationHeight, m_active_chainstate.m_chainman.GetParams().GetConsensus().nBanPathAHeight)) {
         return false; // state filled in by CheckTxInputs
     }
 
@@ -2473,7 +2473,7 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
         {
             CAmount txfee = 0;
             TxValidationState tx_state;
-            if (!Consensus::CheckTxInputs(tx, tx_state, view, pindex->nHeight, txfee, m_chainman.GetParams().GetConsensus().nCTActivationHeight)) {
+            if (!Consensus::CheckTxInputs(tx, tx_state, view, pindex->nHeight, txfee, m_chainman.GetParams().GetConsensus().nCTActivationHeight, m_chainman.GetParams().GetConsensus().nBanPathAHeight)) {
                 // Any transaction validation failure in ConnectBlock is a block consensus failure
                 state.Invalid(BlockValidationResult::BLOCK_CONSENSUS,
                             tx_state.GetRejectReason(), tx_state.GetDebugMessage());
@@ -3772,11 +3772,17 @@ void ChainstateManager::ReceivedBlockTransactions(const CBlock& block, CBlockInd
     }
 }
 
-static bool CheckBlockHeader(const CBlockHeader& block, BlockValidationState& state, const Consensus::Params& consensusParams, bool fCheckPOW = true)
+// !RCPU
+// P2-5 (N-5): prevBlockTime allows the RandomX epoch to be computed as
+// min(block.nTime, prevBlockTime + MAX_FUTURE_BLOCK_TIME) so an attacker
+// cannot force the node to build a RandomX dataset for an arbitrary future
+// epoch by setting an extreme nTime. 0 means "unknown" (no clamping).
+// !RCPU END
+static bool CheckBlockHeader(const CBlockHeader& block, BlockValidationState& state, const Consensus::Params& consensusParams, bool fCheckPOW = true, uint32_t prevBlockTime = 0)
 {
     // Check proof of work matches claimed amount
     // !RCPU
-    if (fCheckPOW && !CheckProofOfWorkRandomX(block, consensusParams, POW_VERIFY_FULL))
+    if (fCheckPOW && !CheckProofOfWorkRandomX(block, consensusParams, POW_VERIFY_FULL, nullptr, prevBlockTime))
     // !RCPU END
         return state.Invalid(BlockValidationResult::BLOCK_INVALID_HEADER, "high-hash", "proof of work failed");
 
@@ -4181,20 +4187,11 @@ bool ChainstateManager::AcceptBlockHeader(const CBlockHeader& block, BlockValida
             return true;
         }
 
-        // !RCPU
-        // Sanity check the pow commitment meets the target (cheap)
-        if (g_isRandomX && !CheckProofOfWorkRandomX(block, GetConsensus(), POW_VERIFY_COMMITMENT_ONLY)) {
-            state.Invalid(BlockValidationResult::BLOCK_INVALID_HEADER, "high-hash", "proof of work failed");
-            LogPrint(BCLog::VALIDATION, "%s: Consensus::CheckBlockHeader: %s, %s\n", __func__, hash.ToString(), state.ToString());
-            return false;
-        }
-        else if (!CheckBlockHeader(block, state, GetConsensus())) {
-            LogPrint(BCLog::VALIDATION, "%s: Consensus::CheckBlockHeader: %s, %s\n", __func__, hash.ToString(), state.ToString());
-            return false;
-        }
-        // !RCPU END
-
-        // Get prev block index
+// !RCPU
+        // Anti-DoS (P0-2): look up the previous block BEFORE any RandomX
+        // computation. A header whose ancestor is not in our index is rejected
+        // here with zero RandomX cost (previously the commitment-only pass ran
+        // first, so a peer could flood unknown-prev headers to burn node CPU).
         CBlockIndex* pindexPrev = nullptr;
         BlockMap::iterator mi{m_blockman.m_block_index.find(block.hashPrevBlock)};
         if (mi == m_blockman.m_block_index.end()) {
@@ -4206,15 +4203,29 @@ bool ChainstateManager::AcceptBlockHeader(const CBlockHeader& block, BlockValida
             LogPrint(BCLog::VALIDATION, "header %s has prev block invalid: %s\n", hash.ToString(), block.hashPrevBlock.ToString());
             return state.Invalid(BlockValidationResult::BLOCK_INVALID_PREV, "bad-prevblk");
         }
+
+        // Legacy (non-RandomX) chains keep their cheap sha256d PoW check here.
+        if (!g_isRandomX && !CheckBlockHeader(block, state, GetConsensus())) {
+            LogPrint(BCLog::VALIDATION, "%s: Consensus::CheckBlockHeader: %s, %s\n", __func__, hash.ToString(), state.ToString());
+            return false;
+        }
+        // !RCPU END
+
         if (!ContextualCheckBlockHeader(block, state, m_blockman, *this, pindexPrev)) {
             LogPrint(BCLog::VALIDATION, "%s: Consensus::ContextualCheckBlockHeader: %s, %s\n", __func__, hash.ToString(), state.ToString());
             return false;
         }
 
-        // !RCPU
-        // Verify timestamp (and thus the epoch) in contextual check above, before performing full pow verification.
-        // This ordering help prevents resource denial when -randomxfastmode=1, as VM creation is based on epoch.
-        if (g_isRandomX && !CheckBlockHeader(block, state, GetConsensus())) {
+// !RCPU
+        // Single full RandomX verification point (anti-DoS, P0-2).
+        // The previous block lookup and the ContextualCheckBlockHeader above
+        // (nBits, timestamp and thus epoch) have already passed, and
+        // POW_VERIFY_FULL performs the commitment check internally before the
+        // full hash (see CheckProofOfWorkRandomX), so this is the ONLY place
+        // where expensive RandomX work is spent per header. A header reaching
+        // this point with a forged hashRandomX gets misbehavior points via
+        // BLOCK_INVALID_HEADER downstream.
+        if (g_isRandomX && !CheckBlockHeader(block, state, GetConsensus(), /*fCheckPOW=*/true, pindexPrev->GetBlockTime())) {
             LogPrint(BCLog::VALIDATION, "%s: Consensus::CheckBlockHeader: %s, %s\n", __func__, hash.ToString(), state.ToString());
             return false;
         }

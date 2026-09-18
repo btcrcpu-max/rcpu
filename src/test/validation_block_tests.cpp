@@ -9,6 +9,7 @@
 #include <consensus/validation.h>
 #include <node/miner.h>
 #include <pow.h>
+#include <primitives/transaction.h> // CT_VERSION
 #include <random.h>
 #include <test/util/random.h>
 #include <test/util/script.h>
@@ -321,6 +322,61 @@ BOOST_AUTO_TEST_CASE(mempool_locks_reorg)
         // We can join the other thread, which returns when the reorg was successful
         rpc_thread.join();
     }
+}
+
+// Anti-DoS regression (P0-2): a header whose previous block is unknown must
+// be rejected with BLOCK_MISSING_PREV *before* any RandomX work happens.
+// Previously AcceptBlockHeader executed a commitment pass and then a full
+// RandomX verification before looking up the previous block, so a peer could
+// flood 2000 unknown-prev headers to burn node CPU. This test builds exactly
+// that flood; with the fix in place the first header fails the pre-lookup and
+// zero RandomX calls happen. If the check regresses to "PoW first, prev
+// later", these headers either fail with BLOCK_INVALID_HEADER ("high-hash")
+// or attempt a real RandomX VM, never BLOCK_MISSING_PREV.
+BOOST_AUTO_TEST_CASE(unknown_prev_headers_skip_randomx)
+{
+    // 2000 fabricated headers, none of which connects to an indexed block.
+    std::vector<CBlockHeader> headers;
+    headers.reserve(2000);
+    for (int i = 0; i < 2000; ++i) {
+        CBlockHeader hdr;
+        hdr.nVersion = CT_VERSION;
+        hdr.hashPrevBlock = InsecureRand256(); // not in the block index
+        hdr.hashMerkleRoot = uint256::ONE;
+        hdr.nTime = Params().GenesisBlock().nTime + 1 + i;
+        hdr.nBits = 0x1e3ffffc; // within pow limit; irrelevant: prev lookup runs first
+        hdr.nNonce = i;
+        hdr.hashRandomX = InsecureRand256(); // forged; must never be hashed
+        headers.push_back(hdr);
+    }
+
+    BlockValidationState state;
+    const CBlockIndex* pindex{nullptr};
+    BOOST_CHECK(!Assert(m_node.chainman)->ProcessNewBlockHeaders(headers, /*min_pow_checked=*/true, state, &pindex));
+    BOOST_CHECK_EQUAL(state.GetResult(), BlockValidationResult::BLOCK_MISSING_PREV);
+    BOOST_CHECK_EQUAL(state.GetRejectReason(), "prev-blk-not-found");
+}
+
+// Control for the anti-DoS fix: when the previous block IS known, proof of
+// work must still be verified (the pre-lookup must not disable validation for
+// connected headers). A header with an out-of-range target must fail PoW with
+// BLOCK_INVALID_HEADER.
+BOOST_AUTO_TEST_CASE(connected_header_still_checks_pow)
+{
+    CBlockHeader hdr;
+    hdr.nVersion = CT_VERSION;
+    hdr.hashPrevBlock = Params().GenesisBlock().GetHash();
+    hdr.hashMerkleRoot = uint256::ONE;
+    hdr.nTime = Params().GenesisBlock().nTime + 1;
+    hdr.nBits = 0xffffffff; // exceeds pow limit -> PoW must fail
+    hdr.nNonce = 0;
+    hdr.hashRandomX = uint256::ONE;
+
+    BlockValidationState state;
+    const CBlockIndex* pindex{nullptr};
+    BOOST_CHECK(!Assert(m_node.chainman)->ProcessNewBlockHeaders({hdr}, /*min_pow_checked=*/true, state, &pindex));
+    BOOST_CHECK_EQUAL(state.GetResult(), BlockValidationResult::BLOCK_INVALID_HEADER);
+    BOOST_CHECK_EQUAL(state.GetRejectReason(), "high-hash");
 }
 
 BOOST_AUTO_TEST_CASE(witness_commitment_index)

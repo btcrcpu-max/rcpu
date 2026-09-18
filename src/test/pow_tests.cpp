@@ -20,10 +20,32 @@
 
 BOOST_FIXTURE_TEST_SUITE(pow_tests, BasicTestingSetup)
 
+// !RCPU
+// ChainType::MAIN is disabled at runtime in RCPU (CreateChainParams throws
+// "Bitcoin mainnet is disabled"). The legacy DAA tests below exercise the
+// Bitcoin-classical difficulty adjustment math against a standalone
+// Consensus::Params with upstream Bitcoin mainnet parameters, so the
+// original hardcoded expectations stay valid without referencing the
+// disabled template chain. These are pure math tests and do not describe
+// RCPU mainnet consensus.
+static Consensus::Params LegacyBTCMainConsensus()
+{
+    Consensus::Params params;
+    params.powLimit = uint256S("00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
+    params.fPowAllowMinDifficultyBlocks = false;
+    params.fPowNoRetargeting = false;
+    params.nPowTargetSpacing = 10 * 60;
+    params.nPowTargetTimespan = 14 * 24 * 60 * 60;
+    return params;
+}
+// !RCPU END
+
+
+
 /* Test calculation of next difficulty target with no constraints applying */
 BOOST_AUTO_TEST_CASE(get_next_work)
 {
-    const auto chainParams = CreateChainParams(*m_node.args, ChainType::MAIN);
+    const Consensus::Params params = LegacyBTCMainConsensus();
     int64_t nLastRetargetTime = 1261130161; // Block #30240
     CBlockIndex pindexLast;
     pindexLast.nHeight = 32255;
@@ -35,45 +57,45 @@ BOOST_AUTO_TEST_CASE(get_next_work)
     // reimplementing the same code that is written in pow.cpp. Rather than
     // copy that code, we just hardcode the expected result.
     unsigned int expected_nbits = 0x1d00d86aU;
-    BOOST_CHECK_EQUAL(CalculateNextWorkRequired(&pindexLast, nLastRetargetTime, chainParams->GetConsensus()), expected_nbits);
-    BOOST_CHECK(PermittedDifficultyTransition(chainParams->GetConsensus(), pindexLast.nHeight+1, pindexLast.nBits, expected_nbits));
+    BOOST_CHECK_EQUAL(CalculateNextWorkRequired(&pindexLast, nLastRetargetTime, params), expected_nbits);
+    BOOST_CHECK(PermittedDifficultyTransition(params, pindexLast.nHeight+1, pindexLast.nBits, expected_nbits));
 }
 
 /* Test the constraint on the upper bound for next work */
 BOOST_AUTO_TEST_CASE(get_next_work_pow_limit)
 {
-    const auto chainParams = CreateChainParams(*m_node.args, ChainType::MAIN);
+    const Consensus::Params params = LegacyBTCMainConsensus();
     int64_t nLastRetargetTime = 1231006505; // Block #0
     CBlockIndex pindexLast;
     pindexLast.nHeight = 2015;
     pindexLast.nTime = 1233061996;  // Block #2015
     pindexLast.nBits = 0x1d00ffff;
     unsigned int expected_nbits = 0x1d00ffffU;
-    BOOST_CHECK_EQUAL(CalculateNextWorkRequired(&pindexLast, nLastRetargetTime, chainParams->GetConsensus()), expected_nbits);
-    BOOST_CHECK(PermittedDifficultyTransition(chainParams->GetConsensus(), pindexLast.nHeight+1, pindexLast.nBits, expected_nbits));
+    BOOST_CHECK_EQUAL(CalculateNextWorkRequired(&pindexLast, nLastRetargetTime, params), expected_nbits);
+    BOOST_CHECK(PermittedDifficultyTransition(params, pindexLast.nHeight+1, pindexLast.nBits, expected_nbits));
 }
 
 /* Test the constraint on the lower bound for actual time taken */
 BOOST_AUTO_TEST_CASE(get_next_work_lower_limit_actual)
 {
-    const auto chainParams = CreateChainParams(*m_node.args, ChainType::MAIN);
+    const Consensus::Params params = LegacyBTCMainConsensus();
     int64_t nLastRetargetTime = 1279008237; // Block #66528
     CBlockIndex pindexLast;
     pindexLast.nHeight = 68543;
     pindexLast.nTime = 1279297671;  // Block #68543
     pindexLast.nBits = 0x1c05a3f4;
     unsigned int expected_nbits = 0x1c0168fdU;
-    BOOST_CHECK_EQUAL(CalculateNextWorkRequired(&pindexLast, nLastRetargetTime, chainParams->GetConsensus()), expected_nbits);
-    BOOST_CHECK(PermittedDifficultyTransition(chainParams->GetConsensus(), pindexLast.nHeight+1, pindexLast.nBits, expected_nbits));
+    BOOST_CHECK_EQUAL(CalculateNextWorkRequired(&pindexLast, nLastRetargetTime, params), expected_nbits);
+    BOOST_CHECK(PermittedDifficultyTransition(params, pindexLast.nHeight+1, pindexLast.nBits, expected_nbits));
     // Test that reducing nbits further would not be a PermittedDifficultyTransition.
     unsigned int invalid_nbits = expected_nbits-1;
-    BOOST_CHECK(!PermittedDifficultyTransition(chainParams->GetConsensus(), pindexLast.nHeight+1, pindexLast.nBits, invalid_nbits));
+    BOOST_CHECK(!PermittedDifficultyTransition(params, pindexLast.nHeight+1, pindexLast.nBits, invalid_nbits));
 }
 
 /* Test the constraint on the upper bound for actual time taken */
 BOOST_AUTO_TEST_CASE(get_next_work_upper_limit_actual)
 {
-    const auto chainParams = CreateChainParams(*m_node.args, ChainType::MAIN);
+    const Consensus::Params params = LegacyBTCMainConsensus();
     int64_t nLastRetargetTime = 1263163443; // NOTE: Not an actual block time
     CBlockIndex pindexLast;
     // !RCPU
@@ -83,16 +105,16 @@ BOOST_AUTO_TEST_CASE(get_next_work_upper_limit_actual)
     pindexLast.nTime = 1269211443;  // Block #46367
     pindexLast.nBits = 0x1c387f6f;
     unsigned int expected_nbits = 0x1d00e1fdU;
-    BOOST_CHECK_EQUAL(CalculateNextWorkRequired(&pindexLast, nLastRetargetTime, chainParams->GetConsensus()), expected_nbits);
-    BOOST_CHECK(PermittedDifficultyTransition(chainParams->GetConsensus(), pindexLast.nHeight+1, pindexLast.nBits, expected_nbits));
+    BOOST_CHECK_EQUAL(CalculateNextWorkRequired(&pindexLast, nLastRetargetTime, params), expected_nbits);
+    BOOST_CHECK(PermittedDifficultyTransition(params, pindexLast.nHeight+1, pindexLast.nBits, expected_nbits));
     // Test that increasing nbits further would not be a PermittedDifficultyTransition.
     unsigned int invalid_nbits = expected_nbits+1;
-    BOOST_CHECK(!PermittedDifficultyTransition(chainParams->GetConsensus(), pindexLast.nHeight+1, pindexLast.nBits, invalid_nbits));
+    BOOST_CHECK(!PermittedDifficultyTransition(params, pindexLast.nHeight+1, pindexLast.nBits, invalid_nbits));
 }
 
 BOOST_AUTO_TEST_CASE(CheckProofOfWork_test_negative_target)
 {
-    const auto consensus = CreateChainParams(*m_node.args, ChainType::MAIN)->GetConsensus();
+    const auto consensus = LegacyBTCMainConsensus();
     uint256 hash;
     unsigned int nBits;
     nBits = UintToArith256(consensus.powLimit).GetCompact(true);
@@ -102,7 +124,7 @@ BOOST_AUTO_TEST_CASE(CheckProofOfWork_test_negative_target)
 
 BOOST_AUTO_TEST_CASE(CheckProofOfWork_test_overflow_target)
 {
-    const auto consensus = CreateChainParams(*m_node.args, ChainType::MAIN)->GetConsensus();
+    const auto consensus = LegacyBTCMainConsensus();
     uint256 hash;
     unsigned int nBits{~0x00800000U};
     hash.SetHex("0x1");
@@ -111,7 +133,7 @@ BOOST_AUTO_TEST_CASE(CheckProofOfWork_test_overflow_target)
 
 BOOST_AUTO_TEST_CASE(CheckProofOfWork_test_too_easy_target)
 {
-    const auto consensus = CreateChainParams(*m_node.args, ChainType::MAIN)->GetConsensus();
+    const auto consensus = LegacyBTCMainConsensus();
     uint256 hash;
     unsigned int nBits;
     arith_uint256 nBits_arith = UintToArith256(consensus.powLimit);
@@ -123,7 +145,7 @@ BOOST_AUTO_TEST_CASE(CheckProofOfWork_test_too_easy_target)
 
 BOOST_AUTO_TEST_CASE(CheckProofOfWork_test_biger_hash_than_target)
 {
-    const auto consensus = CreateChainParams(*m_node.args, ChainType::MAIN)->GetConsensus();
+    const auto consensus = LegacyBTCMainConsensus();
     uint256 hash;
     unsigned int nBits;
     arith_uint256 hash_arith = UintToArith256(consensus.powLimit);
@@ -135,7 +157,7 @@ BOOST_AUTO_TEST_CASE(CheckProofOfWork_test_biger_hash_than_target)
 
 BOOST_AUTO_TEST_CASE(CheckProofOfWork_test_zero_target)
 {
-    const auto consensus = CreateChainParams(*m_node.args, ChainType::MAIN)->GetConsensus();
+    const auto consensus = LegacyBTCMainConsensus();
     uint256 hash;
     unsigned int nBits;
     arith_uint256 hash_arith{0};
@@ -146,12 +168,12 @@ BOOST_AUTO_TEST_CASE(CheckProofOfWork_test_zero_target)
 
 BOOST_AUTO_TEST_CASE(GetBlockProofEquivalentTime_test)
 {
-    const auto chainParams = CreateChainParams(*m_node.args, ChainType::MAIN);
+    const Consensus::Params params = LegacyBTCMainConsensus();
     std::vector<CBlockIndex> blocks(10000);
     for (int i = 0; i < 10000; i++) {
         blocks[i].pprev = i ? &blocks[i - 1] : nullptr;
         blocks[i].nHeight = i;
-        blocks[i].nTime = 1269211443 + i * chainParams->GetConsensus().nPowTargetSpacing;
+        blocks[i].nTime = 1269211443 + i * params.nPowTargetSpacing;
         blocks[i].nBits = 0x207fffff; /* target 0x7fffff000... */
         blocks[i].nChainWork = i ? blocks[i - 1].nChainWork + GetBlockProof(blocks[i - 1]) : arith_uint256(0);
     }
@@ -161,7 +183,7 @@ BOOST_AUTO_TEST_CASE(GetBlockProofEquivalentTime_test)
         CBlockIndex *p2 = &blocks[InsecureRandRange(10000)];
         CBlockIndex *p3 = &blocks[InsecureRandRange(10000)];
 
-        int64_t tdiff = GetBlockProofEquivalentTime(*p1, *p2, *p3, chainParams->GetConsensus());
+        int64_t tdiff = GetBlockProofEquivalentTime(*p1, *p2, *p3, params);
         BOOST_CHECK_EQUAL(tdiff, p1->GetBlockTime() - p2->GetBlockTime());
     }
 }
@@ -200,11 +222,6 @@ void sanity_check_chainparams(const ArgsManager& args, ChainType chain_type)
         targ_max /= consensus.nPowTargetTimespan*4;
         BOOST_CHECK(UintToArith256(consensus.powLimit) < targ_max);
     }
-}
-
-BOOST_AUTO_TEST_CASE(ChainParams_MAIN_sanity)
-{
-    sanity_check_chainparams(*m_node.args, ChainType::MAIN);
 }
 
 BOOST_AUTO_TEST_CASE(ChainParams_REGTEST_sanity)
@@ -275,7 +292,10 @@ BOOST_AUTO_TEST_CASE(Check_RandomX_BlockHeader)
     const auto chainParams = CreateChainParams(*m_node.args, ChainType::RCPUTESTNET);
     const auto consensus = chainParams->GetConsensus();
 
-    // Sanity check: block header GetHash() function includes RandomX field when running as RCPU
+    // RCPU (P1-1): on RCPU chains GetHash() uses the canonical 112-byte hash
+    // domain (including hashRandomX) via an explicit field-wise serialization;
+    // the flag only selects the domain for Bitcoin-compatible chains and is
+    // constant for the process lifetime.
     assert(!g_isRandomX);
     BOOST_CHECK_NE(consensus.hashGenesisBlock, chainParams->GenesisBlock().GetHash());
     g_isRandomX = true;
@@ -339,30 +359,41 @@ BOOST_AUTO_TEST_CASE(Check_RandomX_BlockHeader)
     block.hashRandomX = rx_hash;
     assert(!CheckProofOfWorkRandomX(block, customParams, POW_VERIFY_COMMITMENT_ONLY));
 
-    // Commitment calculation uses the block header with hashRandomX zeroed out
-    // as the key, and the RandomX hash as the seed. GetRandomXCommitment()
-    // internally zeros hashRandomX before calling randomx_calculate_commitment,
-    // so feeding a header with a non-zero hashRandomX directly must produce a
-    // different output (the key is different).
+    // Commitment bytes come from the canonical 112-byte serialized header:
+    // the consensus path (pow.cpp SerializeRandomXHeader) writes
+    // nVersion|hashPrevBlock|hashMerkleRoot|nTime|nBits|nNonce|hashRandomX
+    // (hashRandomX nulled), identical to the layout pinned by the
+    // static_asserts in primitives/block.h. These tests feed the low-level
+    // API those exact serialization bytes (via SerializeRandomXHeader) instead
+    // of raw header memory (&block + sizeof(block)), so they exercise the same
+    // input bytes as the production path.
     block.hashPrevBlock = chainParams->GenesisBlock().GetHash();
     uint256 seed_hash = GetRandHash();
     block.hashRandomX = seed_hash;
+    // Dirty input: hashRandomX left non-null. SerializeRandomXHeader nulls the
+    // field, so the same canonical field order is written explicitly to prove
+    // that a non-null hashRandomX changes the commitment.
+    DataStream ss_dirty{};
+    ss_dirty << block.nVersion << block.hashPrevBlock << block.hashMerkleRoot
+             << block.nTime << block.nBits << block.nNonce << block.hashRandomX;
     char rx_cm_dirty[RANDOMX_HASH_SIZE];
-    randomx_calculate_commitment(&block, sizeof(block), seed_hash.begin(), rx_cm_dirty);
+    randomx_calculate_commitment(ss_dirty.data(), ss_dirty.size(), seed_hash.begin(), rx_cm_dirty);
     block.hashRandomX = uint256();
+    const DataStream ss_clean = SerializeRandomXHeader(block);
+    BOOST_CHECK_EQUAL(ss_clean.size(), 112);
     char rx_cm_clean[RANDOMX_HASH_SIZE];
-    randomx_calculate_commitment(&block, sizeof(block), seed_hash.begin(), rx_cm_clean);
+    randomx_calculate_commitment(ss_clean.data(), ss_clean.size(), seed_hash.begin(), rx_cm_clean);
     // Different key (hashRandomX present vs. zeroed) -> different commitment.
     assert(memcmp(rx_cm_dirty, rx_cm_clean, sizeof(rx_cm_dirty)) != 0);
 
     // A different seed hash also produces a different commitment.
     uint256 seed2 = GetRandHash();
     char rx_cm2[RANDOMX_HASH_SIZE];
-    randomx_calculate_commitment(&block, sizeof(block), seed2.begin(), rx_cm2);
+    randomx_calculate_commitment(ss_clean.data(), ss_clean.size(), seed2.begin(), rx_cm2);
     assert(memcmp(rx_cm_clean, rx_cm2, sizeof(rx_cm_clean)) != 0);
 
     // GetRandomXCommitment() zeros hashRandomX internally, so its output
-    // matches the low-level randomx_calculate_commitment with a clean header.
+    // matches the clean-header commitment computed above.
     block.hashRandomX = seed_hash;
     uint256 cm = GetRandomXCommitment(block);
     BOOST_CHECK_EQUAL(cm, uint256(std::vector<unsigned char>(rx_cm_clean, rx_cm_clean + sizeof(rx_cm_clean))));

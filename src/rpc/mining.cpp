@@ -663,8 +663,14 @@ static RPCHelpMan getblocktemplate()
                 {RPCResult::Type::STR_HEX, "signet_challenge", /*optional=*/true, "Only on signet"},
                 {RPCResult::Type::STR_HEX, "default_witness_commitment", /*optional=*/true, "a valid witness commitment for the unmodified block template"},
 
-                // !RCPU
-                {RPCResult::Type::NUM, "rx_epoch_duration", "seconds"},
+// !RCPU
+                {RPCResult::Type::NUM, "rx_epoch_duration", "RandomX epoch duration in seconds (seed changes once per epoch)"},
+                {RPCResult::Type::NUM, "rx_epoch", "RandomX epoch of the template timestamp (block timestamp / rx_epoch_duration); if the miner adjusts the block time, the epoch must be recomputed from the final timestamp"},
+                {RPCResult::Type::STR_HEX, "rx_seed_hash", "RandomX key (seed hash) for rx_epoch, 32-byte hex; derived as sha256d(\"RCPU/RandomX/Epoch/<epoch>\")"},
+                {RPCResult::Type::NUM, "rx_header_size", "serialized header size in bytes fed to RandomX (80-byte legacy header plus the 32-byte hashRandomX field)"},
+                {RPCResult::Type::STR, "rx_hash_field", "location and semantics of the hashRandomX field: 32 bytes appended after the 80-byte header; must be zeroed before computing the RandomX hash and commitment, then filled with the computed RandomX hash before submission"},
+                {RPCResult::Type::STR_HEX, "rx_commitment_target", "maximum acceptable RandomX commitment (256-bit hex); the commitment computed over the zeroed-hashRandomX header must be <= this target"},
+                {RPCResult::Type::STR, "rx_pow_rule", "identifier of the RandomX proof-of-work rule in force; currently \"randomx-v1\" (see src/pow.cpp, CheckProofOfWorkRandomX)"},
                 // !RCPU END
             }},
         },
@@ -985,8 +991,18 @@ static RPCHelpMan getblocktemplate()
         result.pushKV("default_witness_commitment", HexStr(pblocktemplate->vchCoinbaseCommitment));
     }
 
-    // !RCPU
+// !RCPU
     result.pushKV("rx_epoch_duration", consensusParams.nRandomXEpochDuration);
+    {
+        const uint32_t nEpoch = GetEpoch(pblock->GetBlockTime(), consensusParams.nRandomXEpochDuration);
+        result.pushKV("rx_epoch", nEpoch);
+        result.pushKV("rx_seed_hash", GetSeedHash(nEpoch).GetHex());
+        enum : size_t { RCPU_LEGACY_HEADER_SIZE = 80 };
+        result.pushKV("rx_header_size", RCPU_LEGACY_HEADER_SIZE + RANDOMX_HASH_SIZE);
+        result.pushKV("rx_hash_field", strprintf("hashRandomX at byte offset %zu, %d bytes; zero before hashing and commitment, fill with the RandomX hash before submission", RCPU_LEGACY_HEADER_SIZE, RANDOMX_HASH_SIZE));
+        result.pushKV("rx_commitment_target", hashTarget.GetHex());
+        result.pushKV("rx_pow_rule", "randomx-v1");
+    }
     // !RCPU END
 
     return result;
@@ -1015,9 +1031,14 @@ protected:
 static RPCHelpMan submitblock()
 {
     // We allow 2 arguments for compliance with BIP22. Argument 2 is ignored.
-    return RPCHelpMan{"submitblock",
+return RPCHelpMan{"submitblock",
         "\nAttempts to submit new block to network.\n"
-        "See https://en.bitcoin.it/wiki/BIP_0022 for full specification.\n",
+        "See https://en.bitcoin.it/wiki/BIP_0022 for full specification.\n"
+        "\nRCPU: the serialized block header is 112 bytes (80-byte legacy header\n"
+        "plus the 32-byte hashRandomX field). The hashRandomX field must contain\n"
+        "the RandomX hash computed over the header with hashRandomX zeroed, and\n"
+        "the RandomX commitment of that header must satisfy the target returned\n"
+        "by getblocktemplate (see rx_pow_rule).\n",
         {
             {"hexdata", RPCArg::Type::STR_HEX, RPCArg::Optional::NO, "the hex-encoded block data to submit"},
             {"dummy", RPCArg::Type::STR, RPCArg::DefaultHint{"ignored"}, "dummy value, for compatibility with BIP22. This value is ignored."},

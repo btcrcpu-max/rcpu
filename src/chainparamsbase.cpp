@@ -15,7 +15,7 @@
 void SetupChainParamsBaseOptions(ArgsManager& argsman)
 {
 // !RCPU
-    argsman.AddArg("-chain=<chain>", "Use the chain <chain> (default: rcpu). Allowed values: rcpu, rcputestnet, rcpuregtest, main, test, signet, regtest", ArgsManager::ALLOW_ANY, OptionsCategory::CHAINPARAMS);
+    argsman.AddArg("-chain=<chain>", "Use the chain <chain> (default: rcpu). Allowed values: rcpu, rcputestnet, rcpuregtest", ArgsManager::ALLOW_ANY, OptionsCategory::CHAINPARAMS);
     argsman.AddArg("-rcpuregtest", "Enter rcpu regression test mode. Equivalent to -chain=rcpuregtest.", ArgsManager::ALLOW_ANY, OptionsCategory::CHAINPARAMS);
     argsman.AddArg("-rcputestnet", "Use the rcpu test chain. Equivalent to -chain=rcputestnet.", ArgsManager::ALLOW_ANY, OptionsCategory::CHAINPARAMS);
     argsman.AddArg("-rcpu", "Use the rcpu chain. Equivalent to -chain=rcpu.", ArgsManager::ALLOW_ANY, OptionsCategory::CHAINPARAMS);

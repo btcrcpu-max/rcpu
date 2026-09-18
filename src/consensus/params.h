@@ -154,8 +154,37 @@ struct Params {
     bool fPowRandomX{false};
     uint32_t nRandomXEpochDuration;
 
-    /** RCPU: block height at which confidential transactions (tx version >= CT_VERSION) activate. */
+/** RCPU: block height at which confidential transactions (tx version >= CT_VERSION) activate. */
     int nCTActivationHeight{0};
+
+    /**
+     * RCPU: block height at which the legacy (path A, plaintext-nonce) CT
+     * nonce encoding is banned. From this height onward, any confidential
+     * output whose nonce field is a 33-byte commitment starting with 0x02 is
+     * rejected with "bad-ct-legacy-nonce". Path A stores the rewind nonce
+     * on-chain, so it leaks both amount and blinding factor; only path B
+     * (0x03 || compressed pubkey) is confidential. Set to
+     * std::numeric_limits<int>::max() (= never) on networks that must keep
+     * path A (e.g. regtest).
+     */
+    int nBanPathAHeight{std::numeric_limits<int>::max()};
+
+    /**
+     * RCPU: block height from which the canonical 112-byte hash domain
+     * (serialized header including hashRandomX) is used for RandomX inputs and
+     * block-header hashing. The canonical serialization is byte-identical to
+     * the legacy raw-memory layout (asserted in primitives/block.h), so the
+     * activation does not change any hash value on already-live chains; this
+     * parameter is the versioning guard if the header layout ever grows
+     * padding or new fields in the future (P1-1).
+     *
+     * NOT WIRED: no consensus, validation or indexing code reads this value
+     * today. The hash domain is selected by the process-global g_isRandomX
+     * flag at startup, not by this height. Changing it has no effect on any
+     * chain; it is documentation of the guard semantic, not an activation
+     * switch.
+     */
+    int nHashDomainActivationHeight{std::numeric_limits<int>::max()};
 
     /** Used by the ASERT DAA */
     int nASERTActivationHeight; // Block height at which ASERT DAA becomes active, if asertAnchorParams is set.

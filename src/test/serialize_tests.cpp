@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <hash.h>
+#include <primitives/block.h>
 #include <serialize.h>
 #include <streams.h>
 #include <test/util/setup_common.h>
@@ -413,4 +414,53 @@ BOOST_AUTO_TEST_CASE(with_params_derived)
                                     "0f\x02XY");
 }
 
+
+// !RCPU
+// RCPU: block header serialization must be exactly 112 bytes when RandomX
+// hashing is active (80-byte Bitcoin header + 32-byte hashRandomX field),
+// and the RandomX field must be placed at byte offset 80. This guards the
+// consensus-critical header layout agreed with the network.
+BOOST_AUTO_TEST_CASE(block_header_layout_randomx)
+{
+    CBlockHeader hdr;
+    hdr.SetNull();
+    hdr.nVersion = 3;
+    hdr.nTime = 1700000000;
+    hdr.nBits = 0x207fffff;
+    hdr.nNonce = 0;
+
+    // Without RandomX mode: classic 80-byte header.
+    g_isRandomX = false;
+    DataStream ss80;
+    ss80 << hdr;
+    BOOST_CHECK_EQUAL(ss80.size(), 80U);
+
+    // With RandomX mode: 112-byte header, hashRandomX appended at offset 80.
+    g_isRandomX = true;
+    DataStream ss112;
+    ss112 << hdr;
+    BOOST_CHECK_EQUAL(ss112.size(), 112U);
+
+    // Place a recognizable 32-byte value in hashRandomX and verify the
+    // serialized bytes at [80, 112) match the little-endian uint256.
+    hdr.hashRandomX = uint256S("0x000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f");
+    DataStream with_rx;
+    with_rx << hdr;
+    BOOST_CHECK_EQUAL(with_rx.size(), 112U);
+
+    // The 32 bytes at offset 80 must equal the standalone serialization of
+    // hashRandomX (zero-assumption byte-order check via DataStream).
+    DataStream rx_bytes;
+    rx_bytes << hdr.hashRandomX;
+    BOOST_CHECK_EQUAL(rx_bytes.size(), 32U);
+    BOOST_CHECK_EQUAL(with_rx.str().substr(80, 32), rx_bytes.str());
+
+    // First 80 bytes must equal the non-RandomX serialization.
+    BOOST_CHECK_EQUAL(with_rx.str().substr(0, 80), ss80.str());
+
+    g_isRandomX = false;
+}
+// !RCPU END
+
 BOOST_AUTO_TEST_SUITE_END()
+

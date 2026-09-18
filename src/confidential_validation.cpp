@@ -64,9 +64,17 @@ bool VerifyRangeProof(const CTxOut& out)
         return false;
     }
     uint64_t min_value = 0, max_value = 0;
-    return secp256k1_rangeproof_verify(GetCTContext(), &min_value, &max_value, &commit,
-                                       out.vchRangeproof.data(), out.vchRangeproof.size(),
-                                       nullptr, 0, secp256k1_generator_h) == 1;
+    if (secp256k1_rangeproof_verify(GetCTContext(), &min_value, &max_value, &commit,
+                                     out.vchRangeproof.data(), out.vchRangeproof.size(),
+                                     nullptr, 0, secp256k1_generator_h) != 1) {
+        return false;
+    }
+    // P2 C-5: a valid rangeproof must not claim a max value above MAX_MONEY,
+    // otherwise the confidential output could encode more than the full supply.
+    if (max_value > static_cast<uint64_t>(MAX_MONEY)) {
+        return false;
+    }
+    return true;
 }
 
 } // namespace

@@ -585,7 +585,7 @@ void SetupServerArgs(ArgsManager& argsman)
     argsman.AddArg("-torpassword=<pass>", "Tor control port password (default: empty)", ArgsManager::ALLOW_ANY | ArgsManager::SENSITIVE, OptionsCategory::CONNECTION);
 #ifdef USE_UPNP
 #if USE_UPNP
-    argsman.AddArg("-upnp", "Use UPnP to map the listening port (default: 1 when listening and no -proxy)", ArgsManager::ALLOW_ANY, OptionsCategory::CONNECTION);
+    argsman.AddArg("-upnp", strprintf("Use UPnP to map the listening port (default: %u)", DEFAULT_UPNP ? 1 : 0), ArgsManager::ALLOW_ANY, OptionsCategory::CONNECTION);
 #else
     argsman.AddArg("-upnp", strprintf("Use UPnP to map the listening port (default: %u)", 0), ArgsManager::ALLOW_ANY, OptionsCategory::CONNECTION);
 #endif
@@ -920,8 +920,17 @@ bool AppInitParameterInteraction(const ArgsManager& args)
     // RCPU: enable confidential-transactions mode.
     // For RCPU networks, CT is enabled by default (consensus rule from CT_FORK_HEIGHT onward).
     // For non-RCPU networks, CT is off by default and can be enabled with -ctmode.
-    bool fDefaultCT = (chainparams.GetChainType() == ChainType::RCPUMAIN || chainparams.GetChainType() == ChainType::TESTNET || chainparams.GetChainType() == ChainType::RCPUTESTNET || chainparams.GetChainType() == ChainType::REGTEST || chainparams.GetChainType() == ChainType::RCPUREGTEST);
+bool fDefaultCT = (chainparams.GetChainType() == ChainType::RCPUMAIN || chainparams.GetChainType() == ChainType::TESTNET || chainparams.GetChainType() == ChainType::RCPUTESTNET || chainparams.GetChainType() == ChainType::REGTEST || chainparams.GetChainType() == ChainType::RCPUREGTEST);
     g_con_elementsmode = args.GetBoolArg("-ctmode", fDefaultCT);
+    // RCPU hardening (P0-3): CT is a consensus rule on RCPU mainnet and
+    // testnet (CT_FORK_HEIGHT onward), so -ctmode=0 must NOT be allowed to
+    // disable it there; the flag remains a usable switch on regtest only.
+    if (chainparams.GetChainType() == ChainType::RCPUMAIN || chainparams.GetChainType() == ChainType::RCPUTESTNET) {
+        if (!g_con_elementsmode) {
+            return InitError(_("-ctmode=0 is not allowed on RCPU networks: confidential transactions are a consensus rule; use RCPUREGTEST for -ctmode=0 testing"));
+        }
+        g_con_elementsmode = true;
+    }
     // ********************************************************* Step 2: parameter interactions
 
     // also see: InitParameterInteraction()
@@ -929,7 +938,13 @@ bool AppInitParameterInteraction(const ArgsManager& args)
     // Error if network-specific options (-addnode, -connect, etc) are
     // specified in default section of config file, but not overridden
     // on the command line or in this chain's section of the config file.
-    ChainType chain = args.GetChainType();
+ChainType chain = args.GetChainType();
+    // RCPU hardening (P1-2): path-A (-ctlegacy) writes the rewind nonce in
+    // plaintext on-chain (0x02 || 32B), leaking amount+blinding factor. It
+    // is banned on mainnet; testnet keeps it only until nBanPathAHeight.
+    if (chain == ChainType::RCPUMAIN && args.GetBoolArg("-ctlegacy", false)) {
+        return InitError(_("-ctlegacy is disabled on mainnet"));
+    }
     if (chain == ChainType::SIGNET) {
         LogPrintf("Signet derived magic (message start): %s\n", HexStr(chainparams.MessageStart()));
     }
