@@ -359,30 +359,41 @@ BOOST_AUTO_TEST_CASE(Check_RandomX_BlockHeader)
     block.hashRandomX = rx_hash;
     assert(!CheckProofOfWorkRandomX(block, customParams, POW_VERIFY_COMMITMENT_ONLY));
 
-    // Commitment calculation uses the block header with hashRandomX zeroed out
-    // as the key, and the RandomX hash as the seed. GetRandomXCommitment()
-    // internally zeros hashRandomX before calling randomx_calculate_commitment,
-    // so feeding a header with a non-zero hashRandomX directly must produce a
-    // different output (the key is different).
+    // Commitment bytes come from the canonical 112-byte serialized header:
+    // the consensus path (pow.cpp SerializeRandomXHeader) writes
+    // nVersion|hashPrevBlock|hashMerkleRoot|nTime|nBits|nNonce|hashRandomX
+    // (hashRandomX nulled), identical to the layout pinned by the
+    // static_asserts in primitives/block.h. These tests feed the low-level
+    // API those exact serialization bytes (via SerializeRandomXHeader) instead
+    // of raw header memory (&block + sizeof(block)), so they exercise the same
+    // input bytes as the production path.
     block.hashPrevBlock = chainParams->GenesisBlock().GetHash();
     uint256 seed_hash = GetRandHash();
     block.hashRandomX = seed_hash;
+    // Dirty input: hashRandomX left non-null. SerializeRandomXHeader nulls the
+    // field, so the same canonical field order is written explicitly to prove
+    // that a non-null hashRandomX changes the commitment.
+    DataStream ss_dirty{};
+    ss_dirty << block.nVersion << block.hashPrevBlock << block.hashMerkleRoot
+             << block.nTime << block.nBits << block.nNonce << block.hashRandomX;
     char rx_cm_dirty[RANDOMX_HASH_SIZE];
-    randomx_calculate_commitment(&block, sizeof(block), seed_hash.begin(), rx_cm_dirty);
+    randomx_calculate_commitment(ss_dirty.data(), ss_dirty.size(), seed_hash.begin(), rx_cm_dirty);
     block.hashRandomX = uint256();
+    const DataStream ss_clean = SerializeRandomXHeader(block);
+    BOOST_CHECK_EQUAL(ss_clean.size(), 112);
     char rx_cm_clean[RANDOMX_HASH_SIZE];
-    randomx_calculate_commitment(&block, sizeof(block), seed_hash.begin(), rx_cm_clean);
+    randomx_calculate_commitment(ss_clean.data(), ss_clean.size(), seed_hash.begin(), rx_cm_clean);
     // Different key (hashRandomX present vs. zeroed) -> different commitment.
     assert(memcmp(rx_cm_dirty, rx_cm_clean, sizeof(rx_cm_dirty)) != 0);
 
     // A different seed hash also produces a different commitment.
     uint256 seed2 = GetRandHash();
     char rx_cm2[RANDOMX_HASH_SIZE];
-    randomx_calculate_commitment(&block, sizeof(block), seed2.begin(), rx_cm2);
+    randomx_calculate_commitment(ss_clean.data(), ss_clean.size(), seed2.begin(), rx_cm2);
     assert(memcmp(rx_cm_clean, rx_cm2, sizeof(rx_cm_clean)) != 0);
 
     // GetRandomXCommitment() zeros hashRandomX internally, so its output
-    // matches the low-level randomx_calculate_commitment with a clean header.
+    // matches the clean-header commitment computed above.
     block.hashRandomX = seed_hash;
     uint256 cm = GetRandomXCommitment(block);
     BOOST_CHECK_EQUAL(cm, uint256(std::vector<unsigned char>(rx_cm_clean, rx_cm_clean + sizeof(rx_cm_clean))));

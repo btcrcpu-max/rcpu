@@ -33,7 +33,7 @@
 // identical to the legacy raw-memory layout (see static_asserts in
 // primitives/block.h), so this is not a consensus change; it removes the
 // reliance on in-memory object layout for consensus-critical input bytes.
-static DataStream SerializeRandomXHeader(const CBlockHeader& hdr_in)
+DataStream SerializeRandomXHeader(const CBlockHeader& hdr_in)
 {
     CBlockHeader hdr{};
     hdr.nVersion        = hdr_in.nVersion;

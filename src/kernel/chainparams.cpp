@@ -617,15 +617,16 @@ consensus.fPowRandomX = true;
         // RCPU hardening (P1-2): ban the legacy path-A (plaintext-nonce) CT
         // nonce encoding from this height onward. Soft-fork: only outputs in
         // blocks at or above this height are checked, so already-mined path-A
-        // UTXOs are untouched and can be migrated off-chain. TODO(deployment):
-        // 20000 = ~69 days of 5-minute blocks from tip ~5100 (2026-09-18);
-        // re-confirm against the actual tip before release.
-        consensus.nBanPathAHeight = 20000;
+        // UTXOs are untouched and can be migrated off-chain. Deployment is
+        // deferred to v1.1.0: the activation height is left at the INT_MAX
+        // default (inactive) until a mainnet tip / path-A UTXO scan has been
+        // done; do not ship a concrete height as a final value before that.
         // RCPU (P1-1): canonical hash domain is byte-identical to the live
         // raw-memory domain (static_asserts in primitives/block.h), so no
         // consensus change occurs at this height; it is the versioning guard
-        // for future header-layout changes. TODO(deployment): align with
-        // nBanPathAHeight deployment review above.
+        // for future header-layout changes. NOT WIRED: nothing consumes this
+        // value today (see consensus/params.h), changing it has no effect;
+        // this assignment only documents the future guard semantic.
         consensus.nHashDomainActivationHeight = 20000;
         // RCPU mainnet only. Consensus values below are frozen for this
         // release; change them only with a versioned hardening PR.

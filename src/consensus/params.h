@@ -177,6 +177,12 @@ struct Params {
      * activation does not change any hash value on already-live chains; this
      * parameter is the versioning guard if the header layout ever grows
      * padding or new fields in the future (P1-1).
+     *
+     * NOT WIRED: no consensus, validation or indexing code reads this value
+     * today. The hash domain is selected by the process-global g_isRandomX
+     * flag at startup, not by this height. Changing it has no effect on any
+     * chain; it is documentation of the guard semantic, not an activation
+     * switch.
      */
     int nHashDomainActivationHeight{std::numeric_limits<int>::max()};
 

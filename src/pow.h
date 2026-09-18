@@ -13,6 +13,8 @@
 
 #include <randomx.h>
 
+#include <streams.h>
+
 class CBlockHeader;
 class CBlockIndex;
 class uint256;
@@ -69,6 +71,15 @@ void StopRandomXThreads();
  *            by setting an extreme nTime (network wallet warning N-5).
  */
 bool CheckProofOfWorkRandomX(const CBlockHeader& block, const Consensus::Params& params, POWVerifyMode mode = POW_VERIFY_FULL, uint256 *outHash = nullptr, uint32_t prevBlockTime = 0);
+
+/**
+ * Serialize the canonical 112-byte RandomX hash-domain input for a header
+ * (P1-1): fields in canonical order with hashRandomX nulled. Byte-identical
+ * to the legacy raw-memory layout pinned by the static_asserts in
+ * primitives/block.h. Exposed so consensus (pow.cpp) and tests exercise the
+ * exact same production input bytes instead of raw header memory.
+ */
+DataStream SerializeRandomXHeader(const CBlockHeader& hdr);
 
 /** Calculate RandomX commitment of block */
 uint256 GetRandomXCommitment(const CBlockHeader& block, uint256 *inHash = nullptr);
