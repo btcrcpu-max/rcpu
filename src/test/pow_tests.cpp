@@ -1075,6 +1075,33 @@ BOOST_AUTO_TEST_CASE(asert_activation_anchor_rcpu_test) {
     const uint32_t powLimit_nBits = UintToArith256(params.powLimit).GetCompact();
     BOOST_CHECK(powLimit_nBits == nextBits);
 }
+
+/* Test that PermittedDifficultyTransition does not reject per-block nBits
+ * changes once ASERT is active: ASERT derives each block's target from the
+ * formula (clamped to powLimit), so the presync "difficulty must not grow
+ * too fast" heuristic must not abort header pre-sync for ASERT chains.
+ */
+BOOST_AUTO_TEST_CASE(permitted_difficulty_transition_asert_rcpu_test)
+{
+    // RCPU mainnet parameters: ASERT active from genesis, allow-min-difficulty disabled.
+    const Consensus::Params params = CreateChainParams(*m_node.args, ChainType::RCPUMAIN)->GetConsensus();
+    BOOST_CHECK(params.asertAnchorParams.has_value());
+    BOOST_CHECK_EQUAL(params.nASERTActivationHeight, 0);
+    BOOST_CHECK(!params.fPowAllowMinDifficultyBlocks);
+
+    // Any transition is permitted on an ASERT chain (exact nBits is enforced
+    // against the formula at block validation time).
+    BOOST_CHECK(PermittedDifficultyTransition(params, /*height=*/1, /*old_nbits=*/0x1e3ffffc, /*new_nbits=*/0x1e3ffffc));
+    BOOST_CHECK(PermittedDifficultyTransition(params, /*height=*/1, /*old_nbits=*/0x1e3ffffc, /*new_nbits=*/0x1e00ffff));
+    BOOST_CHECK(PermittedDifficultyTransition(params, /*height=*/4032, /*old_nbits=*/0x1e00ffff, /*new_nbits=*/0x1effffff));
+
+    // Without ASERT anchor the legacy behavior must be preserved: changing
+    // nBits between regular retarget intervals is not permitted.
+    Consensus::Params legacy = params;
+    legacy.asertAnchorParams.reset();
+    legacy.nASERTActivationHeight = std::numeric_limits<int>::max();
+    BOOST_CHECK(!PermittedDifficultyTransition(legacy, /*height=*/1, /*old_nbits=*/0x1e3ffffc, /*new_nbits=*/0x1e00ffff));
+}
 // !RCPU END
 
 // !BITCOINCASH END
