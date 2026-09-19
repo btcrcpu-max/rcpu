@@ -63,16 +63,24 @@ WalletTx MakeWalletTx(CWallet& wallet, const CWalletTx& wtx)
     for (const auto& txin : wtx.tx->vin) {
         result.txin_is_mine.emplace_back(InputIsMine(wallet, txin));
     }
-    result.txout_is_mine.reserve(wtx.tx->vout.size());
+result.txout_is_mine.reserve(wtx.tx->vout.size());
     result.txout_address.reserve(wtx.tx->vout.size());
     result.txout_address_is_mine.reserve(wtx.tx->vout.size());
+    result.txout_amount.reserve(wtx.tx->vout.size());
     for (const auto& txout : wtx.tx->vout) {
         result.txout_is_mine.emplace_back(wallet.IsMine(txout));
         result.txout_is_change.push_back(OutputIsChange(wallet, txout));
         result.txout_address.emplace_back();
-        result.txout_address_is_mine.emplace_back(ExtractDestination(txout.scriptPubKey, result.txout_address.back()) ?
+result.txout_address_is_mine.emplace_back(ExtractDestination(txout.scriptPubKey, result.txout_address.back()) ?
                                                       wallet.IsMine(result.txout_address.back()) :
                                                       ISMINE_NO);
+        CAmount unblinded{0};
+        uint256 blind;
+        if (UnblindConfidentialOutput(wallet, txout, unblinded, blind)) {
+            result.txout_amount.push_back(unblinded);
+        } else {
+            result.txout_amount.push_back(0);
+        }
     }
     result.credit = CachedTxGetCredit(wallet, wtx, ISMINE_ALL);
     result.debit = CachedTxGetDebit(wallet, wtx, ISMINE_ALL);
@@ -450,10 +458,15 @@ public:
         LOCK(m_wallet->cs_wallet);
         return InputIsMine(*m_wallet, txin);
     }
-    isminetype txoutIsMine(const CTxOut& txout) override
+isminetype txoutIsMine(const CTxOut& txout) override
     {
         LOCK(m_wallet->cs_wallet);
         return m_wallet->IsMine(txout);
+    }
+    bool getUnblindedAmount(const CTxOut& txout, CAmount& amount) override
+    {
+        uint256 blind;
+        return UnblindConfidentialOutput(*m_wallet, txout, amount, blind);
     }
     CAmount getDebit(const CTxIn& txin, isminefilter filter) override
     {

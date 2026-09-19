@@ -16,6 +16,7 @@ class SendCoinsRecipient;
 
 namespace interfaces {
 class Node;
+class Wallet;
 }
 
 /** Data model for a walletmodel transaction. */
@@ -36,7 +37,7 @@ public:
 
     CAmount getTotalTransactionAmount() const;
 
-    void reassignAmounts(int nChangePosRet); // needed for the subtract-fee-from-amount feature
+    void reassignAmounts(int nChangePosRet, interfaces::Wallet& wallet); // needed for the subtract-fee-from-amount feature
 
 private:
     QList<SendCoinsRecipient> recipients;

@@ -16,6 +16,20 @@ isminetype InputIsMine(const CWallet& wallet, const CTxIn& txin) EXCLUSIVE_LOCKS
 /** Returns whether all of the inputs match the filter */
 bool AllInputsMine(const CWallet& wallet, const CTransaction& tx, const isminefilter& filter);
 
+/**
+ * RCPU CT 1.0.18: unblind a confidential output using this wallet.
+ *
+ * Tries the legacy plaintext-nonce rewind (path A, UnblindValue) first;
+ * if that fails, recovers the amount via the recipient-ECDH path B
+ * (UnblindValueWithKey) with this wallet's own private key for the output
+ * script. Explicit amounts pass through unchanged. Returns false only when
+ * the output genuinely cannot be unblinded by this wallet (foreign scripts,
+ * P2SH/P2WSH/Taproot, missing private key) so callers keep reporting 0 for
+ * those -- an unblind failure is never conflated with a real zero amount.
+ */
+bool UnblindConfidentialOutput(const CWallet& wallet, const CTxOut& txout,
+                               CAmount& value, uint256& blind);
+
 CAmount OutputGetCredit(const CWallet& wallet, const CTxOut& txout, const isminefilter& filter);
 CAmount TxGetCredit(const CWallet& wallet, const CTransaction& tx, const isminefilter& filter);
 

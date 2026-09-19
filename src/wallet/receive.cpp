@@ -29,17 +29,72 @@ bool AllInputsMine(const CWallet& wallet, const CTransaction& tx, const isminefi
     return true;
 }
 
+bool UnblindConfidentialOutput(const CWallet& wallet, const CTxOut& txout,
+                               CAmount& value, uint256& blind)
+{
+    LOCK(wallet.cs_wallet);
+    if (txout.nValue.IsExplicit()) {
+        value = txout.nValue.GetAmount();
+        blind = uint256();
+        return true;
+    }
+    // Path A first: legacy plaintext-nonce rewind -- the shape a foreign
+    // sender produces when it cannot resolve our public key (1.0.18 default
+    // fallback).
+    if (UnblindValue(txout.nValue, txout.nNonce, txout.vchRangeproof, value, blind)) {
+        return true;
+    }
+    // Path B: the output was blinded to a recipient public key via ECDH.
+    // Recover it with this wallet's own private key for the output script, so
+    // change / balance / lists / spend inputs show the real amount instead of
+    // 0 whenever we own the key. Outputs bound to a script with no single
+    // private key (P2SH / P2WSH / Taproot / pubkey-import-only) and genuinely
+    // foreign outputs stay unblinded -- the caller reports 0 as before.
+    CTxDestination dest;
+    if (!ExtractDestination(txout.scriptPubKey, dest)) {
+        return false;
+    }
+    CKeyID keyid;
+    if (const auto* pk = std::get_if<PubKeyDestination>(&dest)) {
+        keyid = pk->GetPubKey().GetID();
+    } else if (const auto* pkh = std::get_if<PKHash>(&dest)) {
+        keyid = ToKeyID(*pkh);
+    } else if (const auto* wpkh = std::get_if<WitnessV0KeyHash>(&dest)) {
+        keyid = ToKeyID(*wpkh);
+    } else {
+        return false;
+    }
+    // Fetch the private key from the managing ScriptPubKeyMan directly:
+    // the solving provider exposed by CWallet::GetSolvingProvider() omits
+    // private keys for DescriptorScriptPubKeyMan (GetSigningProvider with
+    // include_private=false), and LegacySigningProvider::GetKey returns
+    // false outright. Without the wallet's own key, Path-B (recipient-ECDH)
+    // outputs -- change, balance, lists -- would all unblind to 0.
+    CKey key;
+    bool have_key = false;
+    for (ScriptPubKeyMan* man : wallet.GetScriptPubKeyMans(txout.scriptPubKey)) {
+        // Descriptor SPKMs keep private keys behind a separate accessor; the
+        // solving provider intentionally omits them, so try GetPrivKey first.
+        if (auto* desc = dynamic_cast<DescriptorScriptPubKeyMan*>(man)) {
+            CKeyID kd;
+            if (desc->GetPrivKey(txout.scriptPubKey, kd, key)) { have_key = true; break; }
+        } else {
+            std::unique_ptr<SigningProvider> spk = man->GetSolvingProvider(txout.scriptPubKey);
+            if (spk && spk->GetKey(keyid, key)) { have_key = true; break; }
+        }
+    }
+    if (!have_key) {
+        return false;
+    }
+    return UnblindValueWithKey(key, txout.nValue, txout.nNonce, txout.vchRangeproof, value, blind);
+}
+
 CAmount OutputGetCredit(const CWallet& wallet, const CTxOut& txout, const isminefilter& filter)
 {
     CAmount value;
-    if (txout.nValue.IsExplicit()) {
-        value = txout.nValue.GetAmount();
-    } else {
-        // RCPU CT: confidential output — recover the amount via the range proof + nonce.
-        uint256 blind;
-        if (!UnblindValue(txout.nValue, txout.nNonce, txout.vchRangeproof, value, blind)) {
-            return 0; // cannot unblind (not ours)
-        }
+    uint256 blind;
+    if (!UnblindConfidentialOutput(wallet, txout, value, blind)) {
+        return 0; // cannot unblind (not ours)
     }
     if (!MoneyRange(value))
         throw std::runtime_error(std::string(__func__) + ": value out of range");
@@ -90,13 +145,9 @@ CAmount OutputGetChange(const CWallet& wallet, const CTxOut& txout)
 {
     AssertLockHeld(wallet.cs_wallet);
     CAmount value;
-    if (txout.nValue.IsExplicit()) {
-        value = txout.nValue.GetAmount();
-    } else {
-        uint256 blind;
-        if (!UnblindValue(txout.nValue, txout.nNonce, txout.vchRangeproof, value, blind)) {
-            return 0; // cannot unblind (not ours)
-        }
+    uint256 blind;
+    if (!UnblindConfidentialOutput(wallet, txout, value, blind)) {
+        return 0; // cannot unblind (not ours)
     }
     if (!MoneyRange(value))
         throw std::runtime_error(std::string(__func__) + ": value out of range");
@@ -262,14 +313,10 @@ void CachedTxGetAmounts(const CWallet& wallet, const CWalletTx& wtx,
             address = CNoDestination();
         }
 
-        CAmount nOutValue;
-        if (txout.nValue.IsExplicit()) {
-            nOutValue = txout.nValue.GetAmount();
-        } else {
-            uint256 blind;
-            if (!UnblindValue(txout.nValue, txout.nNonce, txout.vchRangeproof, nOutValue, blind)) {
-                nOutValue = 0;
-            }
+CAmount nOutValue;
+        uint256 blind;
+        if (!UnblindConfidentialOutput(wallet, txout, nOutValue, blind)) {
+            nOutValue = 0;
         }
         COutputEntry output = {address, nOutValue, (int)i};
 
@@ -384,14 +431,10 @@ std::map<CTxDestination, CAmount> GetAddressBalances(const CWallet& wallet)
                 if(!ExtractDestination(output.scriptPubKey, addr))
                     continue;
 
-                CAmount nVal;
-                if (output.nValue.IsExplicit()) {
-                    nVal = output.nValue.GetAmount();
-                } else {
-                    uint256 blind;
-                    if (!UnblindValue(output.nValue, output.nNonce, output.vchRangeproof, nVal, blind)) {
-                        nVal = 0;
-                    }
+CAmount nVal;
+                uint256 blind;
+                if (!UnblindConfidentialOutput(wallet, output, nVal, blind)) {
+                    nVal = 0;
                 }
                 CAmount n = wallet.IsSpent(COutPoint(Txid::FromUint256(walletEntry.first), i)) ? 0 : nVal;
                 balances[addr] += n;

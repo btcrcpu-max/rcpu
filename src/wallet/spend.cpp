@@ -1390,20 +1390,23 @@ CTxOut txout(recipient.nAmount, GetScriptForDestination(recipient.dest));
             const CTxOut& prev = selected_coins[bi]->txout;
             if (prev.nValue.IsExplicit()) {
                 input_blinds[bi] = uint256(); // zero blind for explicit inputs
-            } else {
+} else {
                 CAmount unblinded_value;
-                if (!UnblindValue(prev.nValue, prev.nNonce, prev.vchRangeproof, unblinded_value, input_blinds[bi])) {
+                uint256 unblinded_blind;
+                if (!UnblindConfidentialOutput(wallet, prev, unblinded_value, unblinded_blind)) {
                     return util::Error{_("Cannot unblind a confidential input for spending")};
                 }
+                input_blinds[bi] = unblinded_blind;
             }
         }
-        std::vector<uint256> output_blinds, output_nonces;
-        // RCPU CT: by default (unless -ctlegacy=1) every output -- payees and
-        // change alike -- is blinded to its recipient's public key via ECDH
-        // (path B). A payee whose public key cannot be resolved (e.g. a
-        // foreign P2WPKH/P2PKH address this wallet does not own) makes the
-        // send fail instead of silently downgrading to the plaintext-nonce
-        // path A. Change is this wallet's own key, so it always resolves.
+std::vector<uint256> output_blinds, output_nonces;
+        // RCPU CT: every output whose recipient public key can be resolved
+        // (change, own scripts, imported keys) is blinded via recipient-ECDH
+        // (path B); a payee whose public key cannot be resolved (e.g. a
+        // foreign P2WPKH/P2PKH address this wallet does not own) automatically
+        // falls back to the plaintext-nonce path A inside BlindTransaction.
+        // 1.0.18 restores plain address-to-address transfers: sending must
+        // never fail just because the recipient's public key is unknown.
         std::vector<std::optional<CPubKey>> recipient_keys;
         if (!gArgs.GetBoolArg("-ctlegacy", false)) {
             recipient_keys.reserve(txNew.vout.size());
@@ -1414,12 +1417,6 @@ CTxOut txout(recipient.nAmount, GetScriptForDestination(recipient.dest));
                     pubkey = GetRecipientPubKey(wallet, dest, txout.scriptPubKey);
                 }
                 recipient_keys.push_back(pubkey);
-            }
-            for (size_t oi = 0; oi < recipient_keys.size(); ++oi) {
-                if (!recipient_keys[oi]) {
-                    LogPrintf("WARNING: cannot resolve a recipient public key for output %u; refusing to downgrade to legacy (path A) blinding. Use -ctlegacy=1 to force it.\n", oi);
-                    return util::Error{_("Cannot resolve a recipient public key for a confidential output; refusing to downgrade to legacy blinding. Use -ctlegacy=1 to force legacy blinding.")};
-                }
             }
         }
         if (!BlindTransaction(input_blinds, txNew, output_blinds, output_nonces, recipient_keys)) {
