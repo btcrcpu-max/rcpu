@@ -69,6 +69,39 @@ BOOST_AUTO_TEST_CASE(blind_to_recipient_roundtrip)
     BOOST_CHECK(blind_out == blind);
 }
 
+// BlindOutputToRecipient must always emit an odd-Y compressed ephemeral
+// pubkey (0x03 prefix) in the nonce commitment. A 0x02 prefix would be shaped
+// exactly like a legacy path-A plaintext nonce, which IsLegacyNonceCommit
+// misdetects (garbage rewind on unblind) and consensus rejects from
+// nBanPathAHeight (bad-ct-legacy-nonce); ~50% of API outputs would fail
+// otherwise. Loop several times since the odd/even Y split is 50/50.
+BOOST_AUTO_TEST_CASE(blind_to_recipient_forces_odd_y_prefix)
+{
+    CKey recv_key;
+    recv_key.MakeNewKey(true);
+    BOOST_REQUIRE(recv_key.IsValid());
+    const CPubKey recv_pub = recv_key.GetPubKey();
+
+    const CAmount amount = 1 * COIN;
+    for (int i = 0; i < 20; ++i) {
+        CConfidentialValue conf_value;
+        CConfidentialNonce nonce_commit;
+        std::vector<unsigned char> rangeproof;
+        uint256 blind;
+
+        BOOST_REQUIRE(BlindOutputToRecipient(conf_value, nonce_commit, rangeproof, blind, amount, recv_pub));
+        BOOST_REQUIRE_EQUAL(nonce_commit.vchCommitment.size(), 33);
+        BOOST_CHECK_EQUAL(nonce_commit.vchCommitment[0], 0x03);
+
+        // Recipient-side ECDH unblind must still recover the amount.
+        CAmount amount_out = -1;
+        uint256 blind_out;
+        BOOST_REQUIRE(UnblindValueWithKey(recv_key, conf_value, nonce_commit, rangeproof, amount_out, blind_out));
+        BOOST_CHECK_EQUAL(amount_out, amount);
+        BOOST_CHECK(blind_out == blind);
+    }
+}
+
 // GetNonce / UnblindValue must reject malformed nonce commitments instead of
 // silently unwinding garbage. Path A (plaintext nonce) uses the 0x02 prefix;
 // anything else -- wrong length or wrong prefix -- must fail closed.
