@@ -230,8 +230,14 @@ public:
     //! Return debit amount if transaction input belongs to wallet.
     virtual CAmount getDebit(const CTxIn& txin, wallet::isminefilter filter) = 0;
 
-    //! Return credit amount if transaction input belongs to wallet.
+//! Return credit amount if transaction input belongs to wallet.
     virtual CAmount getCredit(const CTxOut& txout, wallet::isminefilter filter) = 0;
+
+    //! RCPU CT: unblind a confidential output with this wallet's keys
+    //! (path-A nonce rewind first, then recipient-ECDH with the wallet's own
+    //! private key for the output script). Returns false when the output
+    //! cannot be unblinded by this wallet.
+    virtual bool getUnblindedAmount(const CTxOut& txout, CAmount& amount) = 0;
 
     //! Return AvailableCoins + LockedCoins grouped by wallet address.
     //! (put change in one group with wallet address)
@@ -394,8 +400,12 @@ struct WalletTx
     std::vector<wallet::isminetype> txin_is_mine;
     std::vector<wallet::isminetype> txout_is_mine;
     std::vector<bool> txout_is_change;
-    std::vector<CTxDestination> txout_address;
+std::vector<CTxDestination> txout_address;
     std::vector<wallet::isminetype> txout_address_is_mine;
+    //! RCPU CT: per-output unblinded amounts (path A + path B via wallet key),
+    //! aligned with tx->vout. Replaces GUI-side GetOutputAmount lookups so
+    //! history/lists show real values for both blinding strategies.
+    std::vector<CAmount> txout_amount;
     CAmount credit;
     CAmount debit;
     CAmount change;

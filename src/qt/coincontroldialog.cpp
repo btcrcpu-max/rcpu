@@ -410,7 +410,9 @@ void CoinControlDialog::updateLabels(CCoinControl& m_coin_control, WalletModel *
         nQuantity++;
 
 // Amount
-        nAmount += GetOutputAmount(out.txout).value_or(0);
+        CAmount nOutAmount = 0;
+        model->wallet().getUnblindedAmount(out.txout, nOutAmount);
+        nAmount += nOutAmount;
 
         // Bytes
         CTxDestination address;
@@ -596,8 +598,10 @@ void CoinControlDialog::updateView()
         int nChildren = 0;
         for (const auto& outpair : coins.second) {
             const COutPoint& output = std::get<0>(outpair);
-            const interfaces::WalletTxOut& out = std::get<1>(outpair);
-            nSum += GetOutputAmount(out.txout).value_or(0);
+const interfaces::WalletTxOut& out = std::get<1>(outpair);
+            CAmount nOutAmount = 0;
+            model->wallet().getUnblindedAmount(out.txout, nOutAmount);
+            nSum += nOutAmount;
             nChildren++;
 
             CCoinControlWidgetItem *itemOutput;
@@ -634,8 +638,10 @@ void CoinControlDialog::updateView()
             }
 
 // amount
-            itemOutput->setText(COLUMN_AMOUNT, BitcoinUnits::format(nDisplayUnit, GetOutputAmount(out.txout).value_or(0)));
-            itemOutput->setData(COLUMN_AMOUNT, Qt::UserRole, QVariant((qlonglong)(GetOutputAmount(out.txout).value_or(0)))); // padding so that sorting works correctly
+            CAmount nItemAmount = 0;
+            model->wallet().getUnblindedAmount(out.txout, nItemAmount);
+            itemOutput->setText(COLUMN_AMOUNT, BitcoinUnits::format(nDisplayUnit, nItemAmount));
+            itemOutput->setData(COLUMN_AMOUNT, Qt::UserRole, QVariant((qlonglong)nItemAmount)); // padding so that sorting works correctly
 
             // date
             itemOutput->setText(COLUMN_DATE, GUIUtil::dateTimeStr(out.time));

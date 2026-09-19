@@ -41,6 +41,13 @@ bool UnblindValue(const CConfidentialValue& conf_value, const CConfidentialNonce
  * ECDH) carries an ephemeral pubkey in the same 33 bytes and must go through
  * UnblindValueWithKey instead.
  */
+/**
+ * True if the nonce commitment is a legacy path-A plaintext nonce encoding
+ * (33 bytes, 0x02 prefix + 32-byte nonce). Path B ECDH ephemeral pubkeys and
+ * malformed commitments must not be treated as plaintext nonces.
+ */
+bool IsLegacyNonceCommit(const CConfidentialNonce& nc);
+
 uint256 GetNonce(const CConfidentialNonce& nc);
 
 /**

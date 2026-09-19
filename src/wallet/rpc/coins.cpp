@@ -73,13 +73,9 @@ static CAmount GetReceived(const CWallet& wallet, const UniValue& params, bool b
 
         for (const CTxOut& txout : wtx.tx->vout) {
             if (output_scripts.count(txout.scriptPubKey) > 0) {
-                CAmount v;
-                if (txout.nValue.IsExplicit()) {
-                    v = txout.nValue.GetAmount();
-                } else {
-                    uint256 blind;
-                    if (!UnblindValue(txout.nValue, txout.nNonce, txout.vchRangeproof, v, blind)) v = 0;
-                }
+CAmount v;
+                uint256 blind;
+                if (!UnblindConfidentialOutput(wallet, txout, v, blind)) v = 0;
                 amount += v;
             }
         }
@@ -716,13 +712,9 @@ RPCHelpMan listunspent()
         }
 
         entry.pushKV("scriptPubKey", HexStr(scriptPubKey));
-        CAmount nAmount;
-        if (out.txout.nValue.IsExplicit()) {
-            nAmount = out.txout.nValue.GetAmount();
-        } else {
-            uint256 blind;
-            if (!UnblindValue(out.txout.nValue, out.txout.nNonce, out.txout.vchRangeproof, nAmount, blind)) nAmount = 0;
-        }
+CAmount nAmount;
+        uint256 blind;
+        if (!UnblindConfidentialOutput(*pwallet, out.txout, nAmount, blind)) nAmount = 0;
         entry.pushKV("amount", ValueFromAmount(nAmount));
         entry.pushKV("confirmations", out.depth);
         if (!out.depth) {

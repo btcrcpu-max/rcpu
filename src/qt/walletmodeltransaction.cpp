@@ -4,6 +4,7 @@
 
 #include <qt/walletmodeltransaction.h>
 #include <blind.h>
+#include <interfaces/wallet.h>
 
 #include <policy/policy.h>
 
@@ -42,7 +43,7 @@ void WalletModelTransaction::setTransactionFee(const CAmount& newFee)
     fee = newFee;
 }
 
-void WalletModelTransaction::reassignAmounts(int nChangePosRet)
+void WalletModelTransaction::reassignAmounts(int nChangePosRet, interfaces::Wallet& wallet)
 {
     const CTransaction* walletTransaction = wtx.get();
     int i = 0;
@@ -52,7 +53,12 @@ void WalletModelTransaction::reassignAmounts(int nChangePosRet)
         {
             if (i == nChangePosRet)
                 i++;
-            rcp.amount = GetOutputAmount(walletTransaction->vout[i]).value_or(0);
+            CAmount unblinded{0};
+            if (wallet.getUnblindedAmount(walletTransaction->vout[i], unblinded)) {
+                rcp.amount = unblinded;
+            } else {
+                rcp.amount = GetOutputAmount(walletTransaction->vout[i]).value_or(0);
+            }
             i++;
         }
     }
