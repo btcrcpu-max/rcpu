@@ -302,10 +302,17 @@ bool BlindOutputToRecipient(CConfidentialValue& conf_value, CConfidentialNonce& 
     }
     secp256k1_context* ctx = GetBlindContext();
 
-    // Ephemeral keypair for ECDH.
+    // Ephemeral keypair for ECDH. Force an odd-Y compressed pubkey (0x03
+    // prefix): a 0x02 prefix would be misdetected as a legacy path-A
+    // plaintext-nonce commitment by IsLegacyNonceCommit, and is rejected by
+    // consensus from nBanPathAHeight (bad-ct-legacy-nonce) -- ~50% of outputs
+    // would be either garbled on unblind or refused on-chain.
     CKey ephemeral;
-    ephemeral.MakeNewKey(true);
-    const CPubKey ephemeral_pub = ephemeral.GetPubKey();
+    CPubKey ephemeral_pub;
+    do {
+        ephemeral.MakeNewKey(true);
+        ephemeral_pub = ephemeral.GetPubKey();
+    } while (ephemeral_pub.size() != 33 || ephemeral_pub.data()[0] == 0x02);
 
     // The nonce commitment carries the ephemeral public key.
     nonce_commit.vchCommitment.assign(ephemeral_pub.begin(), ephemeral_pub.end());
