@@ -9,6 +9,8 @@
 #include <blind.h>
 #include <config/bitcoin-config.h>
 #endif
+
+#include <wallet/receive.h>
 #include <addresstype.h>
 #include <blockfilter.h>
 #include <chain.h>
@@ -1544,10 +1546,16 @@ CAmount CWallet::GetDebit(const CTxIn &txin, const isminefilter& filter) const
         const auto mi = mapWallet.find(txin.prevout.hash);
         if (mi != mapWallet.end())
         {
-            const CWalletTx& prev = (*mi).second;
+const CWalletTx& prev = (*mi).second;
             if (txin.prevout.n < prev.tx->vout.size())
-                if (IsMine(prev.tx->vout[txin.prevout.n]) & filter)
-                    return GetOutputAmount(prev.tx->vout[txin.prevout.n]).value_or(0);
+                if (IsMine(prev.tx->vout[txin.prevout.n]) & filter) {
+                    CAmount value;
+                    uint256 blind;
+                    if (UnblindConfidentialOutput(*this, prev.tx->vout[txin.prevout.n], value, blind)) {
+                        return value;
+                    }
+                    return 0;
+                }
         }
     }
     return 0;

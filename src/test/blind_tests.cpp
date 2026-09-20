@@ -436,11 +436,11 @@ BOOST_AUTO_TEST_CASE(blind_tx_path_b_recipient_key)
     }
 }
 
-// Fail closed: once a key list is engaged, every non-fee output must carry a
-// recipient public key. A missing key (nullopt) or a length mismatch must
-// abort the transaction instead of silently downgrading to path A. The
-// outputs must not be rewritten into the 0x02 path-A shape on failure.
-BOOST_AUTO_TEST_CASE(blind_tx_path_b_missing_key_fails)
+// 1.0.18 wallet unlock: once a key list is engaged, a non-fee output whose
+// recipient public key cannot be resolved (nullopt) must downgrade to the
+// plaintext-nonce path A for that output only, so a bare-address send never
+// fails. A length mismatch still aborts the transaction.
+BOOST_AUTO_TEST_CASE(blind_tx_path_b_missing_key_falls_back)
 {
     CMutableTransaction tx;
     tx.vout.push_back(MakeExplicitOut(123456789));
@@ -448,12 +448,19 @@ BOOST_AUTO_TEST_CASE(blind_tx_path_b_missing_key_fails)
     std::vector<uint256> in_blinds(1);
     std::vector<uint256> out_blinds, out_nonces;
 
-    // Engaged key list but this output has no key: rejected, and the output
-    // must not have been converted into a path-A commitment.
+    // Engaged key list but this output has no key: per-output path-A
+    // fallback; the output is a valid legacy commitment and the amount must
+    // be rewindable by the legacy decoder (UnblindValue).
     std::vector<std::optional<CPubKey>> keys_with_nullopt = {std::nullopt};
-    BOOST_CHECK(!BlindTransaction(in_blinds, tx, out_blinds, out_nonces, keys_with_nullopt));
-    BOOST_CHECK(tx.vout[0].nValue.IsExplicit());
-    BOOST_CHECK(tx.vout[0].nNonce.vchCommitment.empty());
+    BOOST_REQUIRE(BlindTransaction(in_blinds, tx, out_blinds, out_nonces, keys_with_nullopt));
+    BOOST_CHECK(tx.vout[0].nValue.IsCommitment());
+    BOOST_CHECK(IsLegacyNonceCommit(tx.vout[0].nNonce));
+    CAmount recovered = -1;
+    uint256 blind_out;
+    BOOST_REQUIRE(UnblindValue(tx.vout[0].nValue, tx.vout[0].nNonce,
+                               tx.vout[0].vchRangeproof, recovered, blind_out));
+    BOOST_CHECK_EQUAL(recovered, 123456789);
+    BOOST_CHECK(blind_out == out_blinds[0]);
 
     // Key-list length does not line up with the outputs: rejected.
     CMutableTransaction tx2;
@@ -461,6 +468,44 @@ BOOST_AUTO_TEST_CASE(blind_tx_path_b_missing_key_fails)
     tx2.vout.push_back(MakeExplicitOut(50000000));
     std::vector<std::optional<CPubKey>> keys_too_short = {std::nullopt};
     BOOST_CHECK(!BlindTransaction(in_blinds, tx2, out_blinds, out_nonces, keys_too_short));
+}
+
+// Mixed 1.0.18 behaviour: keyed outputs stay path B while the key-less
+// output falls back to path A in the same transaction.
+BOOST_AUTO_TEST_CASE(blind_tx_path_b_mixed_fallback)
+{
+    CKey recv_key;
+    recv_key.MakeNewKey(true);
+    const CPubKey recv_pub = recv_key.GetPubKey();
+
+    CMutableTransaction tx;
+    tx.vout.push_back(MakeExplicitOut(123456789));
+    tx.vout.push_back(MakeExplicitOut(50000000));
+
+    std::vector<uint256> in_blinds(1);
+    std::vector<uint256> out_blinds, out_nonces;
+    std::vector<std::optional<CPubKey>> recipient_keys = {recv_pub, std::nullopt};
+    BOOST_REQUIRE(BlindTransaction(in_blinds, tx, out_blinds, out_nonces, recipient_keys));
+
+    // Output 0 (keyed): path B shape, only the recipient's private key works.
+    BOOST_CHECK_EQUAL(tx.vout[0].nNonce.vchCommitment.size(), 33U);
+    BOOST_CHECK_EQUAL(tx.vout[0].nNonce.vchCommitment[0], 0x03);
+    CAmount path_b_amt = -1;
+    uint256 path_b_blind;
+    BOOST_CHECK(!UnblindValue(tx.vout[0].nValue, tx.vout[0].nNonce,
+                              tx.vout[0].vchRangeproof, path_b_amt, path_b_blind));
+    BOOST_REQUIRE(UnblindValueWithKey(recv_key, tx.vout[0].nValue, tx.vout[0].nNonce,
+                                      tx.vout[0].vchRangeproof, path_b_amt, path_b_blind));
+    BOOST_CHECK_EQUAL(path_b_amt, 123456789);
+
+    // Output 1 (key-less): legacy path A, readable without any key.
+    BOOST_CHECK(IsLegacyNonceCommit(tx.vout[1].nNonce));
+    CAmount path_a_amt = -1;
+    uint256 path_a_blind;
+    BOOST_REQUIRE(UnblindValue(tx.vout[1].nValue, tx.vout[1].nNonce,
+                               tx.vout[1].vchRangeproof, path_a_amt, path_a_blind));
+    BOOST_CHECK_EQUAL(path_a_amt, 50000000);
+    BOOST_CHECK(path_a_blind == out_blinds[1]);
 }
 
 // Fee outputs are exempt: they carry no commitment and need no key. A key

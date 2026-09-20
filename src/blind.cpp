@@ -57,16 +57,7 @@ void SetNonce(CConfidentialNonce& nc, const uint256& nonce)
 {
     nc.vchCommitment.resize(33);
     nc.vchCommitment[0] = 0x02;
-    std::memcpy(&nc.vchCommitment[1], nonce.begin(), 32);
-}
-
-// Path A commits to the raw nonce with a fixed 0x02 prefix (BlindOutput /
-// SetNonce). Any other encoding — including the ECDH path B carried in a
-// 33-byte ephemeral pubkey (0x02/0x03) — must not be treated as a plaintext
-// nonce: GetNonce() would silently decode garbage into the rangeproof rewind.
-static bool IsLegacyNonceCommit(const CConfidentialNonce& nc)
-{
-    return nc.vchCommitment.size() == 33 && nc.vchCommitment[0] == 0x02;
+std::memcpy(&nc.vchCommitment[1], nonce.begin(), 32);
 }
 
 static bool ComputeECDHNonce(const CKey& privkey, const CPubKey& pubkey, uint256& nonce_out)
@@ -83,6 +74,16 @@ static bool ComputeECDHNonce(const CKey& privkey, const CPubKey& pubkey, uint256
 }
 
 } // namespace
+
+// Path A commits to the raw nonce with a fixed 0x02 prefix. Any other
+// encoding — including the ECDH path B carried in a 33-byte ephemeral pubkey
+// (0x02/0x03) — must not be treated as a plaintext nonce: GetNonce() would
+// silently decode garbage into the rangeproof rewind. Declared in blind.h so
+// the consensus layer and tests can gate on the same encoding.
+bool IsLegacyNonceCommit(const CConfidentialNonce& nc)
+{
+    return nc.vchCommitment.size() == 33 && nc.vchCommitment[0] == 0x02;
+}
 
 // Decode a 33-byte CConfidentialNonce back to a 32-byte nonce. Only valid for
 // path A (0x02 prefix + nonce); malformed commitments yield the zero nonce so
@@ -260,12 +261,15 @@ bool BlindTransaction(const std::vector<uint256>& input_blinds, CMutableTransact
                 return false;
             }
             output_nonces[i] = uint256(); // ECDH-derived; not a stored nonce
-        } else {
-            if (!recipient_keys.empty()) {
-                // Engaged key list but this output has none: reject rather
-                // than blinding an external recipient with the legacy path.
-                return false;
-            }
+} else {
+            // Path A fallback (plaintext nonce): used when no recipient key
+            // is engaged -- either -ctlegacy=1 (no key list at all) or a
+            // per-output key lookup failed (e.g. sending to a foreign address
+            // whose public key this wallet does not know). 1.0.18 downgrades
+            // per-output instead of failing the whole transaction: an
+            // external recipient must still be able to receive from a bare
+            // address. The path-A spending ban (nBanPathAHeight) stays
+            // inactive on mainnet through 1.0.18.
             Rand32(output_nonces[i]);
             SetNonce(tx.vout[i].nNonce, output_nonces[i]);
             nonce = output_nonces[i];
