@@ -13,7 +13,7 @@ jobs:
   build-randomx-linux:
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
       - name: Download, patch, and build RandomX (Linux)
         run: |
           curl --fail -L -o /tmp/randomx-src.tar.gz \
@@ -27,7 +27,7 @@ jobs:
           cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF
           make -j$(nproc)
       - name: Upload RandomX Linux artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: randomx-linux
           path: /tmp/RandomX-1.2.1/build/librandomx.a
@@ -36,7 +36,7 @@ jobs:
   build-randomx-windows:
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
       - name: Install mingw
         run: |
           sudo rm -f /etc/apt/sources.list.d/google-chrome.list || true
@@ -70,7 +70,7 @@ jobs:
             -DCMAKE_TOOLCHAIN_FILE=/tmp/mingw-w64-x86_64.cmake
           make -j$(nproc)
       - name: Upload RandomX Windows artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: randomx-windows
           path: /tmp/RandomX-1.2.1/build-win/librandomx.a
@@ -80,7 +80,7 @@ jobs:
     needs: build-randomx-linux
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
       - name: Install deps
         run: |
           sudo rm -f /etc/apt/sources.list.d/google-chrome.list || true
@@ -110,7 +110,7 @@ jobs:
               https://raw.githubusercontent.com/bitcoin/bitcoin/v27.0/depends/patches/qt/mac-qmake.conf
           fi
           chmod +x depends/gen_id depends/config.guess depends/config.sub
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: randomx-linux
           path: /tmp/randomx-linux/
@@ -163,7 +163,7 @@ jobs:
             "rcpu-${PKGVER}-x86_64-linux-gnu.tgz" \
             "$(basename "$STAGE")"
           sha256sum *.tgz > SHA256SUMS-linux.txt
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: linux-package
           path: |
@@ -174,7 +174,7 @@ jobs:
     needs: build-randomx-windows
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
       - name: Install deps
         run: |
           sudo apt-get update -qq
@@ -206,7 +206,7 @@ jobs:
               https://raw.githubusercontent.com/bitcoin/bitcoin/v27.0/depends/patches/qt/mac-qmake.conf
           fi
           chmod +x depends/gen_id depends/config.guess depends/config.sub
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: randomx-windows
           path: /tmp/randomx-windows/
@@ -268,7 +268,7 @@ jobs:
           test -f dist/rcpu-qt.exe
           zip -j "rcpu-${PKGVER}-win64-portable.zip" dist/*
           sha256sum "rcpu-${PKGVER}-win64-portable.zip" > SHA256SUMS-windows.txt
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: windows-package
           path: |
@@ -282,11 +282,11 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: linux-package
           path: linux/
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: windows-package
           path: windows/
@@ -321,6 +321,6 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_ENV"
 
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65
         with:
           files: ${{ env.RELEASE_FILES }}

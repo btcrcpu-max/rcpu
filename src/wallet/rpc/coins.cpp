@@ -78,7 +78,7 @@ static CAmount GetReceived(const CWallet& wallet, const UniValue& params, bool b
                     v = txout.nValue.GetAmount();
                 } else {
                     uint256 blind;
-                    if (!UnblindValue(txout.nValue, txout.nNonce, txout.vchRangeproof, v, blind)) v = 0;
+                    if (!UnblindWalletOutput(wallet, txout, v, blind)) v = 0;
                 }
                 amount += v;
             }
@@ -721,7 +721,7 @@ RPCHelpMan listunspent()
             nAmount = out.txout.nValue.GetAmount();
         } else {
             uint256 blind;
-            if (!UnblindValue(out.txout.nValue, out.txout.nNonce, out.txout.vchRangeproof, nAmount, blind)) nAmount = 0;
+            if (!UnblindWalletOutput(*pwallet, out.txout, nAmount, blind)) nAmount = 0;
         }
         entry.pushKV("amount", ValueFromAmount(nAmount));
         entry.pushKV("confirmations", out.depth);

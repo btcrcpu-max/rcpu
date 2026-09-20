@@ -24,6 +24,12 @@
 #include <node/context.h>
 #include <node/miner.h>
 #include <pow.h>
+#include <sync.h>
+
+#include <chrono>
+#include <deque>
+#include <map>
+#include <mutex>
 #include <rpc/blockchain.h>
 #include <rpc/mining.h>
 #include <rpc/server.h>
@@ -134,11 +140,27 @@ static bool GenerateBlock(ChainstateManager& chainman, CBlock& block, uint64_t& 
     block.hashMerkleRoot = BlockMerkleRoot(block);
 
     // !RCPU
+
+    // N-03: mine with the same epoch clamp that validation applies. The
+    // verification path calls CheckProofOfWorkRandomX(..., prevBlockTime) and
+    // selects the epoch from min(block.nTime, prevBlockTime +
+    // MAX_FUTURE_BLOCK_TIME); mining without the same clamp could pick an
+    // arbitrarily far-future epoch via block.nTime and produce a hash that
+    // the network would verify against a different epoch dataset.
+    uint32_t prevBlockTime = 0;
+    {
+        LOCK(cs_main); // recursive; callers already hold it, or not -- safe either way
+        const CBlockIndex* pindexPrev = chainman.m_blockman.LookupBlockIndex(block.hashPrevBlock);
+        if (pindexPrev != nullptr) {
+            prevBlockTime = pindexPrev->GetBlockTime();
+        }
+    }
+
     uint256 rxHash;
     rxHash.SetNull();
     while (max_tries > 0 &&
            block.nNonce < std::numeric_limits<uint32_t>::max() &&
-           !CheckProofOfWorkRandomX(block, chainman.GetConsensus(), POW_VERIFY_MINING, &rxHash)) {
+           !CheckProofOfWorkRandomX(block, chainman.GetConsensus(), POW_VERIFY_MINING, &rxHash, prevBlockTime)) {
         ++block.nNonce;
         --max_tries;
     }
@@ -1160,8 +1182,27 @@ static RPCHelpMan computerandomxhash()
                     HelpExampleCli("computerandomxhash", "\"00000020...\"")
             + HelpExampleRpc("computerandomxhash", "\"00000020...\"")
                 },
-        [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
+[&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
+    // !RCPU R-02: RandomX hashing is expensive, so rate-limit this RPC per
+    // peer. A caller that has RPC credentials must not be able to spin the
+    // RandomX engine without bound.
+    static std::mutex g_rx_hash_mutex;
+    static std::map<std::string, std::deque<std::chrono::steady_clock::time_point>> g_rx_hash_calls;
+    {
+        std::lock_guard<std::mutex> lock(g_rx_hash_mutex);
+        const auto now = std::chrono::steady_clock::now();
+        auto& calls = g_rx_hash_calls[request.peerAddr];
+        const auto cutoff = now - std::chrono::seconds(10);
+        while (!calls.empty() && calls.front() < cutoff) {
+            calls.pop_front();
+        }
+        if (calls.size() >= 20) {
+            throw JSONRPCError(RPC_VERIFY_ERROR, "computerandomxhash: rate limit exceeded, retry later");
+        }
+        calls.push_back(now);
+    }
+
     CBlockHeader header;
     if (!DecodeHexBlockHeader(header, request.params[0].get_str())) {
         throw JSONRPCError(RPC_DESERIALIZATION_ERROR, "Block header decode failed");
@@ -1189,14 +1230,32 @@ static RPCHelpMan computerandomxhash()
 
     // Use POW_VERIFY_MINING mode to compute hash without comparing with block.hashRandomX
     // This allows computing hash for any block header regardless of the stored hashRandomX value
+
+    // !RCPU N-03: apply the same epoch clamp as validation. The verifying
+    // node selects the epoch from min(nTime, prevTime + MAX_FUTURE_BLOCK_TIME);
+    // if this RPC did not clamp too, a header with a far-future nTime would
+    // hash against a different epoch dataset than the one the network uses.
+    uint32_t prevBlockTime = 0;
+    {
+        LOCK(cs_main);
+        const CBlockIndex* pindexPrev = chainman.m_blockman.LookupBlockIndex(header.hashPrevBlock);
+        if (pindexPrev != nullptr) {
+            prevBlockTime = pindexPrev->GetBlockTime();
+        }
+    }
+
     uint256 rx_hash;
-    bool hash_ok = CheckProofOfWorkRandomX(header, consensusParams, POW_VERIFY_MINING, &rx_hash);
-    
-    // If mining mode failed (e.g., commitment doesn't meet target), 
-    // we still have the hash computed since CheckProofOfWorkRandomX computes it before checking
-    // But if it failed, rx_hash might be in an undefined state
-    // Let's check if we need to compute it differently
-    
+    bool hash_ok = CheckProofOfWorkRandomX(header, consensusParams, POW_VERIFY_MINING, &rx_hash, prevBlockTime);
+
+    // !RCPU N-07: surface failures as an RPC error instead of returning a
+    // zero/undefined hash -- a failed RandomX computation must never look
+    // like a successful result (e.g. hash 0000...0000) to the pool.
+    if (!hash_ok) {
+        throw JSONRPCError(RPC_VERIFY_ERROR,
+            "RandomX hash computation failed (set nBits does not meet powLimit, "
+            "RandomX VM unavailable, or commitment does not meet the target)");
+    }
+
     // Compute commitment using the hash
     uint256 rx_commitment = GetRandomXCommitment(header, &rx_hash);
     
@@ -1207,7 +1266,7 @@ static RPCHelpMan computerandomxhash()
     result.pushKV("hash", rx_hash.GetHex());
     result.pushKV("commitment", rx_commitment.GetHex());
     result.pushKV("block_hash", block_hash.GetHex());
-    result.pushKV("hash_verified", hash_ok);
+    result.pushKV("hash_verified", true);
     return result;
 },
     };

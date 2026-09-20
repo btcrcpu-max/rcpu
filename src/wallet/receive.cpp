@@ -2,14 +2,95 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <addresstype.h>
 #include <consensus/amount.h>
 #include <blind.h>
 #include <consensus/consensus.h>
+#include <key.h>
+#include <script/signingprovider.h>
+#include <script/solver.h>
 #include <wallet/receive.h>
 #include <wallet/transaction.h>
 #include <wallet/wallet.h>
 
 namespace wallet {
+
+// RCPU CT (N-01): unblind a confidential output belonging to this wallet.
+// Dispatches on the nonce-commitment encoding (see IsLegacyNonceCommit in
+// blind.cpp):
+//   - explicit outputs are returned as-is;
+//   - 33-byte 0x02-prefixed commitments (path A, plaintext nonce) rewind the
+//     range proof with UnblindValue -- no key needed;
+//   - 33-byte 0x03-prefixed commitments (path B, ECDH ephemeral pubkey) are
+//     unblinded with UnblindValueWithKey using the private key resolved from
+//     the output script (P2PK / P2PKH / P2WPKH / P2TR only; scripted outputs
+//     have no single signing key and fail closed);
+//   - any other commitment shape fails closed.
+// On failure the output is not ours / not unblindable: callers must treat the
+// output as worth zero and never conflate failure with a truthful zero.
+bool UnblindWalletOutput(const CWallet& wallet, const CTxOut& txout, CAmount& value_out, uint256& blind_out)
+{
+    if (txout.nValue.IsExplicit()) {
+        value_out = txout.nValue.GetAmount();
+        blind_out = uint256();
+        return true;
+    }
+    const auto& nc = txout.nNonce.vchCommitment;
+    if (nc.size() == 33 && nc[0] == 0x02) {
+        return UnblindValue(txout.nValue, txout.nNonce, txout.vchRangeproof, value_out, blind_out);
+    }
+    if (nc.size() == 33 && nc[0] == 0x03) {
+        CTxDestination dest;
+        // Note: ExtractDestination returns false for bare P2PK even though it
+        // fills in a valid PubKeyDestination (P2PK has no address form); only
+        // a CNoDestination means the script carries no key we can use.
+        ExtractDestination(txout.scriptPubKey, dest);
+        if (std::get_if<CNoDestination>(&dest)) return false;
+        CKey key;
+        CKeyID keyid;
+        bool is_taproot = false;
+        {
+            // Key lookup touches the wallet's SPK caches; the callers do not
+            // all hold cs_wallet at this point (e.g. OutputGetCredit unblinds
+            // before taking the lock), so take it here. RecursiveMutex makes
+            // re-entering safe when callers already hold it.
+            LOCK(wallet.cs_wallet);
+            if (const auto* pk = std::get_if<PubKeyDestination>(&dest)) {
+                keyid = pk->GetPubKey().GetID();
+            } else if (const auto* pkh = std::get_if<PKHash>(&dest)) {
+                keyid = ToKeyID(*pkh);
+            } else if (const auto* wpkh = std::get_if<WitnessV0KeyHash>(&dest)) {
+                keyid = ToKeyID(*wpkh);
+            } else if (const auto* tr = std::get_if<WitnessV1Taproot>(&dest)) {
+                is_taproot = true;
+                for (const auto* spkman : wallet.GetScriptPubKeyMans(txout.scriptPubKey)) {
+                    const auto provider = spkman->GetSolvingProvider(txout.scriptPubKey);
+                    if (provider && provider->GetKeyByXOnly(*tr, key)) break;
+                }
+            } else {
+                // P2SH / P2WSH / unknown witness programs / bare scripts: no single key.
+                return false;
+            }
+            if (!is_taproot) {
+                for (const auto* spkman : wallet.GetScriptPubKeyMans(txout.scriptPubKey)) {
+                    // LegacySigningProvider deliberately never returns private keys
+                    // (GetKey is hard-wired to false upstream), so for legacy
+                    // wallets we must resolve the key straight from the SPKM.
+                    if (const auto* legacy = dynamic_cast<const LegacyScriptPubKeyMan*>(spkman)) {
+                        if (legacy->GetKey(keyid, key)) break;
+                        continue;
+                    }
+                    const auto provider = spkman->GetSolvingProvider(txout.scriptPubKey);
+                    if (provider && provider->GetKey(keyid, key)) break;
+                }
+            }
+        }
+        if (!key.IsValid()) return false;
+        return UnblindValueWithKey(key, txout.nValue, txout.nNonce, txout.vchRangeproof, value_out, blind_out);
+    }
+    return false; // malformed commitment
+}
+
 isminetype InputIsMine(const CWallet& wallet, const CTxIn& txin)
 {
     AssertLockHeld(wallet.cs_wallet);
@@ -35,9 +116,10 @@ CAmount OutputGetCredit(const CWallet& wallet, const CTxOut& txout, const ismine
     if (txout.nValue.IsExplicit()) {
         value = txout.nValue.GetAmount();
     } else {
-        // RCPU CT: confidential output — recover the amount via the range proof + nonce.
+        // RCPU CT: confidential output — recover the amount, dispatching on the
+        // nonce encoding (0x02 legacy path A rewind / 0x03 path B ECDH).
         uint256 blind;
-        if (!UnblindValue(txout.nValue, txout.nNonce, txout.vchRangeproof, value, blind)) {
+        if (!UnblindWalletOutput(wallet, txout, value, blind)) {
             return 0; // cannot unblind (not ours)
         }
     }
@@ -94,7 +176,7 @@ CAmount OutputGetChange(const CWallet& wallet, const CTxOut& txout)
         value = txout.nValue.GetAmount();
     } else {
         uint256 blind;
-        if (!UnblindValue(txout.nValue, txout.nNonce, txout.vchRangeproof, value, blind)) {
+        if (!UnblindWalletOutput(wallet, txout, value, blind)) {
             return 0; // cannot unblind (not ours)
         }
     }
@@ -267,7 +349,7 @@ void CachedTxGetAmounts(const CWallet& wallet, const CWalletTx& wtx,
             nOutValue = txout.nValue.GetAmount();
         } else {
             uint256 blind;
-            if (!UnblindValue(txout.nValue, txout.nNonce, txout.vchRangeproof, nOutValue, blind)) {
+            if (!UnblindWalletOutput(wallet, txout, nOutValue, blind)) {
                 nOutValue = 0;
             }
         }
@@ -389,7 +471,7 @@ std::map<CTxDestination, CAmount> GetAddressBalances(const CWallet& wallet)
                     nVal = output.nValue.GetAmount();
                 } else {
                     uint256 blind;
-                    if (!UnblindValue(output.nValue, output.nNonce, output.vchRangeproof, nVal, blind)) {
+                    if (!UnblindWalletOutput(wallet, output, nVal, blind)) {
                         nVal = 0;
                     }
                 }

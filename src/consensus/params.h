@@ -150,11 +150,13 @@ struct Params {
         return std::numeric_limits<int>::max();
     }
 
-    // !RCPU
+// !RCPU
     bool fPowRandomX{false};
-    uint32_t nRandomXEpochDuration;
+    // P-03: default-initialized so that a chainparams entry that forgets to
+    // set it fails loudly (epoch 0) instead of reading uninitialized memory.
+    uint32_t nRandomXEpochDuration{0};
 
-/** RCPU: block height at which confidential transactions (tx version >= CT_VERSION) activate. */
+/** RCPU: block height at which confidential transactions (tx version == CT_VERSION) activate. */
     int nCTActivationHeight{0};
 
     /**

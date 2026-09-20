@@ -169,7 +169,7 @@ int64_t GetTransactionSigOpCost(const CTransaction& tx, const CCoinsViewCache& i
 bool Consensus::CheckTxInputs(const CTransaction& tx, TxValidationState& state, const CCoinsViewCache& inputs, int nSpendHeight, CAmount& txfee, int nCTActivationHeight, int nBanPathAHeight)
 {
     // RCPU: single predicate for "is this a confidential transaction". The
-    // serialization format keys off nVersion >= CT_VERSION, so the consensus
+    // serialization format keys off nVersion == CT_VERSION, so the consensus
     // checks must use the same predicate everywhere: a version outside the
     // defined set (1-2 legacy, 3 CT) must never fall through to the legacy
     // plaintext accounting, which would ignore commitment outputs.

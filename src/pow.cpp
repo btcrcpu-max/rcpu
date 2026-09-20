@@ -115,7 +115,10 @@ public:
         m_list.push_front(key);
         m_map.emplace(key, std::make_pair(value, m_list.begin()));
         if (m_map.size() > m_capacity) {
-            const Key& evict = m_list.back();
+            // N-06: take a value copy before pop_back(). A reference to
+            // m_list.back() is dangling after pop_back(), and passing it to
+            // m_map.erase() would be undefined behavior.
+            const Key evict = m_list.back();
             m_list.pop_back();
             m_map.erase(evict);
         }
