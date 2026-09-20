@@ -20,6 +20,7 @@
 #include <consensus/validation.h>
 #include <core_io.h>
 #include <node/blockstorage.h>
+#include <primitives/block.h>
 #include <node/caches.h>
 #include <node/chainstate.h>
 #include <random.h>
@@ -113,7 +114,12 @@ int main(int argc, char* argv[])
 
 
     // SETUP: Chainstate
+    // A-02: standalone tools do not run AppInitMain, so the process-wide
+    // predicate mirroring consensus.fPowRandomX must be initialized here;
+    // otherwise a 112-byte RCPU header (mainnet/testnet/regtest) would be
+    // parsed as the legacy 80-byte form.
     auto chainparams = CChainParams::Main();
+    g_isRandomX = chainparams->GetConsensus().fPowRandomX;
     const ChainstateManager::Options chainman_opts{
         .chainparams = *chainparams,
         .datadir = abs_datadir,

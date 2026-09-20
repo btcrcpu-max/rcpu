@@ -4465,6 +4465,24 @@ bool ChainstateManager::ProcessNewBlock(const std::shared_ptr<const CBlock>& blo
         // malleability that cause CheckBlock() to fail; see e.g. CVE-2012-2459 and
         // https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2019-February/016697.html.  Because CheckBlock() is
         // not very expensive, the anti-DoS benefits of caching failure (of a definitely-invalid block) are not substantial.
+
+        // N-02: short-circuit duplicate blocks that already have their full data
+        // on disk, before paying the full RandomX proof-of-work verification
+        // inside CheckBlock()/AcceptBlock(). Previously the fAlreadyHave check
+        // only happened deep inside AcceptBlock(), i.e. after the expensive
+        // checks had already run for every re-delivered block.
+        // force_processing semantics are preserved: forced blocks (own mined
+        // blocks, cmpctblock reconstruction, explicitly requested downloads)
+        // still go through the full validation path.
+        if (!force_processing) {
+            const CBlockIndex* pindex_have = m_blockman.LookupBlockIndex(block->GetHash());
+            if (pindex_have != nullptr && (pindex_have->nStatus & BLOCK_HAVE_DATA)) {
+                LogPrint(BCLog::VALIDATION, "%s: block %s already have data on disk, skipping duplicate processing\n",
+                         __func__, block->GetHash().ToString());
+                return true; // *new_block was already set to false above, matching the "already have" case in AcceptBlock
+            }
+        }
+
         bool ret = CheckBlock(*block, state, GetConsensus());
         if (ret) {
             // Store to disk

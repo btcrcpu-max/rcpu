@@ -1,9 +1,21 @@
+import os
+import sys
 import paramiko
 
-host = '207.57.129.188'
-port = 45148
-user = 'root'
-password = '13559714383cQ@'
+# Credentials are read from the environment only. No defaults are provided:
+# if any required variable is missing, the script refuses to run.
+def require_env(name):
+    value = os.environ.get(name)
+    if not value:
+        sys.exit(f"Error: environment variable {name} is not set. "
+                 f"Refusing to connect without explicit credentials. "
+                 f"Set RCPU_SSH_HOST/RCPU_SSH_PORT/RCPU_SSH_USER/RCPU_SSH_PASSWORD before running.")
+    return value
+
+host = require_env('RCPU_SSH_HOST')
+port = int(require_env('RCPU_SSH_PORT'))
+user = require_env('RCPU_SSH_USER')
+password = require_env('RCPU_SSH_PASSWORD')
 
 ssh = paramiko.SSHClient()
 ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())

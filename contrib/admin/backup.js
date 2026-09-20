@@ -1,6 +1,5 @@
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
 
 const BACKUP_DIR = path.join(__dirname, 'backups');
 const KEEP_BACKUPS = 10;
@@ -11,6 +10,20 @@ const filesToBackup = [
     'server-stratum-proxy-pool.js',
     'current_proxy.js'
 ];
+
+// Whitelist for restore operations: only files that this script owns may be
+// restored, and backup names must match the fixed timestamp format. This
+// blocks path traversal via backupName/fileName (N-04).
+const FILE_WHITELIST = new Set(filesToBackup);
+const BACKUP_NAME_RE = /^backup_\d{8}_\d{6}$/;
+
+function isSafeBackupName(name) {
+    return typeof name === 'string' && BACKUP_NAME_RE.test(name);
+}
+
+function isAllowedFileName(name) {
+    return typeof name === 'string' && FILE_WHITELIST.has(name);
+}
 
 function getTimestamp() {
     const now = new Date();
@@ -43,7 +56,7 @@ function cleanOldBackups() {
     try {
         const entries = fs.readdirSync(BACKUP_DIR);
         const backupDirs = entries
-            .filter(entry => entry.startsWith('backup_'))
+            .filter(entry => isSafeBackupName(entry))
             .map(entry => ({
                 name: entry,
                 time: fs.statSync(path.join(BACKUP_DIR, entry)).mtime.getTime()
@@ -53,8 +66,15 @@ function cleanOldBackups() {
         if (backupDirs.length > KEEP_BACKUPS) {
             const toDelete = backupDirs.slice(KEEP_BACKUPS);
             toDelete.forEach(backup => {
-                const backupPath = path.join(BACKUP_DIR, backup.name);
-                execSync(`rmdir /s /q "${backupPath}"`, { stdio: 'ignore' });
+                const backupPath = path.resolve(BACKUP_DIR, backup.name);
+                // Defensive: only touch paths that stay inside BACKUP_DIR.
+                if (!backupPath.startsWith(BACKUP_DIR + path.sep)) {
+                    log(`Skipping out-of-bounds path during cleanup: ${backupPath}`);
+                    return;
+                }
+                // fs.rmSync replaces the shell rmdir call, removing the
+                // command-injection surface entirely.
+                fs.rmSync(backupPath, { recursive: true, force: true });
                 log(`Removed old backup: ${backup.name}`);
             });
         }
@@ -181,11 +201,36 @@ function listBackups() {
 
 function restoreFile(backupName, fileName) {
     ensureBackupDir();
-    
-    const backupPath = path.join(BACKUP_DIR, backupName);
-    const srcPath = path.join(backupPath, fileName);
-    const dstPath = path.join(__dirname, fileName);
-    
+
+    // N-04: reject anything that is not a whitelisted file inside a
+    // well-formed backup directory before touching the filesystem.
+    if (!isSafeBackupName(backupName)) {
+        console.error(`Invalid backup name (must match backup_YYYYMMDD_HHMMSS): ${backupName}`);
+        return;
+    }
+    if (!isAllowedFileName(fileName)) {
+        console.error(`Invalid file name (must be one of: ${filesToBackup.join(', ')}): ${fileName}`);
+        return;
+    }
+
+    const backupPath = path.resolve(BACKUP_DIR, backupName);
+    const srcPath = path.resolve(backupPath, fileName);
+    const dstPath = path.resolve(__dirname, fileName);
+
+    // Defensive double-check: resolved paths must stay inside their roots.
+    if (!backupPath.startsWith(BACKUP_DIR + path.sep)) {
+        console.error(`Backup path escapes backup directory: ${backupPath}`);
+        return;
+    }
+    if (!srcPath.startsWith(backupPath + path.sep)) {
+        console.error(`Source path escapes backup directory: ${srcPath}`);
+        return;
+    }
+    if (!dstPath.startsWith(__dirname + path.sep)) {
+        console.error(`Destination path escapes script directory: ${dstPath}`);
+        return;
+    }
+
     if (!fs.existsSync(backupPath)) {
         console.error(`Backup not found: ${backupName}`);
         return;

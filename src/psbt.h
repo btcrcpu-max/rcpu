@@ -1050,7 +1050,7 @@ struct PartiallySignedTransaction
 
         // Write inputs
         for (const PSBTInput& input : inputs) {
-            input.fCTSerialization = tx ? (tx->nVersion >= CT_VERSION) : false;
+            input.fCTSerialization = tx ? (tx->nVersion == CT_VERSION) : false;
             s << input;
         }
         // Write outputs
@@ -1199,7 +1199,7 @@ struct PartiallySignedTransaction
         unsigned int i = 0;
         while (!s.empty() && i < tx->vin.size()) {
             PSBTInput input;
-            input.fCTSerialization = tx->nVersion >= CT_VERSION;
+            input.fCTSerialization = tx->nVersion == CT_VERSION;
             s >> input;
             inputs.push_back(input);
 

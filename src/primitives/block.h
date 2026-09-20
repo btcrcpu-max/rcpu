@@ -21,6 +21,19 @@
 // completion) observe a consistent value without data races.
 extern std::atomic<bool> g_isRandomX;
 extern std::atomic<bool> g_isIBDFinished;
+
+// A-02: single deterministic predicate for whether the RCPU extended header
+// field hashRandomX is present in the serialized form. This is a chain-level
+// property (consensus.fPowRandomX), *not* a per-header property: RCPU
+// mainnet/testnet/regtest set fPowRandomX=true and always serialize 112-byte
+// headers; Bitcoin-compatible chains keep the legacy 80-byte form. g_isRandomX
+// is a process-wide mirror of that consensus flag, set exactly once during
+// init (AppInitMain) or by explicit tool entry points (bitcoin-chainstate /
+// rcpu-chainstate). It can NOT be derived from nVersion: genesis uses nVersion=1
+// and miners stamp VERSIONBITS_TOP_BITS, so no nVersion bit distinguishes the
+// formats. All serialization/hash-domain checks MUST go through this function
+// so header layout, GetHash() and ToString() can never diverge.
+inline bool HasRandomXHeaderField() { return g_isRandomX.load(std::memory_order_acquire); }
 // !RCPU END
 
 /** Nodes collect new transactions into a block, hash them into a hash tree,
@@ -52,7 +65,10 @@ public:
 SERIALIZE_METHODS(CBlockHeader, obj) { 
         READWRITE(obj.nVersion, obj.hashPrevBlock, obj.hashMerkleRoot, obj.nTime, obj.nBits, obj.nNonce);
         // !RCPU
-        if (g_isRandomX) {
+        // A-02: deterministic predicate (chain-level fPowRandomX mirror) rather
+        // than a bare global read, so header layout and GetHash()/ToString()
+        // can never diverge. See HasRandomXHeaderField() above.
+        if (HasRandomXHeaderField()) {
             READWRITE(obj.hashRandomX); 
         }
         // !RCPU END

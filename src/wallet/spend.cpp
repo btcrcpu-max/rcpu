@@ -1392,7 +1392,7 @@ CTxOut txout(recipient.nAmount, GetScriptForDestination(recipient.dest));
                 input_blinds[bi] = uint256(); // zero blind for explicit inputs
             } else {
                 CAmount unblinded_value;
-                if (!UnblindValue(prev.nValue, prev.nNonce, prev.vchRangeproof, unblinded_value, input_blinds[bi])) {
+                if (!UnblindWalletOutput(wallet, prev, unblinded_value, input_blinds[bi])) {
                     return util::Error{_("Cannot unblind a confidential input for spending")};
                 }
             }

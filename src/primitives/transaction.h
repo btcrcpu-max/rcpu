@@ -330,7 +330,7 @@ void UnserializeTransaction(TxType& tx, Stream& s, const TransactionSerParams& p
     s >> tx.nVersion;
     // Single decision point: the transaction version selects the serialization
     // mode for every input and output below.
-    const bool fCT = tx.nVersion >= CT_VERSION;
+    const bool fCT = tx.nVersion == CT_VERSION;
     unsigned char flags = 0;
     tx.vin.clear();
     tx.vout.clear();
@@ -370,7 +370,7 @@ void SerializeTransaction(const TxType& tx, Stream& s, const TransactionSerParam
 {
     const bool fAllowWitness = params.allow_witness;
 
-    const bool fCT = tx.nVersion >= CT_VERSION;
+    const bool fCT = tx.nVersion == CT_VERSION;
     s << tx.nVersion;
     unsigned char flags = 0;
     // Consistency check

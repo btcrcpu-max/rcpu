@@ -16,7 +16,7 @@ FUZZ_TARGET(confidential_transaction)
 {
     FuzzedDataProvider fuzzed_data_provider(buffer.data(), buffer.size());
     // Deserialization switches to CT serialization automatically when
-    // nVersion >= CT_VERSION (see UnserializeTransaction), so arbitrary input
+    // nVersion == CT_VERSION (see UnserializeTransaction), so arbitrary input
     // exercises both the legacy and confidential transaction formats.
     const std::optional<CMutableTransaction> mutable_tx =
         ConsumeDeserializable<CMutableTransaction>(fuzzed_data_provider, TX_WITH_WITNESS);

@@ -1,3 +1,23 @@
+// RPC credentials MUST come from the environment. No defaults are provided:
+// if any required variable is missing, the proxy refuses to start.
+// Checked first so that a missing dependency can never mask a missing secret.
+const RPC_USER = process.env.RCPU_RPC_USER;
+const RPC_PASSWORD = process.env.RCPU_RPC_PASSWORD;
+if (!RPC_USER || !RPC_PASSWORD) {
+    console.error('Error: RCPU_RPC_USER and RCPU_RPC_PASSWORD must be set in the environment. '
+        + 'Refusing to start without explicit RPC credentials.');
+    process.exit(1);
+}
+
+// Shared secret that mining clients must present in mining.authorize /
+// xmrig login. Without it, the proxy refuses to serve any miner (N-05).
+const STRATUM_PASSWORD = process.env.RCPU_STRATUM_PASSWORD;
+if (!STRATUM_PASSWORD) {
+    console.error('Error: RCPU_STRATUM_PASSWORD must be set in the environment. '
+        + 'Refusing to accept miners without an explicit shared secret.');
+    process.exit(1);
+}
+
 const net = require('net');
 const crypto = require('crypto');
 const RandomX = require('randomx.js');
@@ -9,6 +29,12 @@ const RPC_PORT = 6988;
 const MINING_ADDRESS = 'rcpu1qlx8p93gzm6f9h0nn7mn6p5k69t60wj6g7u24w0';
 
 const MIN_SHARE_DIFFICULTY = 1;
+
+// Input/output buffering limits (N-08): a peer may send arbitrarily large
+// messages or stop reading responses; cap both directions so a single
+// misbehaving client cannot exhaust proxy memory.
+const MAX_INPUT_BUFFER = 1024 * 1024;      // 1 MiB of buffered inbound text
+const MAX_WRITABLE_BUFFER = 16 * 1024 * 1024; // 16 MiB of queued outbound data
 
 let jobCounter = 0;
 let currentJob = null;
@@ -371,7 +397,7 @@ function makeRpcRequest(method, params) {
             params: params
         });
         
-        const auth = Buffer.from('rcpuuser:rcpupassword').toString('base64');
+        const auth = Buffer.from(`${RPC_USER}:${RPC_PASSWORD}`).toString('base64');
         
         const options = {
             hostname: RPC_HOST,
@@ -608,9 +634,16 @@ const server = net.createServer((socket) => {
     };
     miners.set(clientId, minerInfo);
 
-    socket.on('data', async (data) => {
+socket.on('data', async (data) => {
         try {
             minerInfo.buffer += data.toString('utf8');
+            // N-08: cap the inbound buffer so a peer flooding us with data
+            // cannot grow memory without bound.
+            if (minerInfo.buffer.length > MAX_INPUT_BUFFER) {
+                log(`Input buffer over limit (${MAX_INPUT_BUFFER} bytes), disconnecting ${clientId}`);
+                socket.destroy();
+                return;
+            }
             const lines = minerInfo.buffer.split('\n');
             
             minerInfo.buffer = lines.pop() || '';
@@ -635,8 +668,16 @@ const server = net.createServer((socket) => {
                     }
                 }
                 
-                if (minerInfo.protocol === 'xmrig') {
+if (minerInfo.protocol === 'xmrig') {
                     if (msg.method === 'login') {
+                        // N-05: require the shared secret before handing out
+                        // the template; a wrong or missing password is
+                        // rejected without authorizing the miner.
+                        if (!msg.params || msg.params.password !== STRATUM_PASSWORD) {
+                            log(`XMRig login rejected (bad password): ${clientId}`);
+                            socket.write(createXMRigSubmitResponse(id, false));
+                            continue;
+                        }
                         minerInfo.address = msg.params.login || msg.params.user || 'unknown';
                         
                         const template = await getBlockTemplate();
@@ -709,8 +750,18 @@ const server = net.createServer((socket) => {
                         socket.write(createStratumSubscribeResponse(id, extraNonce1));
                         log(`Stratum subscribe OK: ${clientId}`);
                     }
-                    else if (msg.method === 'mining.authorize') {
-                        minerInfo.address = msg.params[0] || 'unknown';
+else if (msg.method === 'mining.authorize') {
+                        const workerName = (msg.params && msg.params[0]) ? msg.params[0] : 'unknown';
+                        const password = (msg.params && msg.params[1] !== undefined) ? msg.params[1] : null;
+                        // N-05: .authorize previously passed anyone; now the
+                        // worker must present the shared secret.
+                        if (password !== STRATUM_PASSWORD) {
+                            log(`Stratum authorize rejected (bad password): ${clientId}, worker=${workerName}`);
+                            minerInfo.address = workerName;
+                            socket.write(createStratumAuthorizeResponse(id, false));
+                            continue;
+                        }
+                        minerInfo.address = workerName;
                         minerInfo.authorized = true;
                         socket.write(createStratumAuthorizeResponse(id, true));
                         
@@ -731,18 +782,55 @@ const server = net.createServer((socket) => {
                         const ntime = msg.params[3];
                         const nonce = msg.params[4];
                         
-                        const job = currentJob;
+const job = currentJob;
                         if (!job || job.job_id !== jobId) {
                             log(`Stratum submit: job not found ${jobId}`);
                             socket.write(createStratumSubmitResponse(id, false));
                             continue;
                         }
                         
-                        socket.write(createStratumSubmitResponse(id, true));
+                        // N-05: light PoW pre-check before anything is
+                        // forwarded to the node. Malformed shares and shares
+                        // below the share target are rejected locally, so the
+                        // node RPC cannot be spammed with junk.
+                        if (typeof nonce !== 'string' || !/^[0-9a-fA-F]{8}$/.test(nonce)) {
+                            log(`Stratum submit: invalid nonce '${nonce}', job=${jobId}`);
+                            socket.write(createStratumSubmitResponse(id, false));
+                            continue;
+                        }
+                        if (typeof ntime !== 'string' || !/^[0-9a-fA-F]{8}$/.test(ntime)) {
+                            log(`Stratum submit: invalid ntime '${ntime}', job=${jobId}`);
+                            socket.write(createStratumSubmitResponse(id, false));
+                            continue;
+                        }
                         
-                        submitBlockToNode(job, nonce, ntime, null);
+                        const blobWithNonce = job.blob.substring(0, 144) + nonce;
+                        const fullHeaderForHash = getFullBlockHeader(blobWithNonce);
+                        const rxHash = hashRandomX(fullHeaderForHash);
                         
-                        log(`Stratum submit: job=${jobId}, nonce=${nonce}, submitted to node`);
+                        if (!rxHash) {
+                            log(`Stratum submit: RandomX hash failed, job=${jobId}`);
+                            socket.write(createStratumSubmitResponse(id, false));
+                            continue;
+                        }
+                        
+                        const commitment = calculateCommitment(rxHash, blobWithNonce);
+                        const isValidShare = compareHashToTarget(rxHash, job.share_target);
+                        const isBlock = compareHashToTarget(commitment, job.target);
+                        
+                        log(`Stratum submit: job=${jobId}, nonce=${nonce}, rx_hash=${rxHash.substring(0,16)}..., commitment=${commitment.substring(0,16)}...`);
+                        
+                        if (isBlock) {
+                            log(`*** BLOCK FOUND (stratum) *** job=${jobId}, nonce=${nonce}, commitment=${commitment}`);
+                            submitBlockToNode(job, nonce, ntime, rxHash);
+                            socket.write(createStratumSubmitResponse(id, true));
+                        } else if (isValidShare) {
+                            log(`Stratum share accepted: job=${jobId}, rx_hash=${rxHash.substring(0, 16)}..., diff=${job.shareDifficulty}`);
+                            socket.write(createStratumSubmitResponse(id, true));
+                        } else {
+                            log(`Stratum share rejected: hash too high, job=${jobId}`);
+                            socket.write(createStratumSubmitResponse(id, false));
+                        }
                     }
                 }
             }
@@ -788,8 +876,15 @@ setInterval(async () => {
         
         currentJob = job;
         
-        miners.forEach((miner) => {
+miners.forEach((miner) => {
             if (miner.authorized && miner.socket.writable) {
+                // N-08: if this peer is not draining its socket, disconnect
+                // it instead of letting the outbound queue grow unbounded.
+                if (miner.socket.writableLength > MAX_WRITABLE_BUFFER) {
+                    log(`Outbound buffer over limit for ${miner.socket.remoteAddress}:${miner.socket.remotePort}, disconnecting`);
+                    miner.socket.destroy();
+                    return;
+                }
                 try {
                     if (miner.protocol === 'xmrig') {
                         miner.socket.write(createXMRigJobNotify(job));

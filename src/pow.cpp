@@ -115,7 +115,10 @@ public:
         m_list.push_front(key);
         m_map.emplace(key, std::make_pair(value, m_list.begin()));
         if (m_map.size() > m_capacity) {
-            const Key& evict = m_list.back();
+            // N-06: take a value copy before pop_back(). A reference to
+            // m_list.back() is dangling after pop_back(), and passing it to
+            // m_map.erase() would be undefined behavior.
+            const Key evict = m_list.back();
             m_list.pop_back();
             m_map.erase(evict);
         }
@@ -503,6 +506,19 @@ unsigned int CalculateNextWorkRequired(const CBlockIndex* pindexLast, int64_t nF
 bool PermittedDifficultyTransition(const Consensus::Params& params, int64_t height, uint32_t old_nbits, uint32_t new_nbits)
 {
     if (params.fPowAllowMinDifficultyBlocks) return true;
+
+    // !RCPU
+    // With ASERT the target for each block is derived independently from the
+    // ASERT formula (clamped to powLimit), so consecutive blocks are expected
+    // to have different nBits. The "difficulty must not grow too fast" presync
+    // heuristic below only makes sense for the legacy retarget DAA. The exact
+    // nBits of every block is still enforced against the formula at block
+    // validation time (GetNextWorkRequired), so relaxing this presync-only
+    // check does not loosen consensus rules.
+    if (params.asertAnchorParams && height >= params.nASERTActivationHeight) {
+        return true;
+    }
+    // !RCPU END
 
     if (height % params.DifficultyAdjustmentInterval() == 0) {
         int64_t smallest_timespan = params.nPowTargetTimespan/4;

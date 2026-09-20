@@ -19,13 +19,11 @@ uint256 CBlockHeader::GetHash() const
     // !RCPU
     // Canonical RCPU hash domain (P1-1): on RCPU chains the hash input is the
     // fixed 112-byte serialized header including hashRandomX, written field by
-    // field instead of via the SERIALIZE_METHODS global-flag branch. g_isRandomX
-    // is set exactly once during initialization and never mutated afterwards
-    // (std::atomic, no lock-free oscillation), so the domain is fixed for the
-    // process lifetime: 112 bytes on RCPU mainnet/testnet/regtest (all run with
-    // g_isRandomX == true), 80 bytes on Bitcoin-compatible chains (testnet,
-    // signet, regtest) and in unit tests.
-    if (g_isRandomX) {
+    // field instead of via the SERIALIZE_METHODS global-flag branch. The
+    // predicate (A-02) is the chain-level fPowRandomX mirror: 112 bytes on RCPU
+    // mainnet/testnet/regtest (all run with g_isRandomX == true), 80 bytes on
+    // Bitcoin-compatible chains (testnet, signet, regtest) and in unit tests.
+    if (HasRandomXHeaderField()) {
         HashWriter hw{};
         hw << nVersion << hashPrevBlock << hashMerkleRoot << nTime << nBits << nNonce << hashRandomX;
         return hw.GetHash();
@@ -46,7 +44,7 @@ std::string CBlock::ToString() const
         hashMerkleRoot.ToString(),
         nTime, nBits, nNonce,
         // !RCPU
-        g_isRandomX ? "hashRandomX=" + hashRandomX.ToString() + ", " : "",
+        HasRandomXHeaderField() ? "hashRandomX=" + hashRandomX.ToString() + ", " : "",
         // !RCPU END
         vtx.size());
     for (const auto& tx : vtx) {

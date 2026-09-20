@@ -241,7 +241,7 @@ BOOST_AUTO_TEST_CASE(rangeproof_over_max_rejected)
 }
 
 // RCPU hardening (C-1): an undefined transaction version (v4+) deserializes
-// with the CT wire format (nVersion >= CT_VERSION) but is only validated for
+// with the CT wire format (nVersion == CT_VERSION) but is only validated for
 // nVersion == CT_VERSION. Without the version whitelist it would fall through
 // to the legacy accounting, ignoring commitment outputs: a v4 tx carrying a
 // 500 RCPU commitment would effectively spend it from nothing (unlimited

@@ -1329,7 +1329,7 @@ public:
     void SerializeOutput(S &s, unsigned int nOutput) const {
         // RCPU CT: explicit mode keeps legacy sighash byte-identical to the
         // previous implicit mode decision.
-        const bool fCT = txTo.nVersion >= CT_VERSION;
+        const bool fCT = txTo.nVersion == CT_VERSION;
         if (fHashSingle && nOutput != nIn) {
             // Do not lock-in the txout payee at other indices as txin
             CTxOut blank;
@@ -1387,7 +1387,7 @@ uint256 GetOutputsSHA256(const T& txTo)
 {
     // RCPU CT: serialize txouts with an explicit mode derived from the tx
     // version (was: a mode scope over a thread-local global).
-    const bool fCT = txTo.nVersion >= CT_VERSION;
+    const bool fCT = txTo.nVersion == CT_VERSION;
     HashWriter ss{};
     for (const auto& txout : txTo.vout) {
         txout.Serialize(ss, fCT);
@@ -1594,7 +1594,7 @@ uint256 SignatureHash(const CScript& scriptCode, const T& txTo, unsigned int nIn
 {
     assert(nIn < txTo.vin.size());
 
-    const bool fCT = txTo.nVersion >= CT_VERSION;
+    const bool fCT = txTo.nVersion == CT_VERSION;
 
     if (sigversion == SigVersion::WITNESS_V0) {
         uint256 hashPrevouts;
