@@ -4,6 +4,7 @@ RCPU Node Monitor - Monitor multiple RCPU nodes status
 Usage: python monitor_nodes.py [--watch] [--interval SECONDS]
 """
 
+import os
 import paramiko
 import time
 import json
@@ -11,6 +12,10 @@ import sys
 from datetime import datetime
 
 # === CONFIGURATION ===
+# T-03: RPC port (mainnet default 7337, chainparamsbase.cpp);
+# override with RCPU_RPC_PORT for testnets.
+RPC_PORT = os.environ.get('RCPU_RPC_PORT', '7337')
+
 # Edit this section with your node information
 NODES = [
     {
@@ -34,6 +39,7 @@ NODES = [
 
 def get_node_status(node):
     """Get status of a single node"""
+    rpc_port = node.get('rpc_port', RPC_PORT)
     ssh = paramiko.SSHClient()
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     ssh.connect(node['host'], port=node['port'], username=node['user'], 
@@ -54,15 +60,16 @@ def get_node_status(node):
         # Check RPC binding
         if node['is_docker']:
             _, stdout, _ = ssh.exec_command(
-                f'docker exec {node["docker_name"]} ss -tlnp 2>/dev/null | grep 9962', 
+                f'docker exec {node["docker_name"]} ss -tlnp 2>/dev/null | grep ${{RCPU_RPC_PORT:-7337}}', 
                 timeout=10)
         else:
-            _, stdout, _ = ssh.exec_command('ss -tlnp | grep 9962', timeout=10)
+            _, stdout, _ = ssh.exec_command(
+                f'ss -tlnp | grep ${{RCPU_RPC_PORT:-7337}}', timeout=10)
         
         rpc_listen = stdout.read().decode().strip()
-        if '127.0.0.1:9962' in rpc_listen:
+        if '127.0.0.1:' + rpc_port in rpc_listen:
             status['rpc_bind'] = '127.0.0.1 (secure)'
-        elif '0.0.0.0:9962' in rpc_listen:
+        elif '0.0.0.0:' + rpc_port in rpc_listen:
             status['rpc_bind'] = '0.0.0.0 (WARNING!)'
         else:
             status['rpc_bind'] = 'not listening'

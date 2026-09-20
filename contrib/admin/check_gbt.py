@@ -20,8 +20,15 @@ PASSWORD = require_env('RCPU_SSH_PASSWORD')
 RPC_USER = require_env('RCPU_RPC_USER')
 RPC_PASSWORD = require_env('RCPU_RPC_PASSWORD')
 
-def ssh_exec(client, cmd, timeout=30):
+# T-03: mainnet RPC port (see chainparamsbase.cpp). Overridable for testnets.
+RPC_PORT = os.environ.get('RCPU_RPC_PORT', '7337')
+
+def ssh_exec(client, cmd, stdin_data=None, timeout=30):
     stdin, stdout, stderr = client.exec_command(cmd, timeout=timeout)
+    if stdin_data is not None:
+        stdin.write(stdin_data)
+        stdin.flush()
+        stdin.channel.shutdown_write()
     stdout.channel.set_combine_stderr(True)
     return stdout.read().decode('utf-8')
 
@@ -32,11 +39,15 @@ def main():
 
     try:
         print("=== GetBlockTemplate response ===")
-        cmd = ("curl -s http://127.0.0.1:6988 "
-               f"-u {RPC_USER}:{RPC_PASSWORD} "
+        # S-04: RPC credentials are handed to curl via stdin (--config -),
+        # never embedded in the command line where ps / shell history on the
+        # remote host would expose the password.
+        cmd = ("curl -s -K - http://127.0.0.1:{port} "
                "-H 'Content-Type: application/json' "
-               "-d '{\"jsonrpc\":\"2.0\",\"method\":\"getblocktemplate\",\"params\":[{\"rules\":[\"segwit\"]}],\"id\":1}'")
-        output = ssh_exec(client, cmd)
+               "-d '{{\"jsonrpc\":\"2.0\",\"method\":\"getblocktemplate\","
+               "\"params\":[{{\"rules\":[\"segwit\"]}}],\"id\":1}}'").format(port=RPC_PORT)
+        config = 'user = "%s:%s"\n' % (RPC_USER, RPC_PASSWORD)
+        output = ssh_exec(client, cmd, stdin_data=config)
         print(output[:5000])
 
     finally:

@@ -9,6 +9,10 @@ import json
 from datetime import datetime
 
 # === CONFIGURATION ===
+# T-03: RPC port (mainnet default 7337, chainparamsbase.cpp);
+# override with RCPU_RPC_PORT for testnets.
+RPC_PORT = os.environ.get('RCPU_RPC_PORT', '7337')
+
 # Edit this section with your node information
 NODES = [
     {
@@ -27,6 +31,7 @@ NODES = [
 
 def audit_node(node):
     """Audit a single node's security"""
+    rpc_port = node.get('rpc_port', RPC_PORT)
     report = {
         'name': node['name'],
         'host': node['host'],
@@ -45,17 +50,17 @@ def audit_node(node):
         # 1. Check RPC binding
         if node['is_docker']:
             _, stdout, _ = ssh.exec_command(
-                f'docker exec {node.get("docker_name", "rcpud")} ss -tlnp 2>/dev/null | grep 9962',
+                f'docker exec {node.get("docker_name", "rcpud")} ss -tlnp 2>/dev/null | grep ${{RCPU_RPC_PORT:-7337}}',
                 timeout=10)
         else:
-            _, stdout, _ = ssh.exec_command('ss -tlnp | grep 9962', timeout=10)
+            _, stdout, _ = ssh.exec_command('ss -tlnp | grep ${{RCPU_RPC_PORT:-7337}}', timeout=10)
         
         rpc_listen = stdout.read().decode().strip()
         
-        if '0.0.0.0:9962' in rpc_listen:
-            report['issues'].append('CRITICAL: RPC port 9962 bound to 0.0.0.0 - exposed to internet!')
+        if '0.0.0.0:' + rpc_port in rpc_listen:
+            report['issues'].append(f'CRITICAL: RPC port {rpc_port} bound to 0.0.0.0 - exposed to internet!')
             report['score'] -= 40
-        elif '127.0.0.1:9962' in rpc_listen:
+        elif '127.0.0.1:' + rpc_port in rpc_listen:
             report['info'].append('RPC correctly bound to 127.0.0.1')
         
         # 2. Check config file
