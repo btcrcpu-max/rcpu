@@ -394,7 +394,7 @@ void CachedTxGetAmounts(const CWallet& wallet, const CWalletTx& wtx,
             address = CNoDestination();
         }
 
-CAmount nOutValue;
+        CAmount nOutValue;
         uint256 blind;
         if (!UnblindConfidentialOutput(wallet, txout, nOutValue, blind)) {
             nOutValue = 0;
@@ -512,7 +512,7 @@ std::map<CTxDestination, CAmount> GetAddressBalances(const CWallet& wallet)
                 if(!ExtractDestination(output.scriptPubKey, addr))
                     continue;
 
-CAmount nVal;
+                CAmount nVal;
                 uint256 blind;
                 if (!UnblindConfidentialOutput(wallet, output, nVal, blind)) {
                     nVal = 0;

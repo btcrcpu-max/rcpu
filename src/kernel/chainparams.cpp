@@ -625,9 +625,7 @@ consensus.fPowRandomX = true;
         // raw-memory domain (static_asserts in primitives/block.h), so no
         // consensus change occurs at this height; it is the versioning guard
         // for future header-layout changes. NOT WIRED: nothing consumes this
-        // value today (see consensus/params.h), changing it has no effect;
-        // this assignment only documents the future guard semantic.
-        consensus.nHashDomainActivationHeight = 20000;
+        // value today (see consensus/params.h), changing it has no effect.
         // RCPU mainnet only. Consensus values below are frozen for this
         // release; change them only with a versioned hardening PR.
         // Genesis coinbase text is a frozen artifact (2024 news string).
@@ -753,7 +751,6 @@ consensus.fPowRandomX = true;
         consensus.nBanPathAHeight = 0;  // testnet: active from genesis height
         // RCPU (P1-1): testnet uses the canonical 112-byte hash domain from
         // genesis height (byte-identical to the legacy domain).
-        consensus.nHashDomainActivationHeight = 0;
         genesis = CreateRcpuGenesisBlock(1708750000, 1, 0x1e7fffff, 1, 50 * COIN, "22/Feb/2024 RCPU Testnet Genesis - Independent Chain");
         genesis.hashRandomX = uint256{};
         consensus.hashGenesisBlock = GetHashOfRcpuGenesisBlock(genesis);
@@ -864,8 +861,6 @@ public:
 
         consensus.fPowRandomX = true;
         consensus.nRandomXEpochDuration = 24 * 60 * 60;     // one day
-        // RCPU (P1-1): regtest uses the canonical hash domain from genesis.
-        consensus.nHashDomainActivationHeight = 0;
         genesis = CreateRcpuGenesisBlock(1296688602, 1, 0x207fffff, 1, 50 * COIN);
         genesis.hashRandomX = uint256S("0x177a9deba97f0dae00a6bf55e03671ec6bce7051d6a5054db49237598b803f93");
         consensus.hashGenesisBlock = GetHashOfRcpuGenesisBlock(genesis);

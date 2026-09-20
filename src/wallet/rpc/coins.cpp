@@ -73,7 +73,7 @@ static CAmount GetReceived(const CWallet& wallet, const UniValue& params, bool b
 
         for (const CTxOut& txout : wtx.tx->vout) {
             if (output_scripts.count(txout.scriptPubKey) > 0) {
-CAmount v;
+                CAmount v;
                 uint256 blind;
                 if (!UnblindConfidentialOutput(wallet, txout, v, blind)) v = 0;
                 amount += v;
