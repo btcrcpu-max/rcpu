@@ -7,6 +7,7 @@
 #include <blind.h>
 #include <consensus/consensus.h>
 #include <key.h>
+#include <key_io.h>
 #include <script/signingprovider.h>
 #include <script/solver.h>
 #include <wallet/receive.h>
@@ -387,7 +388,22 @@ void CachedTxGetAmounts(const CWallet& wallet, const CWalletTx& wtx,
         if (txout.scriptPubKey.empty())
             continue;
 
-        if (!ExtractDestination(txout.scriptPubKey, address) && !txout.scriptPubKey.IsUnspendable())
+// RCPU CT: prefer the original confidential recipient address
+        // (rcpux1...) persisted by the sending wallet in mapValue. The
+        // on-chain P2WPKH script only carries the 20-byte HASH160, so
+        // extracting the destination from the script would degrade the record
+        // to the plain rcpu1q address and lose the blinding pubkey.
+        const auto vout_addr_it = wtx.mapValue.find("vout_addr_" + std::to_string(i));
+        bool addr_restored = false;
+        if (vout_addr_it != wtx.mapValue.end()) {
+            std::string decode_err;
+            CTxDestination restored = DecodeDestination(vout_addr_it->second, decode_err);
+            if (decode_err.empty() && IsValidDestination(restored)) {
+                address = restored;
+                addr_restored = true;
+            }
+        }
+        if (!addr_restored && !ExtractDestination(txout.scriptPubKey, address) && !txout.scriptPubKey.IsUnspendable())
         {
             wallet.WalletLogPrintf("CWalletTx::GetAmounts: Unknown transaction type found, txid %s\n",
                                     wtx.GetHash().ToString());

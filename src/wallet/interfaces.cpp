@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <interfaces/wallet.h>
+#include <key_io.h>
 
 #include <common/args.h>
 #include <consensus/amount.h>
@@ -67,12 +68,26 @@ result.txout_is_mine.reserve(wtx.tx->vout.size());
     result.txout_address.reserve(wtx.tx->vout.size());
     result.txout_address_is_mine.reserve(wtx.tx->vout.size());
     result.txout_amount.reserve(wtx.tx->vout.size());
-    for (const auto& txout : wtx.tx->vout) {
+    for (unsigned int txout_idx = 0; txout_idx < wtx.tx->vout.size(); ++txout_idx) {
+        const auto& txout = wtx.tx->vout[txout_idx];
         result.txout_is_mine.emplace_back(wallet.IsMine(txout));
         result.txout_is_change.push_back(OutputIsChange(wallet, txout));
-        result.txout_address.emplace_back();
-result.txout_address_is_mine.emplace_back(ExtractDestination(txout.scriptPubKey, result.txout_address.back()) ?
-                                                      wallet.IsMine(result.txout_address.back()) :
+        // RCPU CT: prefer the confidential address (rcpux1...) persisted at
+        // send time over the script-derived address (the on-chain P2WPKH
+        // script only carries a 20-byte hash and degrades to rcpu1q).
+        CTxDestination script_dest;
+        ExtractDestination(txout.scriptPubKey, script_dest);
+        CTxDestination display_dest = script_dest;
+        const auto addr_it = wtx.mapValue.find("vout_addr_" + std::to_string(txout_idx));
+        if (addr_it != wtx.mapValue.end()) {
+            const CTxDestination restored = DecodeDestination(addr_it->second);
+            if (!std::get_if<CNoDestination>(&restored)) {
+                display_dest = restored;
+            }
+        }
+        result.txout_address.push_back(display_dest);
+        result.txout_address_is_mine.emplace_back(!std::get_if<CNoDestination>(&script_dest) ?
+                                                      wallet.IsMine(script_dest) :
                                                       ISMINE_NO);
         CAmount unblinded{0};
         uint256 blind;
@@ -282,11 +297,12 @@ public:
         LOCK(m_wallet->cs_wallet);
         return m_wallet->ListLockedCoins(outputs);
     }
-    util::Result<CTransactionRef> createTransaction(const std::vector<CRecipient>& recipients,
+util::Result<CTransactionRef> createTransaction(const std::vector<CRecipient>& recipients,
         const CCoinControl& coin_control,
         bool sign,
         int& change_pos,
-        CAmount& fee) override
+        CAmount& fee,
+        std::map<unsigned int, std::string>* vout_addr) override
     {
         LOCK(m_wallet->cs_wallet);
         auto res = CreateTransaction(*m_wallet, recipients, change_pos == -1 ? std::nullopt : std::make_optional(change_pos),
@@ -295,6 +311,7 @@ public:
         const auto& txr = *res;
         fee = txr.fee;
         change_pos = txr.change_pos ? *txr.change_pos : -1;
+        if (vout_addr) *vout_addr = txr.vout_addr;
 
         return txr.tx;
     }

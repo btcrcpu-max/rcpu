@@ -323,12 +323,26 @@ public:
         return obj;
     }
 
-    UniValue operator()(const WitnessUnknown& id) const
+UniValue operator()(const WitnessUnknown& id) const
     {
         UniValue obj(UniValue::VOBJ);
         obj.pushKV("iswitness", true);
         obj.pushKV("witness_version", id.GetWitnessVersion());
         obj.pushKV("witness_program", HexStr(id.GetWitnessProgram()));
+        return obj;
+    }
+
+    UniValue operator()(const ConfidentialKeyHash& id) const
+    {
+        // RCPU CT confidential address: P2WPKH spend program plus the
+        // embedded ECDH blinding public key (rcpux1...).
+        UniValue obj(UniValue::VOBJ);
+        obj.pushKV("confidential", true);
+        obj.pushKV("isscript", false);
+        obj.pushKV("iswitness", true);
+        obj.pushKV("witness_version", 0);
+        obj.pushKV("witness_program", HexStr(id.GetSpend()));
+        obj.pushKV("blinding_pubkey", HexStr(id.GetBlinding()));
         return obj;
     }
 };

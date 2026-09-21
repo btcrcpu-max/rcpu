@@ -149,7 +149,9 @@ static constexpr size_t DUMMY_NESTED_P2WPKH_INPUT_SIZE = 91;
 class CCoinControl;
 
 //! Default for -addresstype
-constexpr OutputType DEFAULT_ADDRESS_TYPE{OutputType::BECH32};
+//! RCPU: confidential (rcpux1) is the default so freshly generated addresses
+//! embed the blinding pubkey and keep balances/blinding consistent.
+constexpr OutputType DEFAULT_ADDRESS_TYPE{OutputType::CONFIDENTIAL};
 
 static constexpr uint64_t KNOWN_WALLET_FLAGS =
         WALLET_FLAG_AVOID_REUSE
@@ -738,8 +740,31 @@ public:
     /** Number of pre-generated keys/scripts by each spkm (part of the look-ahead process, used to detect payments) */
     int64_t m_keypool_size{DEFAULT_KEYPOOL_SIZE};
 
-    /** Notify external script when a wallet transaction comes in or is updated (handled by -walletnotify) */
+/** Notify external script when a wallet transaction comes in or is updated (handled by -walletnotify) */
     std::string m_notify_tx_changed_script;
+
+    // !RCPU
+    /**
+     * RCPU CT: vout-address cache for transactions created outside the plain
+     * sendtoaddress/sendmany path, e.g. createrawtransaction + fundrawtransaction
+     * + signrawtransactionwithwallet + sendrawtransaction.
+     *
+     * Funding blind-blinds the outputs in place (output order and scriptPubKey
+     * are preserved), so the txid of the funded-but-unsigned transaction is
+     * identical to the one of the signed / transmitted transaction (signing only
+     * appends witness data). When that tx later reaches the wallet via the
+     * mempool/block scan, we restore the original confidential recipient
+     * address (rcpux1...) per vout; otherwise the wallet record only sees the
+     * bare P2WPKH script and degrades to rcpu1q.
+     *
+     * Key: txid of the funded transaction; Value: vout index -> encoded address.
+     */
+    std::map<uint256, std::map<unsigned int, std::string>> m_confidential_vout_addr;
+    /** Remember rcpux1 destinations of a funded-but-unsigned transaction so the
+     *  wallet record keeps the confidential address once the signed transaction
+     *  is seen by the wallet. */
+    void RememberConfidentialOutputs(const uint256& txid, const std::map<unsigned int, std::string>& vout_addr);
+    // !RCPU END
 
     size_t KeypoolCountExternalKeys() const EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
     bool TopUpKeyPool(unsigned int kpSize = 0);

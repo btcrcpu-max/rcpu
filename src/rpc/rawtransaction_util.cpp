@@ -115,7 +115,11 @@ std::vector<std::pair<CTxDestination, CAmount>> ParseOutputs(const UniValue& out
             CAmount amount{0};
             parsed_outputs.emplace_back(destination, amount);
         } else {
-            CTxDestination destination{DecodeDestination(name_)};
+            // RCPU CT: a confidential address ("rcpux1...") decodes to a
+            // ConfidentialKeyHash destination that already carries the
+            // recipient blinding public key inline, so no separate key
+            // plumbing is needed here.
+            CTxDestination destination = DecodeDestination(name_);
             CAmount amount{AmountFromValue(outputs[name_])};
             if (!IsValidDestination(destination)) {
                 // !RCPU

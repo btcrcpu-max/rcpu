@@ -492,8 +492,18 @@ public:
         return obj;
     }
 
-    UniValue operator()(const WitnessV1Taproot& id) const { return UniValue(UniValue::VOBJ); }
+UniValue operator()(const WitnessV1Taproot& id) const { return UniValue(UniValue::VOBJ); }
     UniValue operator()(const WitnessUnknown& id) const { return UniValue(UniValue::VOBJ); }
+
+    UniValue operator()(const ConfidentialKeyHash& id) const
+    {
+        // RCPU CT addresses embed the spend hash and the ECDH blinding pubkey.
+        UniValue obj(UniValue::VOBJ);
+        obj.pushKV("confidential", true);
+        CPubKey pubkey(id.GetBlinding());
+        obj.pushKV("pubkey", HexStr(pubkey));
+        return obj;
+    }
 };
 
 static UniValue DescribeWalletAddress(const CWallet& wallet, const CTxDestination& dest)

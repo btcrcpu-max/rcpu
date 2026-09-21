@@ -12,7 +12,9 @@
 #include <wallet/transaction.h>
 #include <wallet/wallet.h>
 
+#include <map>
 #include <optional>
+#include <string>
 
 namespace wallet {
 /** Get the marginal bytes if spending the specified output from this transaction.
@@ -208,6 +210,11 @@ struct CreatedTransactionResult
     CAmount fee;
     FeeCalculation fee_calc;
     std::optional<unsigned int> change_pos;
+    // RCPU CT: vout index -> encoded destination (rcpux1...) as originally
+    // decoded from the recipient address. The on-chain P2WPKH script only
+    // carries the 20-byte hash, so without this map the wallet record would
+    // show the plain rcpu1q address instead of the confidential rcpux1 one.
+    std::map<unsigned int, std::string> vout_addr;
 
     CreatedTransactionResult(CTransactionRef _tx, CAmount _fee, std::optional<unsigned int> _change_pos, const FeeCalculation& _fee_calc)
         : tx(_tx), fee(_fee), fee_calc(_fee_calc), change_pos(_change_pos) {}

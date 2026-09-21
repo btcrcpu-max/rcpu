@@ -9,7 +9,7 @@
 #include <consensus/amount.h>
 #include <map>
 #include <string>
-#include <optional>
+#include <vector>
 
 struct bilingual_str;
 class FillableSigningProvider;

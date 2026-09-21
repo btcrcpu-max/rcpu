@@ -2013,7 +2013,11 @@ util::Result<CTxDestination> DescriptorScriptPubKeyMan::GetNewDestination(const 
         assert(m_wallet_descriptor.descriptor->IsSingleType()); // This is a combo descriptor which should not be an active descriptor
         std::optional<OutputType> desc_addr_type = m_wallet_descriptor.descriptor->GetOutputType();
         assert(desc_addr_type);
-        if (type != *desc_addr_type) {
+        // RCPU CT: a CONFIDENTIAL address is a P2WPKH spend script plus an
+        // embedded blinding pubkey, so its descriptor is wpkh (reported as
+        // BECH32). Accept that pairing; the destination is rebuilt with the
+        // derived pubkey below.
+        if (type != *desc_addr_type && !(type == OutputType::CONFIDENTIAL && *desc_addr_type == OutputType::BECH32)) {
             throw std::runtime_error(std::string(__func__) + ": Types are inconsistent. Stored type does not match type of newly generated address");
         }
 
@@ -2034,6 +2038,20 @@ util::Result<CTxDestination> DescriptorScriptPubKeyMan::GetNewDestination(const 
         CTxDestination dest;
         if (!ExtractDestination(scripts_temp[0], dest)) {
             return util::Error{_("Error: Cannot extract destination from the generated scriptpubkey")}; // shouldn't happen
+        }
+        if (type == OutputType::CONFIDENTIAL) {
+            // Rebuild the confidential destination with the derived public key
+            // so EncodeDestination keeps the rcpux1 form (the script alone is
+            // plain P2WPKH and would collapse back to a bech32 address).
+            const auto* witkey = std::get_if<WitnessV0KeyHash>(&dest);
+            if (!witkey) {
+                return util::Error{_("Error: Cannot build confidential destination from the generated scriptpubkey")};
+            }
+            const auto it = out_keys.pubkeys.find(ToKeyID(*witkey));
+            if (it == out_keys.pubkeys.end()) {
+                return util::Error{_("Error: Cannot find derived key for confidential destination")};
+            }
+            dest = ConfidentialKeyHash(*witkey, it->second);
         }
         m_wallet_descriptor.next_index++;
         WalletBatch(m_storage.GetDatabase()).WriteDescriptor(GetID(), m_wallet_descriptor);
@@ -2317,13 +2335,20 @@ bool DescriptorScriptPubKeyMan::SetupDescriptorGeneration(WalletBatch& batch, co
         desc_prefix = "wpkh(" + xpub + "/84h";
         break;
     }
-    case OutputType::BECH32M: {
+case OutputType::BECH32M: {
         desc_prefix = "tr(" + xpub + "/86h";
         break;
     }
+    case OutputType::CONFIDENTIAL: {
+        // Confidential addresses use a P2WPKH spend script; derive from a
+        // dedicated path (85h) so the spend key never collides with the
+        // bech32 (84h) key of the same index (which would make the two
+        // address forms share one script and blur what was actually sent to).
+        desc_prefix = "wpkh(" + xpub + "/85h";
+        break;
+    }
     case OutputType::UNKNOWN: {
-        // We should never have a DescriptorScriptPubKeyMan for an UNKNOWN OutputType,
-        // so if we get to this point something is wrong
+        // Unknown address type cannot be represented as a descriptor.
         assert(false);
     }
     } // no default case, so the compiler can warn about missing cases

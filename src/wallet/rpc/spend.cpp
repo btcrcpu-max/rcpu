@@ -20,8 +20,10 @@
 #include <rpc/util.h>
 #include <script/script.h>
 #include <script/signingprovider.h>
+#include <logging.h>
 #include <util/fees.h>
 #include <util/rbf.h>
+#include <util/strencodings.h>
 #include <util/translation.h>
 
 // MSVC CRT (corecrt_math.h) defines DOMAIN as a matherr error-code macro;
@@ -196,7 +198,14 @@ UniValue SendMoney(CWallet& wallet, const CCoinControl &coin_control, std::vecto
     if (!res) {
         throw JSONRPCError(RPC_WALLET_INSUFFICIENT_FUNDS, util::ErrorString(res).original);
     }
-    const CTransactionRef& tx = res->tx;
+const CTransactionRef& tx = res->tx;
+    // RCPU CT: persist the original confidential recipient address (rcpux1...)
+    // per vout. The on-chain P2WPKH script only carries the 20-byte hash, so
+    // without this the wallet record would degrade to rcpu1q and the blinding
+    // pubkey would be lost from the record.
+    for (const auto& [vout_idx, addr] : res->vout_addr) {
+        map_value[std::string("vout_addr_") + std::to_string(vout_idx)] = addr;
+    }
     wallet.CommitTransaction(tx, std::move(map_value), /*orderForm=*/{});
     if (verbose) {
         UniValue entry(UniValue::VOBJ);
@@ -1030,7 +1039,10 @@ CreatedTransactionResult FundTransaction(CWallet& wallet, const CMutableTransact
                 {"estimate_mode", UniValueType(UniValue::VSTR)},
                 {"minconf", UniValueType(UniValue::VNUM)},
                 {"maxconf", UniValueType(UniValue::VNUM)},
-                {"input_weights", UniValueType(UniValue::VARR)},
+{"input_weights", UniValueType(UniValue::VARR)},
+                // !RCPU
+                {"confidential_outputs", UniValueType(UniValue::VOBJ)},
+                // !RCPU END
             },
             true, true);
 
@@ -1263,8 +1275,19 @@ RPCHelpMan fundrawtransaction()
                             // !RCPU
                             {"changeAddress", RPCArg::Type::STR, RPCArg::DefaultHint{"automatic"}, "The RCPU address to receive the change"},
                             // !RCPU END
-                            {"changePosition", RPCArg::Type::NUM, RPCArg::DefaultHint{"random"}, "The index of the change output"},
+{"changePosition", RPCArg::Type::NUM, RPCArg::DefaultHint{"random"}, "The index of the change output"},
                             {"change_type", RPCArg::Type::STR, RPCArg::DefaultHint{"set by -changetype"}, "The output type to use. Only valid if changeAddress is not specified. Options are \"legacy\", \"p2sh-segwit\", \"bech32\", and \"bech32m\"."},
+                            // !RCPU
+                            {"confidential_outputs", RPCArg::Type::OBJ, RPCArg::Optional::OMITTED, "Map of output index to RCPU confidential address (rcpux1...). "
+                                                          "From raw-transaction outputs only the bare scriptPubKey survives, which cannot carry the recipient's "
+                                                          "blinding public key. Provide the original rcpux1 addresses here, keyed by their zero-based output index, "
+                                                          "so the ConfidentialKeyHash destination is restored and the output blinds with path B instead of "
+                                                          "collapsing to a plain WitnessV0KeyHash (path A).",
+                                {
+                                    {"vout_index", RPCArg::Type::STR, RPCArg::Optional::NO, "The zero-based output index (as a string key), e.g. \"0\"."},
+                                },
+                            },
+                            // !RCPU END
                             {"includeWatching", RPCArg::Type::BOOL, RPCArg::DefaultHint{"true for watch-only wallets, otherwise false"}, "Also select inputs which are watch only.\n"
                                                           "Only solvable inputs can be used. Watch-only destinations are solvable if the public key and/or output script was imported,\n"
                                                           "e.g. with 'importpubkey' or 'importmulti' with the 'pubkeys' or 'desc' field."},
@@ -1340,11 +1363,58 @@ RPCHelpMan fundrawtransaction()
     if (!DecodeHexTx(tx, request.params[0].get_str(), try_no_witness, try_witness)) {
         throw JSONRPCError(RPC_DESERIALIZATION_ERROR, "TX decode failed");
     }
-    UniValue options = request.params[1];
+UniValue options = request.params[1];
+    // !RCPU
+    // Recover original confidential addresses (rcpux1...) keyed by output index.
+    // A raw-transaction output only carries the bare P2WPKH scriptPubKey;
+    // ExtractDestination() on it can never yield a ConfidentialKeyHash because
+    // the recipient blinding public key lives only in the address string, not
+    // in the on-chain script. Without this restore the destination collapses to
+    // WitnessV0KeyHash and the output blinds with path A (plaintext nonce).
+    std::map<unsigned int, CTxDestination> confidential_dests;
+    const UniValue& confidential_outputs = options["confidential_outputs"];
+    if (!confidential_outputs.isNull()) {
+        if (!confidential_outputs.isObject()) {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "confidential_outputs must be an object");
+        }
+        for (const std::string& idx_str : confidential_outputs.getKeys()) {
+            const UniValue& addr_val = confidential_outputs[idx_str];
+            if (!addr_val.isStr()) {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, std::string("confidential_outputs value for index ") + idx_str + " must be a string");
+            }
+            const CTxDestination restored = DecodeDestination(addr_val.get_str());
+            if (!std::holds_alternative<ConfidentialKeyHash>(restored)) {
+                throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, std::string("confidential_outputs value for index ") + idx_str + " is not an rcpux1 confidential address");
+            }
+            int64_t idx_raw = 0;
+            if (!ParseInt64(idx_str, &idx_raw) || idx_raw < 0) {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, std::string("confidential_outputs index \"") + idx_str + "\" is not a valid index");
+            }
+            const unsigned int idx = static_cast<unsigned int>(idx_raw);
+            if (idx >= tx.vout.size()) {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, std::string("confidential_outputs index \"") + idx_str + "\" out of range");
+            }
+            confidential_dests[idx] = restored;
+        }
+    }
+    // !RCPU END
     std::vector<std::pair<CTxDestination, CAmount>> destinations;
-    for (const auto& tx_out : tx.vout) {
+    for (size_t i = 0; i < tx.vout.size(); ++i) {
+        const auto& tx_out = tx.vout[i];
         CTxDestination dest;
-        ExtractDestination(tx_out.scriptPubKey, dest);
+        auto it = confidential_dests.find(i);
+        if (it != confidential_dests.end()) {
+            if (GetScriptForDestination(it->second) == tx_out.scriptPubKey) {
+                dest = it->second;
+            } else {
+                // !RCPU
+                LogPrintf("fundrawtransaction: confidential_outputs[%u] scriptPubKey mismatch, falling back to ExtractDestination\n", i);
+                // !RCPU END
+                ExtractDestination(tx_out.scriptPubKey, dest);
+            }
+        } else {
+            ExtractDestination(tx_out.scriptPubKey, dest);
+        }
         destinations.emplace_back(dest, tx_out.nValue.IsExplicit() ? tx_out.nValue.GetAmount() : 0);
     }
     std::vector<std::string> dummy(destinations.size(), "dummy");
@@ -1358,7 +1428,19 @@ RPCHelpMan fundrawtransaction()
     // Clear tx.vout since it is not meant to be used now that we are passing outputs directly.
     // This sets us up for a future PR to completely remove tx from the function signature in favor of passing inputs directly
     tx.vout.clear();
-    auto txr = FundTransaction(*pwallet, tx, recipients, options, coin_control, /*override_min_fee=*/true);
+auto txr = FundTransaction(*pwallet, tx, recipients, options, coin_control, /*override_min_fee=*/true);
+    // !RCPU
+    // Remember the original confidential recipient addresses (rcpux1...) keyed
+    // by the funded (but unsigned) txid so that once the signed transaction is
+    // later added to the wallet (sendrawtransaction -> mempool/block scan) the
+    // wallet record keeps the confidential address instead of degrading to
+    // rcpu1q. Blind-blinding preserves output order and scriptPubKey, and
+    // signing only appends witness data, so the funded txid equals the txid of
+    // the transmitted transaction.
+    if (!txr.vout_addr.empty()) {
+        pwallet->RememberConfidentialOutputs(txr.tx->GetHash(), txr.vout_addr);
+    }
+    // !RCPU END
 
     UniValue result(UniValue::VOBJ);
     result.pushKV("hex", EncodeHexTx(*txr.tx));

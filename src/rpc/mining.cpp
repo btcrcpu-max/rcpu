@@ -13,6 +13,7 @@
 #include <common/system.h>
 #include <consensus/amount.h>
 #include <consensus/consensus.h>
+#include <logging.h>
 #include <consensus/merkle.h>
 #include <consensus/params.h>
 #include <consensus/validation.h>
@@ -156,14 +157,18 @@ static bool GenerateBlock(ChainstateManager& chainman, CBlock& block, uint64_t& 
         }
     }
 
-    uint256 rxHash;
+uint256 rxHash;
     rxHash.SetNull();
+    LogPrintf("RCPU-DBG GenerateBlock: prev=%s nTime=%u prevBlockTime=%u nBits=0x%08x\n",
+              block.hashPrevBlock.GetHex(), block.nTime, prevBlockTime, block.nBits);
     while (max_tries > 0 &&
            block.nNonce < std::numeric_limits<uint32_t>::max() &&
            !CheckProofOfWorkRandomX(block, chainman.GetConsensus(), POW_VERIFY_MINING, &rxHash, prevBlockTime)) {
         ++block.nNonce;
         --max_tries;
     }
+    LogPrintf("RCPU-DBG GenerateBlock: mined rxHash=%s nonce=%u max_tries=%u\n",
+              rxHash.GetHex(), block.nNonce, max_tries);
     block.hashRandomX = rxHash;
     // !RCPU END
 

@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <addresstype.h>
+#include <key_io.h>
 #include <common/args.h>
 #include <common/system.h>
 #include <consensus/amount.h>
@@ -1001,21 +1002,6 @@ static void DiscourageFeeSniping(CMutableTransaction& tx, FastRandomContext& rng
     }
 }
 
-// RCPU CT (v1.0.21): resolve the public key for path-B (ECDH) blinding.
-// Only ConfidentialKeyHash (rcpux1...) carries an embedded blinding public key
-// and is eligible for path-B. All legacy address types (P2PK, P2PKH, P2WPKH,
-// P2TR, P2SH, P2WSH) must use path-A (plaintext nonce) so that any recipient
-// can unblind without possessing the sender's private key. Returning a key
-// for legacy destinations would lock funds when the recipient is a different
-// wallet instance (e.g. an external wallet or the same wallet on another node).
-static std::optional<CPubKey> GetRecipientPubKey(const CWallet& /*wallet*/, const CTxDestination& dest, const CScript& /*script*/)
-{
-    if (const auto* conf = std::get_if<ConfidentialKeyHash>(&dest)) {
-        return conf->GetBlinding();
-    }
-    return std::nullopt;
-}
-
 static util::Result<CreatedTransactionResult> CreateTransactionInternal(
         CWallet& wallet,
         const std::vector<CRecipient>& vecSend,
@@ -1052,13 +1038,58 @@ static util::Result<CreatedTransactionResult> CreateTransactionInternal(
         }
     }
 
-    // Create change script that will be used if we need change
+// Create change script that will be used if we need change
     CScript scriptChange;
-    bilingual_str error; // possible error str
+    bilingual_str error; // possible str error
+
+    // RCPU CT (PR-B): remember the change destination and its blinding public
+    // key so the change output blinds via recipient-ECDH (path B, nonce 0x03)
+    // and the sender's record keeps the rcpux1 address. Only populated when we
+    // own the change key; coin-control change to a foreign/unknowable address
+    // stays a plain WitnessV0KeyHash and falls back to path A as before.
+    std::optional<CTxDestination> change_key_dest;
+    std::optional<CPubKey> change_key;
+    auto resolve_change_key = [&](CTxDestination& dest) {
+        if (const auto* conf = std::get_if<ConfidentialKeyHash>(&dest)) {
+            // Already a confidential destination (e.g. reserved with
+            // OutputType::CONFIDENTIAL): the descriptor embedded the pubkey.
+            change_key_dest = dest;
+            change_key = conf->GetBlinding();
+            return;
+        }
+        // Rebuild ConfidentialKeyHash{WitnessV0KeyHash(keyid), pk}
+        // from the descriptor-derived public key when this wallet owns it.
+        const CKeyID keyid = [&]() -> CKeyID {
+            if (const auto* wit = std::get_if<WitnessV0KeyHash>(&dest))
+                return ToKeyID(*wit);
+            if (const auto* pk = std::get_if<PKHash>(&dest))
+                return ToKeyID(*pk);
+            return CKeyID();
+        }();
+        if (keyid.IsNull()) return;
+        const CScript script = GetScriptForDestination(dest);
+        for (ScriptPubKeyMan* man : wallet.GetScriptPubKeyMans(script)) {
+            auto provider = man->GetSolvingProvider(script);
+            CPubKey pk;
+            if (provider && provider->GetPubKey(keyid, pk) && pk.IsCompressed() && pk.IsValid()) {
+                if (PKHash(pk) == PKHash(keyid)) {
+                    dest = ConfidentialKeyHash(WitnessV0KeyHash(keyid), pk);
+                    change_key_dest = dest;
+                    change_key = pk;
+                    return;
+                }
+            }
+        }
+    };
+    const bool conf_change{g_con_elementsmode && !gArgs.GetBoolArg("-ctlegacy", false)};
 
     // coin control: send change to custom address
     if (!std::get_if<CNoDestination>(&coin_control.destChange)) {
-        scriptChange = GetScriptForDestination(coin_control.destChange);
+        CTxDestination destChange = coin_control.destChange;
+        if (conf_change) {
+            resolve_change_key(destChange);
+        }
+        scriptChange = GetScriptForDestination(destChange);
     } else { // no coin control: send change to newly generated address
         // Note: We use a new key here to keep it from being obvious which side is the change.
         //  The drawback is that by not reusing a previous key, the change may be lost if a
@@ -1073,8 +1104,11 @@ static util::Result<CreatedTransactionResult> CreateTransactionInternal(
         auto op_dest = reservedest.GetReservedDestination(true);
         if (!op_dest) {
             error = _("Transaction needs a change address, but we can't generate it.") + Untranslated(" ") + util::ErrorString(op_dest);
-        } else {
+} else {
             dest = *op_dest;
+            if (conf_change) {
+                resolve_change_key(dest);
+            }
             scriptChange = GetScriptForDestination(dest);
         }
         // A valid destination implies a change script (and
@@ -1369,7 +1403,8 @@ CTxOut txout(recipient.nAmount, GetScriptForDestination(recipient.dest));
         return util::Error{error};
     }
 
-    // RCPU CT: blind outputs when confidential-transactions mode is enabled.
+// RCPU CT: blind outputs when confidential-transactions mode is enabled.
+    std::map<unsigned int, std::string> vout_addr; // vout -> encoded recipient dest (rcpux1...)
     if (g_con_elementsmode && !txNew.vout.empty()) {
         txNew.nVersion = CT_VERSION; // confidential transaction
         std::vector<uint256> input_blinds(txNew.vin.size());
@@ -1406,7 +1441,8 @@ std::vector<std::optional<CPubKey>> recipient_keys;
             // the plaintext-nonce path A inside BlindTransaction. No UI/RPC ever
             // asks the user for a recipient public key.
             std::vector<bool> recipient_used(vecSend.size(), false);
-            for (const auto& txout : txNew.vout) {
+            for (size_t vi = 0; vi < txNew.vout.size(); ++vi) {
+                const auto& txout = txNew.vout[vi];
                 CTxDestination dest;
                 std::optional<CPubKey> pubkey;
                 for (size_t ri = 0; ri < vecSend.size(); ++ri) {
@@ -1415,9 +1451,19 @@ std::vector<std::optional<CPubKey>> recipient_keys;
                         if (conf && GetScriptForDestination(vecSend[ri].dest) == txout.scriptPubKey) {
                             pubkey = conf->GetBlinding();
                             recipient_used[ri] = true;
+                            vout_addr[vi] = EncodeDestination(vecSend[ri].dest);
                             break;
                         }
                     }
+                }
+                // PR-B: the change output caps the change key resolved above so
+                // the wallet's own change blinds via path B (nonce 0x03) and
+                // the sender's record keeps the rcpux1 address. Fee /
+                // empty-script outputs are appended only after BlindTransaction
+                // and can never reach this vector.
+                if (change_pos && *change_pos == vi && change_key_dest) {
+                    pubkey = change_key;
+                    vout_addr[vi] = EncodeDestination(*change_key_dest);
                 }
                 recipient_keys.push_back(pubkey);
             }
@@ -1470,7 +1516,9 @@ std::vector<std::optional<CPubKey>> recipient_keys;
               feeCalc.est.fail.start, feeCalc.est.fail.end,
               (feeCalc.est.fail.totalConfirmed + feeCalc.est.fail.inMempool + feeCalc.est.fail.leftMempool) > 0.0 ? 100 * feeCalc.est.fail.withinTarget / (feeCalc.est.fail.totalConfirmed + feeCalc.est.fail.inMempool + feeCalc.est.fail.leftMempool) : 0.0,
               feeCalc.est.fail.withinTarget, feeCalc.est.fail.totalConfirmed, feeCalc.est.fail.inMempool, feeCalc.est.fail.leftMempool);
-    return CreatedTransactionResult(tx, current_fee, change_pos, feeCalc);
+CreatedTransactionResult created_result(tx, current_fee, change_pos, feeCalc);
+    created_result.vout_addr = std::move(vout_addr);
+    return created_result;
 }
 
 util::Result<CreatedTransactionResult> CreateTransaction(

@@ -1262,17 +1262,57 @@ bool CWallet::AddToWalletIfInvolvingMe(const CTransactionRef& ptx, const SyncTxS
             // Block disconnection override an abandoned tx as unconfirmed
             // which means user may have to call abandontransaction again
             TxState tx_state = std::visit([](auto&& s) -> TxState { return s; }, state);
-            CWalletTx* wtx = AddToWallet(MakeTransactionRef(tx), tx_state, /*update_wtx=*/nullptr, /*fFlushOnClose=*/false, rescanning_old_block);
+CWalletTx* wtx = AddToWallet(MakeTransactionRef(tx), tx_state, /*update_wtx=*/nullptr, /*fFlushOnClose=*/false, rescanning_old_block);
             if (!wtx) {
                 // Can only be nullptr if there was a db write error (missing db, read-only db or a db engine internal writing error).
                 // As we only store arriving transaction in this process, and we don't want an inconsistent state, let's throw an error.
                 throw std::runtime_error("DB error adding transaction to wallet, write failed");
             }
+            // !RCPU
+            // Restore the original confidential recipient addresses (rcpux1...)
+            // remembered by fundrawtransaction for this txid. The raw-transaction
+            // send path never goes through CommitTransaction(), so without this
+            // the wallet record would only see the bare P2WPKH script and show
+            // the degraded rcpu1q address. Blind-blinding preserves output order
+            // and scriptPubKey, so the funded txid matches the signed txid.
+            auto conf_cache_it = m_confidential_vout_addr.find(tx.GetHash());
+            if (conf_cache_it != m_confidential_vout_addr.end()) {
+                bool changed = false;
+                for (const auto& [vi, addr] : conf_cache_it->second) {
+                    if (vi >= wtx->tx->vout.size()) continue;
+                    std::string decode_err;
+                    const CTxDestination restored = DecodeDestination(addr, decode_err);
+                    if (!decode_err.empty() || !IsValidDestination(restored)) continue;
+                    if (GetScriptForDestination(restored) != wtx->tx->vout[vi].scriptPubKey) continue;
+                    const std::string key = "vout_addr_" + std::to_string(vi);
+                    if (wtx->mapValue[key] != addr) {
+                        wtx->mapValue[key] = addr;
+                        changed = true;
+                    }
+                }
+                if (changed) {
+                    wtx->MarkDirty();
+                    WalletBatch batch(GetDatabase());
+                    if (!batch.WriteTx(*wtx)) {
+                        WalletLogPrintf("%s: Failed to persist vout_addr for %s\n", __func__, tx.GetHash().ToString());
+                    }
+                }
+                m_confidential_vout_addr.erase(conf_cache_it);
+            }
+// !RCPU END
             return true;
         }
     }
     return false;
 }
+
+// !RCPU
+void CWallet::RememberConfidentialOutputs(const uint256& txid, const std::map<unsigned int, std::string>& vout_addr)
+{
+    LOCK(cs_wallet);
+    m_confidential_vout_addr[txid] = vout_addr;
+}
+// !RCPU END
 
 bool CWallet::TransactionCanBeAbandoned(const uint256& hashTx) const
 {
@@ -2221,10 +2261,11 @@ OutputType CWallet::TransactionChangeType(const std::optional<OutputType>& chang
         return OutputType::LEGACY;
     }
 
-    bool any_tr{false};
+bool any_tr{false};
     bool any_wpkh{false};
     bool any_sh{false};
     bool any_pkh{false};
+    bool any_conf{false};
 
     for (const auto& recipient : vecSend) {
         if (std::get_if<WitnessV1Taproot>(&recipient.dest)) {
@@ -2235,9 +2276,17 @@ OutputType CWallet::TransactionChangeType(const std::optional<OutputType>& chang
             any_sh = true;
         } else if (std::get_if<PKHash>(&recipient.dest)) {
             any_pkh = true;
+        } else if (std::get_if<ConfidentialKeyHash>(&recipient.dest)) {
+            any_conf = true;
         }
     }
 
+    const bool has_conf_spkman(GetScriptPubKeyMan(OutputType::CONFIDENTIAL, /*internal=*/true));
+    if (has_conf_spkman && any_conf) {
+        // RCPU: confidential recipients get confidential change so the
+        // blinding chain (Path-B) stays consistent for every output we own.
+        return OutputType::CONFIDENTIAL;
+    }
     const bool has_bech32m_spkman(GetScriptPubKeyMan(OutputType::BECH32M, /*internal=*/true));
     if (has_bech32m_spkman && any_tr) {
         // Currently tr is the only type supported by the BECH32M spkman
@@ -2513,6 +2562,14 @@ util::Result<CTxDestination> CWallet::GetNewDestination(const OutputType type, c
 {
     LOCK(cs_wallet);
     auto spk_man = GetScriptPubKeyMan(type, /*internal=*/false);
+    // RCPU CT: descriptor wallets created before the CONFIDENTIAL type was
+    // added lack a dedicated confidential SPK manager.  Fall back to the
+    // BECH32 manager; DescriptorScriptPubKeyMan::GetNewDestination will
+    // accept the type mismatch (CONFIDENTIAL vs BECH32 descriptor) and
+    // rebuild the result as ConfidentialKeyHash.
+    if (!spk_man && type == OutputType::CONFIDENTIAL && IsWalletFlagSet(WALLET_FLAG_DESCRIPTORS)) {
+        spk_man = GetScriptPubKeyMan(OutputType::BECH32, /*internal=*/false);
+    }
     if (!spk_man) {
         return util::Error{strprintf(_("Error: No %s addresses available."), FormatOutputType(type))};
     }
