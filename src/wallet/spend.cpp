@@ -1001,30 +1001,17 @@ static void DiscourageFeeSniping(CMutableTransaction& tx, FastRandomContext& rng
     }
 }
 
-// RCPU CT: resolve the public key a confidential (path B / ECDH) output should
-// be blinded to. Hash-only destinations (P2PKH / P2WPKH / P2TR etc.) can only
-// be resolved for addresses this wallet itself owns; foreign addresses and
-// scripted outputs (P2SH / P2WSH / unknown witness programs) yield nullopt.
-static std::optional<CPubKey> GetRecipientPubKey(const CWallet& wallet, const CTxDestination& dest, const CScript& script)
+// RCPU CT (v1.0.21): resolve the public key for path-B (ECDH) blinding.
+// Only ConfidentialKeyHash (rcpux1...) carries an embedded blinding public key
+// and is eligible for path-B. All legacy address types (P2PK, P2PKH, P2WPKH,
+// P2TR, P2SH, P2WSH) must use path-A (plaintext nonce) so that any recipient
+// can unblind without possessing the sender's private key. Returning a key
+// for legacy destinations would lock funds when the recipient is a different
+// wallet instance (e.g. an external wallet or the same wallet on another node).
+static std::optional<CPubKey> GetRecipientPubKey(const CWallet& /*wallet*/, const CTxDestination& dest, const CScript& /*script*/)
 {
-    if (const auto* pk = std::get_if<PubKeyDestination>(&dest)) {
-        return pk->GetPubKey();
-    }
-    if (const auto* tr = std::get_if<WitnessV1Taproot>(&dest)) {
-        return tr->GetEvenCorrespondingCPubKey();
-    }
-    CKeyID keyid;
-    if (const auto* pkh = std::get_if<PKHash>(&dest)) {
-        keyid = ToKeyID(*pkh);
-    } else if (const auto* wpkh = std::get_if<WitnessV0KeyHash>(&dest)) {
-        keyid = ToKeyID(*wpkh);
-    } else {
-        return std::nullopt; // P2SH, P2WSH, unknown witness, bare scripts
-    }
-    CPubKey pubkey;
-    for (const auto* spkman : wallet.GetScriptPubKeyMans(script)) {
-        const auto provider = spkman->GetSolvingProvider(script);
-        if (provider && provider->GetPubKey(keyid, pubkey)) return pubkey;
+    if (const auto* conf = std::get_if<ConfidentialKeyHash>(&dest)) {
+        return conf->GetBlinding();
     }
     return std::nullopt;
 }
@@ -1407,13 +1394,32 @@ std::vector<uint256> output_blinds, output_nonces;
         // falls back to the plaintext-nonce path A inside BlindTransaction.
         // 1.0.18 restores plain address-to-address transfers: sending must
         // never fail just because the recipient's public key is unknown.
-        std::vector<std::optional<CPubKey>> recipient_keys;
+std::vector<std::optional<CPubKey>> recipient_keys;
         if (!gArgs.GetBoolArg("-ctlegacy", false)) {
             recipient_keys.reserve(txNew.vout.size());
+            // 1.0.21: a confidential address (rcpux...) decodes to a
+            // ConfidentialKeyHash destination carrying the recipient's blinding
+            // public key inside the address itself (path B). Match each output
+            // against the explicit per-recipient key first, then fall back to
+            // resolving keys for scripts this wallet owns (change, own
+            // addresses); foreign scripts yield nullopt and blind via the
+            // plaintext-nonce path A inside BlindTransaction. No UI/RPC ever
+            // asks the user for a recipient public key.
+            std::vector<bool> recipient_used(vecSend.size(), false);
             for (const auto& txout : txNew.vout) {
                 CTxDestination dest;
                 std::optional<CPubKey> pubkey;
-                if (ExtractDestination(txout.scriptPubKey, dest)) {
+                for (size_t ri = 0; ri < vecSend.size(); ++ri) {
+                    if (!recipient_used[ri]) {
+                        const ConfidentialKeyHash* conf = std::get_if<ConfidentialKeyHash>(&vecSend[ri].dest);
+                        if (conf && GetScriptForDestination(vecSend[ri].dest) == txout.scriptPubKey) {
+                            pubkey = conf->GetBlinding();
+                            recipient_used[ri] = true;
+                            break;
+                        }
+                    }
+                }
+                if (!pubkey && ExtractDestination(txout.scriptPubKey, dest)) {
                     pubkey = GetRecipientPubKey(wallet, dest, txout.scriptPubKey);
                 }
                 recipient_keys.push_back(pubkey);
