@@ -1399,11 +1399,11 @@ std::vector<std::optional<CPubKey>> recipient_keys;
             recipient_keys.reserve(txNew.vout.size());
             // 1.0.21: a confidential address (rcpux...) decodes to a
             // ConfidentialKeyHash destination carrying the recipient's blinding
-            // public key inside the address itself (path B). Match each output
-            // against the explicit per-recipient key first, then fall back to
-            // resolving keys for scripts this wallet owns (change, own
-            // addresses); foreign scripts yield nullopt and blind via the
-            // plaintext-nonce path A inside BlindTransaction. No UI/RPC ever
+            // public key inside the address itself (path B). Only outputs that
+            // were explicitly created from a ConfidentialKeyHash recipient use
+            // path B; every other output (legacy addresses, foreign scripts,
+            // change without a per-recipient key) yields nullopt and blinds via
+            // the plaintext-nonce path A inside BlindTransaction. No UI/RPC ever
             // asks the user for a recipient public key.
             std::vector<bool> recipient_used(vecSend.size(), false);
             for (const auto& txout : txNew.vout) {
@@ -1418,9 +1418,6 @@ std::vector<std::optional<CPubKey>> recipient_keys;
                             break;
                         }
                     }
-                }
-                if (!pubkey && ExtractDestination(txout.scriptPubKey, dest)) {
-                    pubkey = GetRecipientPubKey(wallet, dest, txout.scriptPubKey);
                 }
                 recipient_keys.push_back(pubkey);
             }
