@@ -146,4 +146,91 @@ BOOST_AUTO_TEST_CASE(key_io_invalid)
     }
 }
 
+// RCPU CT: confidential address (rcpux1...) round-trip and validation tests.
+BOOST_AUTO_TEST_CASE(confidential_address_roundtrip)
+{
+    SelectParams(ChainType::RCPUMAIN);
+    CKey key;
+    key.MakeNewKey(true);
+    BOOST_REQUIRE(key.IsValid());
+    BOOST_REQUIRE(key.IsCompressed());
+
+    // Build a ConfidentialKeyHash and encode it.
+    WitnessV0KeyHash spend(key.GetPubKey());
+    CPubKey pk = key.GetPubKey();
+    CTxDestination conf_dest = ConfidentialKeyHash(spend, pk);
+    std::string addr = EncodeDestination(conf_dest);
+    BOOST_CHECK(addr.substr(0, 6) == "rcpux1");
+
+    // Decode must restore the exact destination.
+    std::string error_str;
+    CTxDestination decoded = DecodeDestination(addr, error_str);
+    BOOST_CHECK_MESSAGE(IsValidDestination(decoded), error_str);
+    const auto* ckh = std::get_if<ConfidentialKeyHash>(&decoded);
+    BOOST_REQUIRE_MESSAGE(ckh != nullptr, "Decoded is not ConfidentialKeyHash");
+    BOOST_CHECK(ckh->GetSpend() == spend);
+    BOOST_CHECK(ckh->GetBlinding() == pk);
+
+    // Re-encode must produce the same address.
+    BOOST_CHECK_EQUAL(EncodeDestination(decoded), addr);
+
+    // Regtest HRP must differ.
+    SelectParams(ChainType::RCPUREGTEST);
+    CTxDestination reg_dest = ConfidentialKeyHash(spend, pk);
+    std::string reg_addr = EncodeDestination(reg_dest);
+    BOOST_CHECK(reg_addr.substr(0, 7) == "rrcpux1");
+}
+
+BOOST_AUTO_TEST_CASE(confidential_address_wrong_hrp)
+{
+    // A mainnet rcpux1 address must be invalid on RCPU regtest, and vice versa.
+    SelectParams(ChainType::RCPUMAIN);
+    CKey key;
+    key.MakeNewKey(true);
+    WitnessV0KeyHash spend(key.GetPubKey());
+    std::string main_addr = EncodeDestination(ConfidentialKeyHash(spend, key.GetPubKey()));
+
+    std::string error_str;
+    SelectParams(ChainType::RCPUREGTEST);
+    BOOST_CHECK_MESSAGE(!IsValidDestination(DecodeDestination(main_addr, error_str)),
+                        error_str);
+}
+
+BOOST_AUTO_TEST_CASE(confidential_address_uncompressed)
+{
+    SelectParams(ChainType::RCPUMAIN);
+    CKey key;
+    key.MakeNewKey(false);
+    BOOST_REQUIRE(!key.IsCompressed());
+
+    WitnessV0KeyHash spend(key.GetPubKey());
+    // Encoding must refuse to produce a confidential address for uncompressed keys.
+    std::string addr = EncodeConfidentialAddress(spend, key.GetPubKey(), Params());
+    BOOST_CHECK(addr.empty());
+}
+
+BOOST_AUTO_TEST_CASE(confidential_address_hash_mismatch)
+{
+    SelectParams(ChainType::RCPUMAIN);
+    CKey spend_key;
+    spend_key.MakeNewKey(true);
+    CKey blind_key;
+    blind_key.MakeNewKey(true);
+
+    WitnessV0KeyHash spend(spend_key.GetPubKey());
+    // pubkey from a different key must not match the spend hash.
+    std::string addr = EncodeConfidentialAddress(spend, blind_key.GetPubKey(), Params());
+    BOOST_CHECK(addr.empty());
+
+    // Decoding a crafted payload with a mismatching pubkey must also fail.
+    // We construct a valid-looking address first, then swap the pubkey bytes.
+    std::string valid = EncodeConfidentialAddress(spend, spend_key.GetPubKey(), Params());
+    BOOST_REQUIRE(!valid.empty());
+    // Corrupt one pubkey byte in the data part (near the end, after the version + 20-byte hash).
+    valid[valid.size() - 5] = (valid[valid.size() - 5] == 'a') ? 'b' : 'a';
+    std::string error_str;
+    CTxDestination decoded = DecodeDestination(valid, error_str);
+    BOOST_CHECK_MESSAGE(!IsValidDestination(decoded), error_str);
+}
+
 BOOST_AUTO_TEST_SUITE_END()

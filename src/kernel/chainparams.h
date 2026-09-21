@@ -117,7 +117,9 @@ public:
     /** Return the list of hostnames to look up for DNS seeds */
     const std::vector<std::string>& DNSSeeds() const { return vSeeds; }
     const std::vector<unsigned char>& Base58Prefix(Base58Type type) const { return base58Prefixes[type]; }
-    const std::string& Bech32HRP() const { return bech32_hrp; }
+const std::string& Bech32HRP() const { return bech32_hrp; }
+    /** Return the human-readable part (HRP) used for confidential (CT) addresses, e.g. "rcpux" on mainnet */
+    const std::string& ConfidentialBech32HRP() const { return confidential_bech32_hrp; }
     const std::vector<uint8_t>& FixedSeeds() const { return vFixedSeeds; }
     const CCheckpointData& Checkpoints() const { return checkpointData; }
 
@@ -179,8 +181,9 @@ protected:
     uint64_t m_assumed_blockchain_size;
     uint64_t m_assumed_chain_state_size;
     std::vector<std::string> vSeeds;
-    std::vector<unsigned char> base58Prefixes[MAX_BASE58_TYPES];
+std::vector<unsigned char> base58Prefixes[MAX_BASE58_TYPES];
     std::string bech32_hrp;
+    std::string confidential_bech32_hrp;
     ChainType m_chain_type;
     CBlock genesis;
     std::vector<uint8_t> vFixedSeeds;

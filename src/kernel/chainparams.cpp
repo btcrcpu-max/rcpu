@@ -650,7 +650,8 @@ consensus.fPowRandomX = true;
         // encoder compatibility. Mainnet rejects legacy addresses;
         // only bech32 HRP "rcpu" is valid.
 
-        bech32_hrp = "rcpu";
+bech32_hrp = "rcpu";
+        confidential_bech32_hrp = "rcpux";
 
         fDefaultConsistencyChecks = false;
         m_is_mockable_chain = false;
@@ -764,7 +765,8 @@ consensus.fPowRandomX = true;
         base58Prefixes[EXT_PUBLIC_KEY] = {0x04, 0x35, 0x87, 0xCF};
         base58Prefixes[EXT_SECRET_KEY] = {0x04, 0x35, 0x83, 0x94};
 
-        bech32_hrp = "trcpu";
+bech32_hrp = "trcpu";
+        confidential_bech32_hrp = "trcpux";
 
         fDefaultConsistencyChecks = false;
         m_is_mockable_chain = false;
@@ -892,7 +894,8 @@ public:
         base58Prefixes[EXT_PUBLIC_KEY] = {0x04, 0x35, 0x87, 0xCF};
         base58Prefixes[EXT_SECRET_KEY] = {0x04, 0x35, 0x83, 0x94};
 
-        bech32_hrp = "rrcpu";
+bech32_hrp = "rrcpu";
+        confidential_bech32_hrp = "rrcpux";
     }
 };
 

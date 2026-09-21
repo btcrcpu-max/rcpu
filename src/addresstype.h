@@ -116,6 +116,43 @@ public:
     }
 };
 
+// RCPU CT: destination type for confidential addresses ("rcpux1...").
+// A confidential address embeds both the spend witness program (a plain
+// P2WPKH program hash) and the recipient's compressed public key used for
+// ECDH blinding (path B). The blinding key is the spend key itself, so the
+// receiver unblinds with its own spend private key and no extra key storage
+// or recovery step is required.
+//
+// GetScriptForDestination() emits only the plain P2WPKH script for this
+// destination (consensus is unchanged: "rcpux1" outputs are ordinary
+// witness-v0-key-hash outputs on chain). The embedded blinding public key is
+// consumed by the wallet's send path only.
+struct ConfidentialKeyHash
+{
+private:
+    WitnessV0KeyHash m_spend;
+    CPubKey m_blinding;
+
+public:
+    ConfidentialKeyHash() = default;
+    ConfidentialKeyHash(const WitnessV0KeyHash& spend, const CPubKey& blinding)
+        : m_spend(spend), m_blinding(blinding) {}
+
+    const WitnessV0KeyHash& GetSpend() const LIFETIMEBOUND { return m_spend; }
+    const CPubKey& GetBlinding() const LIFETIMEBOUND { return m_blinding; }
+
+    friend bool operator==(const ConfidentialKeyHash& a, const ConfidentialKeyHash& b)
+    {
+        return a.GetSpend() == b.GetSpend() && a.GetBlinding() == b.GetBlinding();
+    }
+    friend bool operator<(const ConfidentialKeyHash& a, const ConfidentialKeyHash& b)
+    {
+        if (a.GetSpend() < b.GetSpend()) return true;
+        if (b.GetSpend() < a.GetSpend()) return false;
+        return a.GetBlinding() < b.GetBlinding();
+    }
+};
+
 /**
  * A txout script categorized into standard templates.
  *  * CNoDestination: Optionally a script, no corresponding address.
@@ -126,9 +163,10 @@ public:
  *  * WitnessV0KeyHash: TxoutType::WITNESS_V0_KEYHASH destination (P2WPKH address)
  *  * WitnessV1Taproot: TxoutType::WITNESS_V1_TAPROOT destination (P2TR address)
  *  * WitnessUnknown: TxoutType::WITNESS_UNKNOWN destination (P2W??? address)
+ *  * ConfidentialKeyHash: RCPU confidential address (P2WPKH spend + blinding pubkey)
  *  A CTxDestination is the internal data type encoded in a bitcoin address
  */
-using CTxDestination = std::variant<CNoDestination, PubKeyDestination, PKHash, ScriptHash, WitnessV0ScriptHash, WitnessV0KeyHash, WitnessV1Taproot, WitnessUnknown>;
+using CTxDestination = std::variant<CNoDestination, PubKeyDestination, PKHash, ScriptHash, WitnessV0ScriptHash, WitnessV0KeyHash, WitnessV1Taproot, WitnessUnknown, ConfidentialKeyHash>;
 
 /** Check whether a CTxDestination corresponds to one with an address. */
 bool IsValidDestination(const CTxDestination& dest);

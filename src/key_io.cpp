@@ -18,6 +18,75 @@
 /// Maximum witness length for Bech32 addresses.
 static constexpr std::size_t BECH32_WITNESS_PROG_MAX_LEN = 40;
 
+/// RCPU CT confidential addresses encode the witness program together with
+/// the compressed recipient public key (see key_io.h for the layout).
+static constexpr unsigned char CONF_ADDR_VERSION_P2WPKH = 0x00;
+static constexpr std::size_t CONF_ADDR_PROGRAM_LEN = 20;
+static constexpr std::size_t CONF_ADDR_PUBKEY_LEN = CPubKey::COMPRESSED_SIZE;
+
+static constexpr const char* CONF_BECH32M_CHARSET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l";
+
+static std::vector<unsigned char> ConfBech32mHrpExpand(const std::string& hrp)
+{
+    std::vector<unsigned char> ret;
+    for (char c : hrp) {
+        ret.push_back(static_cast<unsigned char>(c) >> 5);
+    }
+    ret.push_back(0);
+    for (char c : hrp) {
+        ret.push_back(static_cast<unsigned char>(c) & 31);
+    }
+    return ret;
+}
+
+static uint32_t ConfBech32mPolymod(const std::vector<unsigned char>& values)
+{
+    static const uint32_t GEN[5] = {0x3b6a57b2u, 0x26508e6du, 0x1ea119fau, 0x3d4233ddu, 0x2a1462b3u};
+    uint32_t chk = 1;
+    for (unsigned char v : values) {
+        const uint32_t b = chk >> 25;
+        chk = ((chk & 0x1ffffffu) << 5) ^ v;
+        for (int i = 0; i < 5; ++i) {
+            if ((b >> i) & 1) chk ^= GEN[i];
+        }
+    }
+    return chk;
+}
+
+/// Bech32m decoder that, unlike Bitcoin Core's bech32::Decode, accepts payloads
+/// longer than 90 chars, which is required for 54-byte RCPU confidential
+/// addresses (BIP-350 checksum constant 0x2bc830a3 is used).
+static bool ConfBech32mDecode(std::string& hrp, std::vector<unsigned char>& data, const std::string& str)
+{
+    const size_t sep = str.rfind('1');
+    if (sep == std::string::npos || sep < 1 || sep + 7 > str.size()) {
+        return false;
+    }
+    hrp = str.substr(0, sep);
+    for (char c : hrp) {
+        const unsigned char uc = static_cast<unsigned char>(c);
+        if (uc < 33 || uc > 126) return false;
+    }
+    data.clear();
+    for (size_t i = sep + 1; i < str.size(); ++i) {
+        const char* found = strchr(CONF_BECH32M_CHARSET, str[i]);
+        if (found == nullptr) {
+            return false;
+        }
+        data.push_back(static_cast<unsigned char>(found - CONF_BECH32M_CHARSET));
+    }
+    if (data.size() < 6) {
+        return false;
+    }
+    std::vector<unsigned char> values = ConfBech32mHrpExpand(hrp);
+    values.insert(values.end(), data.begin(), data.end());
+    if (ConfBech32mPolymod(values) != 0x2bc830a3u) {
+        return false;
+    }
+    data.resize(data.size() - 6);
+    return true;
+}
+
 namespace {
 class DestinationEncoder
 {
@@ -84,10 +153,29 @@ public:
 
     std::string operator()(const CNoDestination& no) const { return {}; }
     std::string operator()(const PubKeyDestination& pk) const { return {}; }
+
+    std::string operator()(const ConfidentialKeyHash& id) const
+    {
+        // RCPU CT: encode the spend program hash plus the embedded blinding
+        // public key into a single confidential address ("rcpux1...").
+        return EncodeConfidentialAddress(id.GetSpend(), id.GetBlinding(), m_params);
+    }
 };
 
 CTxDestination DecodeDestination(const std::string& str, const CChainParams& params, std::string& error_str, std::vector<int>* error_locations)
 {
+    // RCPU CT: confidential addresses ("rcpux1...") must be recognized before
+    // the generic bech32 path below, otherwise their HRP would be rejected as
+    // an "Invalid or unsupported prefix" for the plain "rcpu" HRP.
+    if (IsConfidentialAddress(str, params)) {
+        CTxDestination dest;
+        CPubKey pubkey;
+        if (DecodeConfidentialAddress(str, params, dest, pubkey, error_str)) {
+            return dest;
+        }
+        return CNoDestination();
+    }
+
     std::vector<unsigned char> data;
     uint160 hash;
     error_str = "";
@@ -316,4 +404,91 @@ bool IsValidDestinationString(const std::string& str, const CChainParams& params
 bool IsValidDestinationString(const std::string& str)
 {
     return IsValidDestinationString(str, Params());
+}
+
+bool IsConfidentialAddress(const std::string& str, const CChainParams& params)
+{
+    const std::string& hrp = params.ConfidentialBech32HRP();
+    return str.size() > hrp.size() + 1 &&
+           ToLower(str.substr(0, hrp.size())) == hrp &&
+           str[hrp.size()] == '1';
+}
+
+std::string EncodeConfidentialAddress(const CTxDestination& dest, const CPubKey& pubkey, const CChainParams& params)
+{
+    const WitnessV0KeyHash* keyid = std::get_if<WitnessV0KeyHash>(&dest);
+    if (keyid == nullptr) {
+        return "";
+    }
+    if (!pubkey.IsValid() || !pubkey.IsCompressed()) {
+        return "";
+    }
+    // HASH160(pubkey) must match the witness program of the destination: the
+    // spend key doubles as the blinding key, so an address that disagrees
+    // with this relation is malformed and must never be encoded.
+    if (pubkey.GetID() != ToKeyID(*keyid)) {
+        return "";
+    }
+
+    std::vector<unsigned char> payload;
+    payload.reserve(1 + CONF_ADDR_PROGRAM_LEN + CONF_ADDR_PUBKEY_LEN);
+    payload.push_back(CONF_ADDR_VERSION_P2WPKH);
+    payload.insert(payload.end(), keyid->begin(), keyid->end());
+    payload.insert(payload.end(), pubkey.begin(), pubkey.end());
+
+    std::vector<unsigned char> data;
+    if (!ConvertBits<8, 5, true>([&](unsigned char c) { data.push_back(c); }, payload.begin(), payload.end())) {
+        return "";
+    }
+    // bech32::Encode has no length limit (only bech32::Decode rejects > 90 chars).
+    return bech32::Encode(bech32::Encoding::BECH32M, params.ConfidentialBech32HRP(), data);
+}
+
+bool DecodeConfidentialAddress(const std::string& str, const CChainParams& params, CTxDestination& dest, CPubKey& pubkey, std::string& error_str)
+{
+    dest = CNoDestination();
+    pubkey = CPubKey();
+    error_str = "";
+
+    std::string hrp;
+    std::vector<unsigned char> data;
+    if (!ConfBech32mDecode(hrp, data, str)) {
+        error_str = "Invalid checksum or encoding of confidential address";
+        return false;
+    }
+    if (hrp != params.ConfidentialBech32HRP()) {
+        error_str = strprintf("Invalid or unsupported prefix for confidential address (expected %s, got %s).", params.ConfidentialBech32HRP(), hrp);
+        return false;
+    }
+
+    std::vector<unsigned char> payload;
+    if (!ConvertBits<5, 8, false>([&](unsigned char c) { payload.push_back(c); }, data.begin(), data.end())) {
+        error_str = "Invalid padding in confidential address data";
+        return false;
+    }
+    if (payload.size() != 1 + CONF_ADDR_PROGRAM_LEN + CONF_ADDR_PUBKEY_LEN) {
+        error_str = strprintf("Invalid payload size for confidential address (%d bytes)", payload.size());
+        return false;
+    }
+    if (payload[0] != CONF_ADDR_VERSION_P2WPKH) {
+        error_str = strprintf("Unsupported confidential address version (%d)", payload[0]);
+        return false;
+    }
+
+    WitnessV0KeyHash spend;
+    std::copy(payload.begin() + 1, payload.begin() + 1 + CONF_ADDR_PROGRAM_LEN, spend.begin());
+    pubkey = CPubKey(payload.begin() + 1 + CONF_ADDR_PROGRAM_LEN, payload.end());
+    if (!pubkey.IsValid() || !pubkey.IsCompressed()) {
+        error_str = "Invalid public key in confidential address";
+        return false;
+    }
+    // The address embeds a single key used both for spending (witness program)
+    // and ECDH blinding; enforce that relation so no two-key confusion exists.
+    if (pubkey.GetID() != ToKeyID(spend)) {
+        error_str = "Public key does not match the spend program hash of the confidential address";
+        return false;
+    }
+
+    dest = ConfidentialKeyHash(spend, pubkey);
+    return true;
 }

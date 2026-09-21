@@ -98,6 +98,7 @@ bool ExtractDestination(const CScript& scriptPubKey, CTxDestination& addressRet)
         return false;
     } // no default case, so the compiler can warn about missing cases
     assert(false);
+    return false;
 }
 
 namespace {
@@ -143,6 +144,14 @@ public:
     {
         return CScript() << CScript::EncodeOP_N(id.GetWitnessVersion()) << id.GetWitnessProgram();
     }
+
+    CScript operator()(const ConfidentialKeyHash& id) const
+    {
+        // RCPU CT: a confidential address spends as an ordinary P2WPKH
+        // output on chain. The embedded blinding public key is used on the
+        // send side only (ECDH blinding, path B); consensus is untouched.
+        return CScript() << OP_0 << ToByteVector(id.GetSpend());
+    }
 };
 
 class ValidDestinationVisitor
@@ -156,6 +165,7 @@ public:
     bool operator()(const WitnessV0ScriptHash& dest) const { return true; }
     bool operator()(const WitnessV1Taproot& dest) const { return true; }
     bool operator()(const WitnessUnknown& dest) const { return true; }
+    bool operator()(const ConfidentialKeyHash& dest) const { return true; }
 };
 } // namespace
 
