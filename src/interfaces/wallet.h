@@ -146,7 +146,8 @@ public:
         const wallet::CCoinControl& coin_control,
         bool sign,
         int& change_pos,
-        CAmount& fee) = 0;
+        CAmount& fee,
+        std::map<unsigned int, std::string>* vout_addr = nullptr) = 0;
 
     //! Commit transaction.
     virtual void commitTransaction(CTransactionRef tx,
