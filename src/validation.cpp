@@ -3900,10 +3900,25 @@ bool CheckBlock(const CBlock& block, BlockValidationState& state, const Consensu
     if (block.fChecked)
         return true;
 
-    // Check that the header is valid (particularly PoW).  This is mostly
+// Check that the header is valid (particularly PoW).  This is mostly
     // redundant with the call in AcceptBlockHeader.
-    if (!CheckBlockHeader(block, state, consensusParams, fCheckPOW))
+    // !RCPU
+    // On RandomX chains the full PoW check is only performed in
+    // AcceptBlockHeader with the prev-block timestamp (see P0-2): it selects
+    // the RandomX epoch from min(block.nTime, prevBlockTime +
+    // MAX_FUTURE_BLOCK_TIME) so mining and validation agree. Here, inside the
+    // context-free CheckBlock, we only run the cheap commitment check that
+    // does not depend on the epoch (POW_VERIFY_COMMITMENT_ONLY). Running a
+    // full RandomX verification here would pick the epoch from block.nTime
+    // alone, which on regtest (genesis timestamp 2011 vs. current time 2026)
+    // disagrees with the epoch used at mining time and rejects valid blocks.
+    // !RCPU END
+    if (g_isRandomX) {
+        if (fCheckPOW && !CheckProofOfWorkRandomX(block, consensusParams, POW_VERIFY_COMMITMENT_ONLY))
+            return state.Invalid(BlockValidationResult::BLOCK_INVALID_HEADER, "high-hash", "proof of work failed");
+    } else if (!CheckBlockHeader(block, state, consensusParams, fCheckPOW)) {
         return false;
+    }
 
     // Signet only: check block solution
     if (consensusParams.signet_blocks && fCheckPOW && !CheckSignetBlockSolution(block, consensusParams)) {
