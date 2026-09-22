@@ -102,6 +102,14 @@ QList<TransactionRecord> TransactionRecord::decomposeTransaction(const interface
                 }
 
 CAmount nValue = i < wtx.txout_amount.size() ? wtx.txout_amount[i] : GetOutputAmount(txout).value_or(0);
+                // RCPU CT: sender cannot unblind foreign Path-B output, fall back
+                // to the plaintext amount persisted at send time (vout_amount_<idx>).
+                if (nValue == 0) {
+                    const auto it = mapValue.find("vout_amount_" + std::to_string(i));
+                    if (it != mapValue.end()) {
+                        nValue = LocaleIndependentAtoi<CAmount>(it->second);
+                    }
+                }
                 /* Add fee to first output */
                 if (nTxFee > 0)
                 {
@@ -123,6 +131,14 @@ CAmount nValue = i < wtx.txout_amount.size() ? wtx.txout_amount[i] : GetOutputAm
 TransactionRecord sub(hash, nTime);
                 sub.idx = i; // vout index
                 sub.credit = i < wtx.txout_amount.size() ? wtx.txout_amount[i] : GetOutputAmount(txout).value_or(0);
+                // RCPU CT: sender cannot unblind foreign Path-B output, fall back
+                // to the plaintext amount persisted at send time (vout_amount_<idx>).
+                if (sub.credit == 0) {
+                    const auto it = mapValue.find("vout_amount_" + std::to_string(i));
+                    if (it != mapValue.end()) {
+                        sub.credit = LocaleIndependentAtoi<CAmount>(it->second);
+                    }
+                }
                 sub.involvesWatchAddress = mine & ISMINE_WATCH_ONLY;
                 if (wtx.txout_address_is_mine[i])
                 {
