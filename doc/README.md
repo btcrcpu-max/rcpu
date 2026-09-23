@@ -9,10 +9,21 @@ transactions, and stores the blockchain history.
 
 ### Disk usage
 
-The RCPU blockchain is relatively young (launched September 2026) and lightweight.
-As of late 2026 the full chain is well under **1 GB** and a full node can run
-comfortably on a small VPS with 10 GB of disk space. SSD is recommended but not
-required.
+The RCPU blockchain is relatively young (launched September 2026) and
+lightweight. Exact disk and RAM needs depend on the current chain height;
+measure on the hardware you plan to run before provisioning:
+
+```bash
+# Chain data directory size (mainnet datadir layout is ~/.rcpu/rcpu/):
+du -sh ~/.rcpu/rcpu
+
+# Resident RAM of a synced, idle rcpud:
+ps -o rss= -C rcpud
+```
+
+> Documented minimum/recommended disk & RAM figures will be added here once
+> measured at the current chain height (numbers are currently pending
+> measurement, not filled in). SSD is recommended but not required.
 
 Initial sync takes a few minutes to an hour depending on your connection and
 hardware - not days.

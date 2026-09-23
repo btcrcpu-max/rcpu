@@ -3,12 +3,14 @@
 
 # Network
 server=1
-txindex=1
+txindex=0
 port=7227
 
 # RPC
-rpcuser=YOUR_RPC_USER
-rpcpassword=YOUR_STRONG_PASSWORD
+# With server=1 the node creates a random auth cookie at ~/.rcpu/rcpu/.cookie;
+# rcpu-cli reads it automatically. A static rpcuser/rpcpassword is optional:
+#   rpcuser=YOUR_RPC_USER
+#   rpcpassword=YOUR_STRONG_PASSWORD
 rpcbind=127.0.0.1
 rpcport=7337
 
@@ -17,9 +19,16 @@ logips=1
 listen=1
 
 # Peers
-# addnode=PEER_IP:7227
+# Seeds mirror the compiled list in src/chainparamsseeds.h
+# (2 DNS + 5 IPs; keep in sync with docs/nodes/README.md and
+# share/examples/rcpu.conf).
 addnode=seed1.rcpu.top:7227
 addnode=seed2.rcpu.top:7227
+addnode=207.57.129.188:7227
+addnode=38.147.171.29:7227
+addnode=43.159.51.23:7227
+addnode=38.55.199.177:7227
+addnode=119.28.152.245:7227
 
 # Memory / performance
 dbcache=2048

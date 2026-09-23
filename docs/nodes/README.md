@@ -5,12 +5,11 @@ This guide covers installing, configuring, and running a RCPU full node on Linux
 ## Prerequisites
 
 - Ubuntu 22.04+ or Debian 12+
-- 4 GB RAM minimum (8 GB recommended)
-- 20 GB free disk space (grows with chain)
+- Disk/RAM: depends on current chain height and node usage — measure before
+  provisioning (see [Resource requirements](#resource-requirements)).
 
 RandomX + CT from genesis is heavier than a plain Bitcoin node.
-4 GB is the documented minimum; prefer 8 GB if the node also mines
-or serves wallets.
+Prefer more RAM if the node also mines or serves wallets.
 
 ## Install
 
@@ -67,9 +66,12 @@ Canonical paths: see [doc/consensus-params.md](../../doc/consensus-params.md).
 
 ```ini
 server=1
-txindex=1
-rpcuser=your_rpc_user
-rpcpassword=your_strong_password
+txindex=0
+# RPC auth: with server=1 the node creates a random auth cookie at
+# ~/.rcpu/rcpu/.cookie; rcpu-cli and curl can read it directly.
+# A static rpcuser/rpcpassword is optional (see cookie docs):
+#   rpcuser=your_rpc_user
+#   rpcpassword=your_strong_password
 rpcbind=127.0.0.1
 rpcport=7337
 port=7227
@@ -138,10 +140,30 @@ ss -tlnp | grep 7337
 # Should show: 127.0.0.1:7337
 
 curl -X POST http://127.0.0.1:7337 \
-  -u your_rpc_user:your_strong_password \
+  --user "$(cat ~/.rcpu/rcpu/.cookie)" \
   -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"1.0","id":"1","method":"getblockchaininfo","params":[]}'
 ```
+
+`rcpu-cli` reads the auth cookie automatically (no `-rpcuser`/`-rpcpassword`
+needed when the cookie exists) — see [`doc/rcpu-conf.md`](../../doc/rcpu-conf.md).
+
+## Resource requirements
+
+Exact numbers depend on the current chain height and node usage; measure on
+the hardware you plan to run before provisioning:
+
+```bash
+# Chain data directory size (mainnet datadir layout is ~/.rcpu/rcpu/):
+du -sh ~/.rcpu/rcpu
+
+# Resident RAM of a synced, idle rcpud:
+ps -o rss= -C rcpud
+```
+
+> Documented minimum/recommended disk & RAM figures will be added here once
+> measured at the current chain height (numbers are currently pending
+> measurement, not filled in).
 
 ## Block Subsidy
 
