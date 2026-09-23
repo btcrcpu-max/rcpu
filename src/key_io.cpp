@@ -98,10 +98,10 @@ public:
 
     std::string operator()(const PKHash& id) const
     {
-        // RCPU mainnet is bech32-only (README "Address Format"). Never emit
-        // base58 legacy addresses on mainnet, even though the template
-        // prefix bytes remain in chainparams for test/signet and decoding.
-        if (m_params.GetChainType() == ChainType::RCPUMAIN) return {};
+        // RCPU supports Base58 legacy (P2PKH) and P2SH-SegWit receive
+        // addresses on every chain, including mainnet. The template prefix
+        // bytes in chainparams are used for both encode and decode, so the
+        // addresses round-trip correctly.
         std::vector<unsigned char> data = m_params.Base58Prefix(CChainParams::PUBKEY_ADDRESS);
         data.insert(data.end(), id.begin(), id.end());
         return EncodeBase58Check(data);
@@ -109,7 +109,6 @@ public:
 
     std::string operator()(const ScriptHash& id) const
     {
-        if (m_params.GetChainType() == ChainType::RCPUMAIN) return {};
         std::vector<unsigned char> data = m_params.Base58Prefix(CChainParams::SCRIPT_ADDRESS);
         data.insert(data.end(), id.begin(), id.end());
         return EncodeBase58Check(data);

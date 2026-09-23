@@ -65,8 +65,19 @@ bool UnblindWalletOutput(const CWallet& wallet, const CTxOut& txout, CAmount& va
             } else if (const auto* tr = std::get_if<WitnessV1Taproot>(&dest)) {
                 is_taproot = true;
                 for (const auto* spkman : wallet.GetScriptPubKeyMans(txout.scriptPubKey)) {
-                    const auto provider = spkman->GetSolvingProvider(txout.scriptPubKey);
-                    if (provider && provider->GetKeyByXOnly(*tr, key)) break;
+                    // GetSolvingProvider omits private keys for descriptor
+                    // SPKMs (GetSigningProvider with include_private=false), so
+                    // GetKeyByXOnly would fail and the encrypted Path-B output
+                    // would unblind to 0. Use the public GetPrivKey accessor to
+                    // fetch the private key instead.
+                    if (const auto* desc = dynamic_cast<const DescriptorScriptPubKeyMan*>(spkman)) {
+                        CKeyID kd;
+                        CKey k;
+                        if (desc->GetPrivKey(txout.scriptPubKey, kd, k) && k.IsValid()) { key = k; break; }
+                    } else {
+                        const auto provider = spkman->GetSolvingProvider(txout.scriptPubKey);
+                        if (provider && provider->GetKeyByXOnly(*tr, key)) break;
+                    }
                 }
             } else {
                 // P2SH / P2WSH / unknown witness programs / bare scripts: no single key.
@@ -137,12 +148,20 @@ bool UnblindConfidentialOutput(const CWallet& wallet, const CTxOut& txout,
         return false;
     }
     CKeyID keyid;
+    bool is_taproot = false;
     if (const auto* pk = std::get_if<PubKeyDestination>(&dest)) {
         keyid = pk->GetPubKey().GetID();
     } else if (const auto* pkh = std::get_if<PKHash>(&dest)) {
         keyid = ToKeyID(*pkh);
     } else if (const auto* wpkh = std::get_if<WitnessV0KeyHash>(&dest)) {
         keyid = ToKeyID(*wpkh);
+    } else if (const auto* tr = std::get_if<WitnessV1Taproot>(&dest)) {
+        // Path-B (confidential, rcpux1...) outputs are bound to a taproot
+        // script. Without this branch UnblindConfidentialOutput returned false
+        // for every P2TR output, so receive / balance / history credited 0 --
+        // even though the wallet owns the key (UnblindWalletOutput already
+        // handled this case). Mirror that key resolution here.
+        is_taproot = true;
     } else {
         return false;
     }
@@ -154,10 +173,23 @@ bool UnblindConfidentialOutput(const CWallet& wallet, const CTxOut& txout,
     // outputs -- change, balance, lists -- would all unblind to 0.
     CKey key;
     bool have_key = false;
+    const auto* tr_dest = std::get_if<WitnessV1Taproot>(&dest);
     for (ScriptPubKeyMan* man : wallet.GetScriptPubKeyMans(txout.scriptPubKey)) {
+        if (is_taproot) {
+            // Fetch the taproot private key via the public GetPrivKey accessor,
+            // mirroring UnblindWalletOutput above. GetSolvingProvider omits
+            // private keys for descriptor SPKMs, so GetKeyByXOnly fails.
+            if (const auto* desc = dynamic_cast<const DescriptorScriptPubKeyMan*>(man)) {
+                CKeyID kd;
+                if (desc->GetPrivKey(txout.scriptPubKey, kd, key)) { have_key = true; break; }
+            } else {
+                std::unique_ptr<SigningProvider> spk = man->GetSolvingProvider(txout.scriptPubKey);
+                if (spk && tr_dest && spk->GetKeyByXOnly(*tr_dest, key)) { have_key = true; break; }
+            }
+        }
         // Descriptor SPKMs keep private keys behind a separate accessor; the
         // solving provider intentionally omits them, so try GetPrivKey first.
-        if (auto* desc = dynamic_cast<DescriptorScriptPubKeyMan*>(man)) {
+        else if (auto* desc = dynamic_cast<DescriptorScriptPubKeyMan*>(man)) {
             CKeyID kd;
             if (desc->GetPrivKey(txout.scriptPubKey, kd, key)) { have_key = true; break; }
         } else {
