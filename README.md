@@ -42,11 +42,21 @@ and is not the block date. Do not change either value.
 
 ## Address Format
 
-RCPU uses **Bech32 (SegWit)** addresses only, prefixed with `rcpu1`.
+RCPU defaults to **Bech32 (SegWit)** addresses, prefixed with `rcpu1`.
 
-> **Do not use Base58 legacy addresses.** The base58 prefix bytes (0/5/128)
-> are inherited from the Bitcoin template for code compatibility but are
-> **not supported on the RCPU mainnet**. Only `rcpu1...` addresses are valid.
+> Base58 legacy addresses (`1...` / `3...`) are recognized and round-trip on
+> the RCPU mainnet since v1.0.23 (encode and decode), matching Bitcoin
+> address tooling. However, **wallet RPCs reject `legacy` on mainnet**
+> (`getnewaddress` / `getrawchangeaddress`), and WIF private keys stay
+> disabled. Do not generate Base58 addresses with the wallet; use `rcpu1...`
+> (and `rcpux1...` for confidential receives).
+
+RCPU also supports **confidential addresses** (`rcpux1...`) since v1.0.21.
+Sending to a `rcpux1...` address uses Path-B (ECDH) blinding: only the
+recipient can unblind the amount. Sending to an ordinary `rcpu1...` address
+falls back to Path-A (format-only confidentiality). See
+[doc/confidential-transactions.md](doc/confidential-transactions.md) and
+[doc/threat-model.md](doc/threat-model.md).
 
 ## Quick Start
 

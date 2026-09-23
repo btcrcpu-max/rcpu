@@ -69,3 +69,37 @@ This means:
   for blinded outputs, not the plaintext amount.
 - Block explorers should display the commitment hash, not a numeric amount.
 - The actual amount is only visible to the wallet that owns the output.
+
+## Sending: Path A vs Path B
+
+Since v1.0.21 the wallet supports two blinding paths:
+
+- **Path A (format-only)**: legacy nonce prefix `0x02` written on-chain.
+  Anyone can rewind and read the amount. Used when a recipient public key
+  cannot be resolved (ordinary `rcpu1...` address without mapped pubkey,
+  or `-ctlegacy=1`).
+- **Path B (confidential)**: ECDH with the recipient spend pubkey, ephemeral
+  key written as `0x03`-prefixed compressed pubkey. Only the recipient can
+  unblind. Used for `rcpux1...` confidential addresses and recipients with a
+  known pubkey; a missing key on a path-B-required output **fails closed**.
+
+Wallet rule: if `recipient_keys` is non-empty, every non-fee output must have
+a pubkey; change outputs use the wallet's own pubkey (path B).
+
+## Confidential addresses (`rcpux1...`)
+
+- Encoding/decoding/validation in `src/key_io.cpp` since v1.0.21; on mainnet
+  the prefix is `rcpux1` (regtest: `rrcpux1`).
+- The sending wallet persists the original confidential address in `mapValue`
+  (`vout_addr`), so history/list shows the human-readable address.
+- The on-chain output is an ordinary P2TR script; confidentiality comes from
+  ECDH blinding, not from a new script type (consensus unchanged).
+
+## `-ctlegacy` status (mainnet)
+
+`-ctlegacy=1` (wallet-wide path-A fallback) is **usable on mainnet** since
+v1.0.18, default 0. With the default, outputs lacking a resolvable recipient
+pubkey fall back to path A per-output automatically, so bare `rcpu1...`
+sends work without the flag. The path-A spending ban (`nBanPathAHeight`)
+is **not active** on mainnet. Path A is not confidential — use it only for
+compatibility.
