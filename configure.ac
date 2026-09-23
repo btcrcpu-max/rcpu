@@ -3,7 +3,7 @@ define(_CLIENT_VERSION_RC, 0)
 define(_CLIENT_VERSION_IS_RELEASE, true)
 define(_COPYRIGHT_YEAR, 2026)
 define(_COPYRIGHT_HOLDERS,[The %s developers])
-define(_COPYRIGHT_HOLDERS_SUBSTITUTION,[[Bitcoin Core]])
+define(_COPYRIGHT_HOLDERS_SUBSTITUTION,[[RCPU Core]])
 
 dnl !RCPU
 define(_RCPU_CLIENT_VERSION_MAJOR, 1)
