@@ -880,7 +880,14 @@ char rx_hash[RANDOMX_HASH_SIZE];
         else {
             // If mining, randomx hash generated, so now check if commitment meets target
             hashRandomX = uint256(std::vector<unsigned char>(rx_hash, rx_hash + RANDOMX_HASH_SIZE));
+            // !RCPU: In mining mode, always set the outHash even if commitment does not meet target.
+            // Pool software needs the hash to verify share difficulty. The commitment check is done
+            // by the caller (pool.js) using the returned commitment value.
+            if (outHash != nullptr) {
+                *outHash = hashRandomX;
+            }
             if (UintToArith256(GetRandomXCommitment(block, &hashRandomX)) > bnTarget) {
+                // Return false but outHash is already set above
                 return false;
             }
             fCommitmentVerified = true;

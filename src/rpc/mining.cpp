@@ -1252,14 +1252,11 @@ static RPCHelpMan computerandomxhash()
     uint256 rx_hash;
     bool hash_ok = CheckProofOfWorkRandomX(header, consensusParams, POW_VERIFY_MINING, &rx_hash, prevBlockTime);
 
-    // !RCPU N-07: surface failures as an RPC error instead of returning a
-    // zero/undefined hash -- a failed RandomX computation must never look
-    // like a successful result (e.g. hash 0000...0000) to the pool.
-    if (!hash_ok) {
-        throw JSONRPCError(RPC_VERIFY_ERROR,
-            "RandomX hash computation failed (set nBits does not meet powLimit, "
-            "RandomX VM unavailable, or commitment does not meet the target)");
-    }
+    // !RCPU: For mining mode (POW_VERIFY_MINING), the hash is always computed
+    // and outHash is set even if the commitment does not meet the target.
+    // hash_ok indicates whether the commitment meets the target.
+    // We return the computed hash and commitment so the pool can verify
+    // share difficulty independently.
 
     // Compute commitment using the hash
     uint256 rx_commitment = GetRandomXCommitment(header, &rx_hash);
@@ -1271,7 +1268,7 @@ static RPCHelpMan computerandomxhash()
     result.pushKV("hash", rx_hash.GetHex());
     result.pushKV("commitment", rx_commitment.GetHex());
     result.pushKV("block_hash", block_hash.GetHex());
-    result.pushKV("hash_verified", true);
+    result.pushKV("hash_verified", hash_ok);
     return result;
 },
     };
