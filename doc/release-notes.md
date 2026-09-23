@@ -2,6 +2,9 @@
 
 RCPU Core release notes live in [doc/release-notes/](release-notes/):
 
+- [v1.0.23](release-notes/v1.0.23.md) — mainnet Base58 address encoding restored; P2TR Path-B unblind fix
+- [v1.0.22](release-notes/v1.0.22.md) — `computerandomxhash` returns computed hash in mining mode
+- [v1.0.21](release-notes/v1.0.21.md) — confidential addresses (`rcpux1...`); Path-A / Path-B wallet sending
 - [v1.0.16](release-notes/v1.0.16.md) — consensus soft fork: B2 reject v2-spend-CT, A2 rangeproof cap
 - [v1.0.15](release-notes/v1.0.15.md) — security fixes: blind skip, fee output value, ASERT clamp, RNG strong seed
 - [v1.0.14](release-notes/v1.0.14.md) — security: constant-time CKey compare; walletnotify %w unescaped
