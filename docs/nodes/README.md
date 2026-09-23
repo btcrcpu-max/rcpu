@@ -17,7 +17,7 @@ or serves wallets.
 Download the latest release from GitHub Releases:
 
 ```bash
-VERSION=1.0.16
+VERSION=$(curl -sI https://github.com/btcrcpu-max/rcpu/releases/latest | awk -F'/tag/v' '/^location:/{print $2}' | tr -d '\r')
 wget https://github.com/btcrcpu-max/rcpu/releases/download/v${VERSION}/rcpu-${VERSION}-x86_64-linux-gnu.tgz
 wget https://github.com/btcrcpu-max/rcpu/releases/download/v${VERSION}/SHA256SUMS-linux.txt
 ```
@@ -25,6 +25,9 @@ wget https://github.com/btcrcpu-max/rcpu/releases/download/v${VERSION}/SHA256SUM
 Verify:
 
 ```bash
+# If the release also publishes SHA256SUMS-linux.txt.asc, verify the detached
+# signature first (see doc/release-process.md for the signing policy):
+#   gpg --verify SHA256SUMS-linux.txt.asc SHA256SUMS-linux.txt
 sha256sum -c SHA256SUMS-linux.txt
 ```
 

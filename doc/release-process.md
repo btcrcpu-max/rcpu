@@ -27,10 +27,11 @@ and `configure.ac`.
 
 ### Build Steps
 
-1. Tag the release:
+1. Tag the release (use the current version being released, e.g.
+   `v1.0.23`):
 
 ```bash
-   git tag -s v1.0.16 -m "RCPU Core v1.0.16"
+   git tag -s v1.0.23 -m "RCPU Core v1.0.23"
    ```
 
 2. Build on a clean Ubuntu 22.04 environment:
@@ -50,7 +51,7 @@ and `configure.ac`.
 3. Create the tarball:
 
    ```bash
-   VERSION=1.0.16      # must equal the tag being released
+   VERSION=1.0.23      # must equal the tag being released
    make install DESTDIR="$PWD/stage"
    tar -czf rcpu-${VERSION}-x86_64-linux-gnu.tgz \
      -C stage/usr/local/bin rcpud rcpu-cli rcpu-tx rcpu-util rcpu-wallet
@@ -62,24 +63,26 @@ and `configure.ac`.
    sha256sum rcpu-${VERSION}-x86_64-linux-gnu.tgz > SHA256SUMS-linux.txt
    ```
 
-5. Sign the checksums (optional; the GitHub Actions release workflow
-   currently uploads `SHA256SUMS-linux.txt` without a detached signature):
+5. Sign the checksums with a detached signature and **upload the resulting
+   `.asc` file** — the release workflow publishes `SHA256SUMS-linux.txt` and
+   its detached signature `SHA256SUMS-linux.txt.asc`:
 
    ```bash
    gpg --detach-sign --armor SHA256SUMS-linux.txt
+   # produces SHA256SUMS-linux.txt.asc; both files must be uploaded
    ```
 
 ### Reproducible Builds
 
 RCPU inherits Bitcoin Core's Guix-based reproducible build system from
-`contrib/guix`. The Guix configuration is not yet customized for RCPU
-binaries. Until Guix is fully adapted:
+`contrib/guix`. The Guix configuration is **not yet customized for RCPU
+binaries**; RCPU releases are **not** advertised as reproducible builds. Until
+Guix is fully adapted:
 
-- Reproducibility is **best-effort** using identical Ubuntu 22.04 environments.
-- The same source tree, compiler, and dependency versions will produce
-  identical binaries.
-- Future releases will integrate Guix for cryptographically verified
-  reproducibility.
+- Releases are built on Ubuntu 22.04; built the same way they are expected to
+  be reproducible, but this is **not** cryptographically verified.
+- Future releases may integrate Guix for cryptographically verified
+  reproducibility; this will be announced before being claimed.
 
 ### Gitian (Legacy)
 
@@ -96,12 +99,13 @@ the Bitcoin Core build process can adapt the Guix configuration for RCPU.
 - The public key is committed to the repository as `RCPU-DEV-GPG-KEY.asc`.
 - Verify signatures:
 
-  ```bash
-  gpg --import RCPU-DEV-GPG-KEY.asc
-  # Detached GPG signatures are not published with current releases;
-  # verify the checksums only.
-  sha256sum -c SHA256SUMS-linux.txt
-  ```
+```bash
+   gpg --import RCPU-DEV-GPG-KEY.asc
+   # Releases publish a detached signature; verify it against the checksums,
+   # then verify the checksums against the tarball.
+   gpg --verify SHA256SUMS-linux.txt.asc SHA256SUMS-linux.txt
+   sha256sum -c SHA256SUMS-linux.txt
+   ```
 
 ## Release Checklist
 
@@ -109,8 +113,9 @@ the Bitcoin Core build process can adapt the Guix configuration for RCPU.
 2. [ ] Version bumped in `configure.ac` and `src/clientversion.h`
 3. [ ] Git tag created and signed
 4. [ ] Binaries built on clean environment
-5. [ ] SHA256SUMS-linux.txt generated
-6. [ ] GitHub Release created with tarball and SHA256SUMS-linux.txt
+5. [ ] SHA256SUMS-linux.txt generated and signed (`SHA256SUMS-linux.txt.asc`)
+6. [ ] GitHub Release created with tarball, SHA256SUMS-linux.txt and
+      SHA256SUMS-linux.txt.asc
 7. [ ] Release notes added to `doc/release-notes/`
 8. [ ] `doc/consensus-params.md` matches `chainparams.cpp` (chainwork / assumevalid / checkpoints)
 9. [ ] Announcement on Telegram
