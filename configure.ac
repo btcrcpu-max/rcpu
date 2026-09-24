@@ -8,7 +8,7 @@ define(_COPYRIGHT_HOLDERS_SUBSTITUTION,[[RCPU Core]])
 dnl !RCPU
 define(_RCPU_CLIENT_VERSION_MAJOR, 1)
 define(_RCPU_CLIENT_VERSION_MINOR, 0)
-define(_RCPU_CLIENT_VERSION_BUILD, 23)
+define(_RCPU_CLIENT_VERSION_BUILD, 24)
 AC_INIT([rcpu],m4_join([.], _RCPU_CLIENT_VERSION_MAJOR, _RCPU_CLIENT_VERSION_MINOR, _RCPU_CLIENT_VERSION_BUILD)m4_if(_CLIENT_VERSION_RC, [0], [], [rc]_CLIENT_VERSION_RC),[https://github.com/btcrcpu-max/rcpu/issues],[rcpu],[https://github.com/btcrcpu-max/rcpu])
 dnl !RCPU END
 
