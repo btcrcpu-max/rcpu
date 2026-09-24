@@ -76,6 +76,43 @@ jobs:
           path: /tmp/RandomX-1.2.1/build-win/librandomx.a
           retention-days: 1
 
+  parity-gate-windows:
+    needs: build-randomx-windows
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: msys2/setup-msys2@v2
+        with:
+          update: true
+          install: >
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-cmake
+            make
+      - name: Build RandomX library (native Windows)
+        run: |
+          cd /tmp
+          git clone --depth 1 --branch v1.2.1 https://github.com/tevador/RandomX.git RandomX-1.2.1
+          mkdir -p RandomX-1.2.1/build-win
+          cd RandomX-1.2.1/build-win
+          cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF
+          make -j$(nproc)
+          ls -la librandomx.a
+      - name: Verify randomx_calculate_commitment symbol exists
+        run: |
+          nm /tmp/RandomX-1.2.1/build-win/librandomx.a | grep -i calculate_commitment || { echo "ERROR: randomx_calculate_commitment not found"; exit 1; }
+      - name: Parity gate - hash + commitment (A2000, A4000)
+        run: |
+          set -euo pipefail
+          g++ -std=c++17 -O2 \
+            -I/tmp/RandomX-1.2.1/src \
+            -o /tmp/parity.exe \
+            "${GITHUB_WORKSPACE}/contrib/devtools/rx_parity_gate.cpp" \
+            /tmp/RandomX-1.2.1/build-win/librandomx.a
+          /tmp/parity.exe
+
   build-linux:
     needs: build-randomx-linux
     runs-on: ubuntu-22.04
@@ -141,11 +178,9 @@ jobs:
           make install
       - name: Consensus gate - explicit coinbase symbol (Linux)
         run: |
-          # v1.0.9 rule: coinbase outputs must be explicit. The published Linux
-          # binary must carry the enforcement; otherwise the release is blocked.
           BIN="$PWD/depends/x86_64-pc-linux-gnu/bin/rcpud"
           test -x "$BIN" || { echo "ERROR: $BIN missing"; exit 1; }
-          strings "$BIN" | grep -q "bad-cb-confidential" ||             { echo "ERROR: rcpud missing bad-cb-confidential (consensus rule not enforced)"; exit 1; }
+          strings "$BIN" | grep -q "bad-cb-confidential" ||             { echo "ERROR: rcpud missing bad-cb-confidential"; exit 1; }
           strings "$BIN" | grep -q "CheckCoinbaseOutputsExplicit" ||             { echo "ERROR: rcpud missing CheckCoinbaseOutputsExplicit symbol"; exit 1; }
           echo "OK: Linux rcpud enforces explicit-coinbase rule"
       - name: Package Linux
@@ -171,7 +206,7 @@ jobs:
             SHA256SUMS-linux.txt
 
   build-windows:
-    needs: build-randomx-windows
+    needs: [build-randomx-windows, parity-gate-windows]
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
