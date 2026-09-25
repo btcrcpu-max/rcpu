@@ -34,88 +34,54 @@ jobs:
           retention-days: 1
 
   build-randomx-windows:
-    runs-on: ubuntu-22.04
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-      - name: Install mingw
+      - name: Setup MSYS2 / MinGW-w64 native toolchain
+        uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884
+        with:
+          msystem: MINGW64
+          update: false
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-make
+            curl
+            patch
+      - name: Download, patch, and build RandomX (Windows native MinGW-w64)
+        shell: msys2 {0}
         run: |
-          sudo rm -f /etc/apt/sources.list.d/google-chrome.list || true
-          sudo apt-get update -qq
-          sudo apt-get install -y g++-mingw-w64-x86-64-posix
-          sudo update-alternatives --set x86_64-w64-mingw32-g++ /usr/bin/x86_64-w64-mingw32-g++-posix
-      - name: Create MinGW toolchain file
-        run: |
-          cat > /tmp/mingw-w64-x86_64.cmake << 'TOOLCHAIN'
-          set(CMAKE_SYSTEM_NAME Windows)
-          set(CMAKE_SYSTEM_PROCESSOR AMD64)
-          set(CMAKE_C_COMPILER x86_64-w64-mingw32-gcc)
-          set(CMAKE_CXX_COMPILER x86_64-w64-mingw32-g++)
-          set(CMAKE_RC_COMPILER x86_64-w64-mingw32-windres)
-          set(CMAKE_FIND_ROOT_PATH /usr/x86_64-w64-mingw32)
-          set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
-          set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
-          set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
-          TOOLCHAIN
-      - name: Download, patch, and build RandomX (Windows cross)
-        run: |
+          WS="${GITHUB_WORKSPACE//\\//}"
+          set -euo pipefail
           curl --fail -L -o /tmp/randomx-src.tar.gz \
             https://github.com/tevador/RandomX/archive/refs/tags/v1.2.1.tar.gz
           echo "2e6dd3bed96479332c4c8e4cab2505699ade418a07797f64ee0d4fa394555032  /tmp/randomx-src.tar.gz" | sha256sum -c -
           tar -xf /tmp/randomx-src.tar.gz -C /tmp
           cd /tmp/RandomX-1.2.1
-          patch -p1 < "${GITHUB_WORKSPACE}/depends/patches/randomx/custom_configuration.patch"
+          patch -p1 < "$WS/depends/patches/randomx/custom_configuration.patch"
           grep 'RANDOMX_ARGON_SALT' src/configuration.h
           mkdir build-win && cd build-win
-          cmake .. -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_TOOLCHAIN_FILE=/tmp/mingw-w64-x86_64.cmake
-          make -j$(nproc)
+          cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF \
+            -G "MinGW Makefiles"
+          mingw32-make -j$(nproc)
+          test -f librandomx.a
+      - name: Parity gate - native RandomX must reproduce chain hash (A2000 + A4000)
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          WS="${GITHUB_WORKSPACE//\\//}"
+          g++ -std=c++17 -O2 -I/tmp/RandomX-1.2.1/src -o /tmp/parity.exe \
+            "$WS/contrib/devtools/rx_parity_gate.cpp" \
+            /tmp/RandomX-1.2.1/build-win/librandomx.a
+          /tmp/parity.exe || { echo "PARITY GATE FAILED"; exit 1; }
+          mkdir -p ws && cp /tmp/RandomX-1.2.1/build-win/librandomx.a ws/
       - name: Upload RandomX Windows artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: randomx-windows
-          path: /tmp/RandomX-1.2.1/build-win/librandomx.a
+          path: ws/librandomx.a
           retention-days: 1
 
-  parity-gate-windows:
-    needs: build-randomx-windows
-    runs-on: windows-latest
-    defaults:
-      run:
-        shell: msys2 {0}
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
-        with:
-          name: randomx-windows
-          path: /tmp/randomx-windows/
-      - uses: msys2/setup-msys2@v2
-        with:
-          update: true
-          install: >
-            mingw-w64-x86_64-gcc
-            make
-            curl
-            tar
-            binutils
-      - name: Download RandomX source for headers
-        run: |
-          curl --fail -L -o /tmp/randomx-src.tar.gz https://github.com/tevador/RandomX/archive/refs/tags/v1.2.1.tar.gz
-          tar -xf /tmp/randomx-src.tar.gz -C /tmp
-      - name: Parity gate - hash + commitment (A2000, A4000)
-        run: |
-          set -euo pipefail
-          g++ -std=c++17 -O2 \
-            -I/tmp/RandomX-1.2.1/src \
-            -o /tmp/parity.exe \
-            "${GITHUB_WORKSPACE}/contrib/devtools/rx_parity_gate.cpp" \
-            /tmp/randomx-windows/librandomx.a
-          /tmp/parity.exe
-      - name: Upload MSYS2 RandomX library
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: randomx-windows-msys2
-          path: /tmp/randomx-windows/librandomx.a
-          retention-days: 1
   build-linux:
     needs: build-randomx-linux
     runs-on: ubuntu-22.04
@@ -209,7 +175,7 @@ jobs:
             SHA256SUMS-linux.txt
 
   build-windows:
-    needs: [build-randomx-windows, parity-gate-windows]
+    needs: [build-randomx-windows]
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -246,7 +212,7 @@ jobs:
           chmod +x depends/gen_id depends/config.guess depends/config.sub
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
-          name: randomx-windows-msys2
+          name: randomx-windows
           path: /tmp/randomx-windows/
       - name: Build depends
         run: make -C depends HOST=x86_64-w64-mingw32 -j$(nproc)
@@ -362,5 +328,3 @@ jobs:
       - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65
         with:
           files: ${{ env.RELEASE_FILES }}
-
-
