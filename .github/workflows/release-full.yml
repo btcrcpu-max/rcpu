@@ -139,12 +139,20 @@ jobs:
             mingw-w64-x86_64-gcc
             mingw-w64-x86_64-cmake
             make
+            curl
+            patch
+            tar
+            binutils
       - name: Build RandomX library (native Windows)
         run: |
-          cd /tmp
-          git clone --depth 1 --branch v1.2.1 https://github.com/tevador/RandomX.git RandomX-1.2.1
-          mkdir -p RandomX-1.2.1/build-win
-          cd RandomX-1.2.1/build-win
+          curl --fail -L -o /tmp/randomx-src.tar.gz \r
+            https://github.com/tevador/RandomX/archive/refs/tags/v1.2.1.tar.gz
+          echo "2e6dd3bed96479332c4c8e4cab2505699ade418a07797f64ee0d4fa394555032  /tmp/randomx-src.tar.gz" | sha256sum -c -
+          tar -xf /tmp/randomx-src.tar.gz -C /tmp
+          cd /tmp/RandomX-1.2.1
+          patch -p1 < "$(cygpath -u "${GITHUB_WORKSPACE}")/depends/patches/randomx/custom_configuration.patch"
+          grep 'RANDOMX_ARGON_SALT' src/configuration.h
+          mkdir -p build-win && cd build-win
           cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF
           make -j$(nproc)
           ls -la librandomx.a
