@@ -160,6 +160,12 @@ jobs:
             "${GITHUB_WORKSPACE}/contrib/devtools/rx_parity_gate.cpp" \
             /tmp/RandomX-1.2.1/build-win/librandomx.a
           /tmp/parity.exe
+      - name: Upload MSYS2 RandomX library
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: randomx-windows-msys2
+          path: /tmp/RandomX-1.2.1/build-win/librandomx.a
+          retention-days: 1
 
   build-linux:
     needs: build-randomx-linux
@@ -291,7 +297,7 @@ jobs:
           chmod +x depends/gen_id depends/config.guess depends/config.sub
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
-          name: randomx-windows
+          name: randomx-windows-msys2
           path: /tmp/randomx-windows/
       - name: Build depends
         run: make -C depends HOST=x86_64-w64-mingw32 -j$(nproc)
