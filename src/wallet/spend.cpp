@@ -1470,7 +1470,7 @@ std::vector<std::optional<CPubKey>> recipient_keys;
             }
         }
         // RCPU hardening (P1-2) wallet-side: on mainnet, from height
-        // nBanPathAHeight onward (9188 in v1.1.0), refuse to create the
+        // nBanPathAHeight onward (9193 in v1.1.0), refuse to create the
         // plaintext-nonce path-A fallback. The consensus layer rejects such
         // outputs at these heights, so a wallet-side fallback would only build
         // an unrelayable (or block-rejected) transaction. This check sits
