@@ -614,13 +614,13 @@ public:
 consensus.fPowRandomX = true;
         consensus.nRandomXEpochDuration = 7 * 24 * 60 * 60;     // one week
         consensus.nCTActivationHeight = 0;  // RCPU: Confidential Transactions active from genesis
-        consensus.nBanPathAHeight = 9193;  // v1.1.0; 2026-09-25 tip=7177 last_pathA=7141 (+2016)
+        // v1.1.1: Path-A ban deferred. Do not set a mainnet height here.
+        // Previous v1.1.0 value 9193 is withdrawn before activation.
+        // When re-scheduled, use: H = tip + 2016 and H > last_pathA_height.
         // RCPU hardening (P1-2): ban the legacy path-A (plaintext-nonce) CT
         // nonce encoding from this height onward. Soft-fork: only outputs in
         // blocks at or above this height are checked, so already-mined path-A
-        // UTXOs are untouched and can be migrated off-chain. Set from the
-        // 2026-09-25 mainnet scan + merge-day recheck (tip=7177, last_pathA=7141,
-        // 11787 outputs): H = tip + 2016 = 9193, and H > last_pathA_height.
+        // UTXOs are untouched and can be migrated off-chain.
         // Recompute on merge day if tip climbs well above 7177 again,
         // H = TIP + 2016.
         // RCPU (P1-1): canonical hash domain is byte-identical to the live
