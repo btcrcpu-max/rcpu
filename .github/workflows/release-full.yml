@@ -132,18 +132,20 @@ jobs:
         shell: msys2 {0}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: randomx-windows
+          path: /tmp/randomx-windows/
       - uses: msys2/setup-msys2@v2
         with:
           update: true
           install: >
             mingw-w64-x86_64-gcc
-            mingw-w64-x86_64-cmake
             make
             curl
-            patch
             tar
             binutils
-      - name: Build RandomX library (native Windows)
+      - name: Download and verify RCPU-patched RandomX source
         run: |
           curl --fail -L -o /tmp/randomx-src.tar.gz https://github.com/tevador/RandomX/archive/refs/tags/v1.2.1.tar.gz
           echo "2e6dd3bed96479332c4c8e4cab2505699ade418a07797f64ee0d4fa394555032  /tmp/randomx-src.tar.gz" | sha256sum -c -
@@ -151,13 +153,9 @@ jobs:
           cd /tmp/RandomX-1.2.1
           patch -p1 < "$(cygpath -u "${GITHUB_WORKSPACE}")/depends/patches/randomx/custom_configuration.patch"
           grep 'RANDOMX_ARGON_SALT' src/configuration.h
-          mkdir -p build-win && cd build-win
-          cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF
-          make -j$(nproc)
-          ls -la librandomx.a
       - name: Verify randomx_calculate_commitment symbol exists
         run: |
-          nm /tmp/RandomX-1.2.1/build-win/librandomx.a | grep -i calculate_commitment || { echo "ERROR: randomx_calculate_commitment not found"; exit 1; }
+          nm /tmp/randomx-windows/librandomx.a | grep -i calculate_commitment || { echo "ERROR: randomx_calculate_commitment not found"; exit 1; }
       - name: Parity gate - hash + commitment (A2000, A4000)
         run: |
           set -euo pipefail
@@ -165,15 +163,14 @@ jobs:
             -I/tmp/RandomX-1.2.1/src \
             -o /tmp/parity.exe \
             "${GITHUB_WORKSPACE}/contrib/devtools/rx_parity_gate.cpp" \
-            /tmp/RandomX-1.2.1/build-win/librandomx.a
+            /tmp/randomx-windows/librandomx.a
           /tmp/parity.exe
       - name: Upload MSYS2 RandomX library
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: randomx-windows-msys2
-          path: /tmp/RandomX-1.2.1/build-win/librandomx.a
+          path: /tmp/randomx-windows/librandomx.a
           retention-days: 1
-
   build-linux:
     needs: build-randomx-linux
     runs-on: ubuntu-22.04
@@ -420,3 +417,4 @@ jobs:
       - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65
         with:
           files: ${{ env.RELEASE_FILES }}
+
