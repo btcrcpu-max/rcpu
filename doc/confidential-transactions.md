@@ -101,5 +101,5 @@ a pubkey; change outputs use the wallet's own pubkey (path B).
 v1.0.18, default 0. With the default, outputs lacking a resolvable recipient
 pubkey fall back to path A per-output automatically, so bare `rcpu1...`
 sends work without the flag. The path-A spending ban (`nBanPathAHeight`)
-activates on mainnet at **height 9,188** (v1.1.0). Path A is not
+activates on mainnet at **height 9,191** (v1.1.0). Path A is not
 confidential — use it only for compatibility.
