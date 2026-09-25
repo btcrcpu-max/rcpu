@@ -92,12 +92,24 @@ bool UnblindWalletOutput(const CWallet& wallet, const CTxOut& txout, CAmount& va
                         if (legacy->GetKey(keyid, key)) break;
                         continue;
                     }
+                    // Descriptor SPKMs keep private keys behind a separate accessor;
+                    // the solving provider intentionally omits them, so try GetPrivKey first.
+                    if (const auto* desc = dynamic_cast<const DescriptorScriptPubKeyMan*>(spkman)) {
+                        CKeyID kd;
+                        CKey k;
+                        if (desc->GetPrivKey(txout.scriptPubKey, kd, k) && k.IsValid()) { key = k; break; }
+                        continue;
+                    }
                     const auto provider = spkman->GetSolvingProvider(txout.scriptPubKey);
                     if (provider && provider->GetKey(keyid, key)) break;
                 }
             }
         }
-        if (!key.IsValid()) return false;
+        if (!key.IsValid()) {
+            wallet.WalletLogPrintf("unblind path-B failed: no privkey script=%s locked=%d\n",
+                                   HexStr(txout.scriptPubKey), wallet.IsLocked());
+            return false;
+        }
         return UnblindValueWithKey(key, txout.nValue, txout.nNonce, txout.vchRangeproof, value_out, blind_out);
     }
     return false; // malformed commitment

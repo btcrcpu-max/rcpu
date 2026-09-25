@@ -2562,15 +2562,12 @@ util::Result<CTxDestination> CWallet::GetNewDestination(const OutputType type, c
 {
     LOCK(cs_wallet);
     auto spk_man = GetScriptPubKeyMan(type, /*internal=*/false);
-    // RCPU CT: descriptor wallets created before the CONFIDENTIAL type was
-    // added lack a dedicated confidential SPK manager.  Fall back to the
-    // BECH32 manager; DescriptorScriptPubKeyMan::GetNewDestination will
-    // accept the type mismatch (CONFIDENTIAL vs BECH32 descriptor) and
-    // rebuild the result as ConfidentialKeyHash.
-    if (!spk_man && type == OutputType::CONFIDENTIAL && IsWalletFlagSet(WALLET_FLAG_DESCRIPTORS)) {
-        spk_man = GetScriptPubKeyMan(OutputType::BECH32, /*internal=*/false);
-    }
     if (!spk_man) {
+        if (type == OutputType::CONFIDENTIAL) {
+            return util::Error{_("Error: No confidential addresses available. "
+                                 "This wallet has no confidential descriptor; "
+                                 "use a bech32 (rcpu1) receive address.")};
+        }
         return util::Error{strprintf(_("Error: No %s addresses available."), FormatOutputType(type))};
     }
 
