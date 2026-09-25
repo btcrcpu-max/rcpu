@@ -149,13 +149,14 @@ jobs:
         run: |
           curl --fail -L -o /tmp/randomx-src.tar.gz https://github.com/tevador/RandomX/archive/refs/tags/v1.2.1.tar.gz
           tar -xf /tmp/randomx-src.tar.gz -C /tmp
-      - name: Verify randomx_calculate_commitment symbol exists
-        run: |
-          nm /tmp/randomx-windows/librandomx.a | grep -i calculate_commitment || { echo "ERROR: randomx_calculate_commitment not found"; exit 1; }
       - name: Parity gate - hash + commitment (A2000, A4000)
         run: |
           set -euo pipefail
-          g++ -std=c++17 -O2             -I/tmp/RandomX-1.2.1/src             -o /tmp/parity.exe             "${GITHUB_WORKSPACE}/contrib/devtools/rx_parity_gate.cpp"             /tmp/randomx-windows/librandomx.a
+          g++ -std=c++17 -O2 \
+            -I/tmp/RandomX-1.2.1/src \
+            -o /tmp/parity.exe \
+            "${GITHUB_WORKSPACE}/contrib/devtools/rx_parity_gate.cpp" \
+            /tmp/randomx-windows/librandomx.a
           /tmp/parity.exe
       - name: Upload MSYS2 RandomX library
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
