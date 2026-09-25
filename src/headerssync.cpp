@@ -19,9 +19,10 @@ constexpr size_t HEADER_COMMITMENT_PERIOD{606};
 //! received and validated against commitments.
 constexpr size_t REDOWNLOAD_BUFFER_SIZE{14441}; // 14441/606 = ~23.8 commitments
 
-// Our memory analysis assumes 48 bytes for a CompressedHeader (so we should
-// re-calculate parameters if we compress further)
-static_assert(sizeof(CompressedHeader) == 48);
+// Our memory analysis assumes 80 bytes for a CompressedHeader (48 bytes in
+// upstream Bitcoin Core plus the RCPU 32-byte hashRandomX commitment field; we
+// should re-calculate parameters if we compress further)
+static_assert(sizeof(CompressedHeader) == 80);
 
 HeadersSyncState::HeadersSyncState(NodeId id, const Consensus::Params& consensus_params,
         const CBlockIndex* chain_start, const arith_uint256& minimum_required_work) :

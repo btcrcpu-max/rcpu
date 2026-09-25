@@ -25,6 +25,13 @@ struct CompressedHeader {
     uint32_t nTime{0};
     uint32_t nBits{0};
     uint32_t nNonce{0};
+    // RCPU: RandomX commitment header field MUST be preserved, otherwise the
+    // full header reconstructed here has a null hashRandomX, and every block
+    // header released from the redownload buffer fails consensus
+    // (CheckProofOfWorkRandomX computes GetHash() over the 112-byte RandomX
+    // header domain, so a null commitment yields the wrong block hash and
+    // "high-hash, proof of work failed" during initial block download).
+    uint256 hashRandomX{};
 
     CompressedHeader()
     {
@@ -38,9 +45,10 @@ struct CompressedHeader {
         nTime = header.nTime;
         nBits = header.nBits;
         nNonce = header.nNonce;
+        hashRandomX = header.hashRandomX;
     }
 
-    CBlockHeader GetFullHeader(const uint256& hash_prev_block) {
+    CBlockHeader GetFullHeader(const uint256& hash_prev_block) const {
         CBlockHeader ret;
         ret.nVersion = nVersion;
         ret.hashPrevBlock = hash_prev_block;
@@ -48,6 +56,7 @@ struct CompressedHeader {
         ret.nTime = nTime;
         ret.nBits = nBits;
         ret.nNonce = nNonce;
+        ret.hashRandomX = hashRandomX;
         return ret;
     };
 };
