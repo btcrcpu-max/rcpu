@@ -817,8 +817,15 @@ bool CheckProofOfWorkRandomX(const CBlockHeader& block, const Consensus::Params&
     bnTarget.SetCompact(nBits, &fNegative, &fOverflow);
 
     // Check range
-    if (fNegative || bnTarget == 0 || fOverflow || bnTarget > UintToArith256(params.powLimit))
+    if (fNegative || bnTarget == 0 || fOverflow || bnTarget > UintToArith256(params.powLimit)) {
+        LogPrintf("Error: high-hash, proof of work failed: block=%s, hashRandomX=%s, nBits=0x%08x, target=%s, verifyMode=%d (target out of range)\n",
+                  block.GetHash().GetHex(),
+                  block.hashRandomX.GetHex(),
+                  block.nBits,
+                  bnTarget.GetHex(),
+                  static_cast<int>(verifyMode));
         return false;
+    }
 
     uint256 hashRandomX;
     bool fHashVerified = false;
@@ -831,9 +838,22 @@ bool CheckProofOfWorkRandomX(const CBlockHeader& block, const Consensus::Params&
     // Do cheaper commitment verification first
     if (verifyMode != POW_VERIFY_MINING ) {
         if (block.hashRandomX.IsNull()) {
+            LogPrintf("Error: high-hash, proof of work failed: block=%s, hashRandomX=<null>, nBits=0x%08x, target=%s, verifyMode=%d (missing commitment field; if this is an RCPU block the header was reconstructed without hashRandomX)\n",
+                      block.GetHash().GetHex(),
+                      block.nBits,
+                      bnTarget.GetHex(),
+                      static_cast<int>(verifyMode));
             return false;
         }
         if (UintToArith256(GetRandomXCommitment(block)) > bnTarget) {
+            LogPrintf("Error: high-hash, proof of work failed: block=%s, hashRandomX=%s, commitment=%s, nBits=0x%08x, target=%s, verifyMode=%d, prevBlockTime=%u\n",
+                      block.GetHash().GetHex(),
+                      block.hashRandomX.GetHex(),
+                      GetRandomXCommitment(block).GetHex(),
+                      block.nBits,
+                      bnTarget.GetHex(),
+                      static_cast<int>(verifyMode),
+                      prevBlockTime);
             return false;
         }
         hashRandomX = block.hashRandomX;
@@ -872,8 +892,9 @@ char rx_hash[RANDOMX_HASH_SIZE];
         // If not mining, compare hash in block header with our computed value
         if (verifyMode != POW_VERIFY_MINING) {
             if (memcmp(rx_hash, block.hashRandomX.begin(), RANDOMX_HASH_SIZE) != 0) {
-                LogPrintf("Error: Possible spam. RandomX hash value in block [%s] != computed hash value [%s]\n",
-                    block.hashRandomX.GetHex(), uint256(std::vector<unsigned char>(rx_hash, rx_hash + RANDOMX_HASH_SIZE)).GetHex());
+                LogPrintf("Error: Possible spam. RandomX hash value in block [%s] != computed hash value [%s], target=%s, verifyMode=%d\n",
+                    block.hashRandomX.GetHex(), uint256(std::vector<unsigned char>(rx_hash, rx_hash + RANDOMX_HASH_SIZE)).GetHex(),
+                    bnTarget.GetHex(), static_cast<int>(verifyMode));
                 return false;
             }
         }

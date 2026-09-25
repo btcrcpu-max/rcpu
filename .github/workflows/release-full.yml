@@ -40,6 +40,11 @@ jobs:
     # chain consensus (wallets stuck at heights 2000/4000, "high-hash, proof
     # of work failed"). A MinGW-w64 -native- build (gcc 16, MSYS2) was proven
     # to reproduce the chain hash byte-for-byte (see parity gate below).
+    #
+    # DO NOT replace this job with a cross-compiled RandomX for Windows: the
+    # parity gate and the installer must consume the SAME native .a built here.
+    # The Windows GUI/daemon are cross-compiled from Ubuntu (build-windows),
+    # but the RandomX library they link MUST come from this job's artifact.
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -227,6 +232,11 @@ jobs:
       - name: Build depends
         run: make -C depends HOST=x86_64-w64-mingw32 -j$(nproc)
       - name: Install RandomX into depends prefix
+        # The .a below is the MSYS2/MINGW64 -native- build produced by
+        # build-randomx-windows (the same artifact that passed the parity
+        # gate). It is the ONLY RandomX library allowed to be linked into the
+        # Windows installer; never rebuild RandomX in this Ubuntu cross
+        # environment, or the 2000/4000-height high-hash bug returns.
         run: |
           PREFIX="$PWD/depends/x86_64-w64-mingw32"
           mkdir -p "$PREFIX/lib" "$PREFIX/include"
