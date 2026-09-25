@@ -14,6 +14,7 @@
 #include <optional>
 #include <policy/policy.h>
 #include <blind.h>
+#include <chainparams.h>
 #include <primitives/confidential.h>
 #include <primitives/transaction.h>
 #include <pubkey.h>
@@ -1467,6 +1468,19 @@ std::vector<std::optional<CPubKey>> recipient_keys;
                 }
                 recipient_keys.push_back(pubkey);
             }
+        }
+        // RCPU hardening (P1-2) wallet-side: on mainnet, from height
+        // nBanPathAHeight onward (9193 in v1.1.0), refuse to create the
+        // plaintext-nonce path-A fallback. The consensus layer rejects such
+        // outputs at these heights, so a wallet-side fallback would only build
+        // an unrelayable (or block-rejected) transaction. This check sits
+        // after recipient_keys is finalized: it also covers -ctlegacy=1 (empty
+        // recipient_keys) and change-without-key (nullopt) paths, so every
+        // route that would blind via path A fails closed. Plain rcpu1... sends
+        // are rejected; use a confidential rcpux1... address instead.
+        if (Params().GetChainType() == ChainType::RCPUMAIN &&
+            wallet.GetLastBlockHeight() >= Params().GetConsensus().nBanPathAHeight) {
+            return util::Error{_("Path-A (plaintext-nonce) outputs are banned on mainnet at this height; use a confidential rcpux1... address")};
         }
         if (!BlindTransaction(input_blinds, txNew, output_blinds, output_nonces, recipient_keys)) {
             return util::Error{_("Confidential transaction blinding failed")};
