@@ -798,7 +798,7 @@ bool SignTransaction(CMutableTransaction& mtx, const SigningProvider* keystore, 
             txdata.Init(txConst, /*spent_outputs=*/{}, /*force=*/true);
             break;
         } else {
-            spent_outputs.emplace_back(coin->second.out.nValue.IsExplicit() ? coin->second.out.nValue.GetAmount() : 0, coin->second.out.scriptPubKey);
+            spent_outputs.emplace_back(coin->second.out);
         }
     }
     if (spent_outputs.size() == mtx.vin.size()) {
