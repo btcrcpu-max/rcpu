@@ -51,7 +51,7 @@ and `configure.ac`.
 3. Create the tarball:
 
    ```bash
-   VERSION=1.0.23      # must equal the tag being released
+   VERSION=1.0.25      # must equal the tag being released
    make install DESTDIR="$PWD/stage"
    tar -czf rcpu-${VERSION}-x86_64-linux-gnu.tgz \
      -C stage/usr/local/bin rcpud rcpu-cli rcpu-tx rcpu-util rcpu-wallet
