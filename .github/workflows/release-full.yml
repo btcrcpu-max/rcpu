@@ -71,50 +71,18 @@ jobs:
             -G "MinGW Makefiles"
           mingw32-make -j$(nproc)
           test -f librandomx.a
-      - name: Parity gate - native RandomX must reproduce chain hash (A4000)
+      - name: Parity gate - native RandomX must reproduce chain hash (A2000 + A4000)
         # Regression gate: the library just built must compute the exact
-        # RandomX hash of block A4000 that chain nodes accept (declared in the
-        # block itself). If this fails, the Windows PoW behaviour has drifted
-        # again and the release must be blocked.
+        # RandomX hash of blocks A2000 and A4000 that chain nodes accept.
+        # If this fails, the Windows PoW behaviour has drifted and the
+        # release must be blocked.
         shell: msys2 {0}
         run: |
           set -euo pipefail
-          cat > /tmp/parity.cpp << 'EOF'
-          #include <cstdio>
-          #include <cstring>
-          #include <randomx.h>
-          static void hex2bin(const char* h, unsigned char* out, size_t n) {
-            for (size_t i = 0; i < n; i++) {
-              unsigned v; std::sscanf(h + 2*i, "%2x", &v);
-              out[i] = (unsigned char)v;
-            }
-          }
-          int main() {
-            unsigned char input[112], seed[32], declared[32];
-            // A4000 (height 4000): 80B header + 32B hashRandomX nulled, epoch=2957
-            hex2bin("00000020b5489790f2ae1ea473fb74bcf3b3eb499b650222d03ecb35546bd01ab06d4dac195ab158eeaef81b5977497949da6c77851e8992b076f259c902572d52f5f0bb93ef9f6ac5ba011eb63633b30000000000000000000000000000000000000000000000000000000000000000", input, 112);
-            hex2bin("169a4b98b46cdc27a8cb04d1c6049c535bce5c198472e646c2eaa3f47c53d583", seed, 32);
-            hex2bin("482cb75cac68dd8cdec09a60cfc60bc2b7c1fe2b7e84dc45789454e8235af294", declared, 32);
-            randomx_flags flags = randomx_get_flags();
-            std::printf("flags = 0x%x\n", flags);
-            randomx_cache* cache = randomx_alloc_cache(flags);
-            if (!cache) { std::printf("ERR alloc cache\n"); return 1; }
-            randomx_init_cache(cache, seed, 32);
-            randomx_vm* vm = randomx_create_vm(flags, cache, NULL);
-            if (!vm) { std::printf("ERR create vm\n"); return 1; }
-            unsigned char out[RANDOMX_HASH_SIZE];
-            randomx_calculate_hash(vm, input, 112, out);
-            int ok = std::memcmp(out, declared, 32) == 0;
-            std::printf("computed : ");
-            for (int i = 0; i < 32; i++) std::printf("%02x", out[i]);
-            std::printf("\ndeclared : 482cb75cac68dd8cdec09a60cfc60bc2b7c1fe2b7e84dc45789454e8235af294\n");
-            std::printf("MATCH=%s\n", ok ? "YES" : "NO");
-            randomx_destroy_vm(vm);
-            randomx_release_cache(cache);
-            return ok ? 0 : 1;
-          }
-          EOF
-          g++ -std=c++17 -O2 -I/tmp/RandomX-1.2.1/src -o /tmp/parity.exe /tmp/parity.cpp /tmp/RandomX-1.2.1/build-win/librandomx.a
+          WS="${GITHUB_WORKSPACE//\\//}"
+          g++ -std=c++17 -O2 -I/tmp/RandomX-1.2.1/src -o /tmp/parity.exe \
+            "$WS/contrib/devtools/rx_parity_gate.cpp" \
+            /tmp/RandomX-1.2.1/build-win/librandomx.a
           /tmp/parity.exe || { echo "PARITY GATE FAILED"; exit 1; }
           mkdir -p ws && cp /tmp/RandomX-1.2.1/build-win/librandomx.a ws/
       - name: Upload RandomX Windows artifact
@@ -124,46 +92,6 @@ jobs:
           path: ws/librandomx.a
           retention-days: 1
 
-  parity-gate-windows:
-    needs: build-randomx-windows
-    runs-on: windows-latest
-    defaults:
-      run:
-        shell: msys2 {0}
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
-        with:
-          name: randomx-windows
-          path: /tmp/randomx-windows/
-      - uses: msys2/setup-msys2@v2
-        with:
-          update: true
-          install: >
-            mingw-w64-x86_64-gcc
-            make
-            curl
-            tar
-            binutils
-      - name: Download RandomX source for headers
-        run: |
-          curl --fail -L -o /tmp/randomx-src.tar.gz https://github.com/tevador/RandomX/archive/refs/tags/v1.2.1.tar.gz
-          tar -xf /tmp/randomx-src.tar.gz -C /tmp
-      - name: Parity gate - hash + commitment (A2000, A4000)
-        run: |
-          set -euo pipefail
-          g++ -std=c++17 -O2 \
-            -I/tmp/RandomX-1.2.1/src \
-            -o /tmp/parity.exe \
-            "${GITHUB_WORKSPACE}/contrib/devtools/rx_parity_gate.cpp" \
-            /tmp/randomx-windows/librandomx.a
-          /tmp/parity.exe
-      - name: Upload MSYS2 RandomX library
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: randomx-windows-msys2
-          path: /tmp/randomx-windows/librandomx.a
-          retention-days: 1
   build-linux:
     needs: build-randomx-linux
     runs-on: ubuntu-22.04
@@ -257,7 +185,7 @@ jobs:
             SHA256SUMS-linux.txt
 
   build-windows:
-    needs: [build-randomx-windows, parity-gate-windows]
+    needs: [build-randomx-windows]
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -294,7 +222,7 @@ jobs:
           chmod +x depends/gen_id depends/config.guess depends/config.sub
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
-          name: randomx-windows-msys2
+          name: randomx-windows
           path: /tmp/randomx-windows/
       - name: Build depends
         run: make -C depends HOST=x86_64-w64-mingw32 -j$(nproc)
@@ -410,5 +338,3 @@ jobs:
       - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65
         with:
           files: ${{ env.RELEASE_FILES }}
-
-
