@@ -35,9 +35,9 @@ They are listed here so other docs have one place to copy from.
 | Base58 prefix (legacy) | 0 / 5 / 128 | `src/kernel/chainparams.cpp` (`base58Prefixes`) |
 | Genesis hash | `8f8128ffccc36d188eabd7846dea187d23cba18cbb45cc16d62ec9b8ac2af8e8` | `CreateRcpuGenesisBlock` (nTime=1788566400) |
 | Genesis coinbase | `22/Feb/2024 S&P 5087.03 @elonmusk ...` | `kernel/chainparams.cpp` (frozen, do not modify) |
-| nMinimumChainWork | `0000000000000000000000000000000000000000000000000000000001940138` | `kernel/chainparams.cpp` (height 100 实测值；v1.0.8 为修复空目录 IBD 下调，勿改回旧文档数字) |
-| defaultAssumeValid | `75872099399e9682e72795beeac617f1e911573df97d93a14f6ff0d5adab85d5` | `kernel/chainparams.cpp` (block 3,634 hash) |
-| Checkpoints | 0, 1, 2, 5, 10, 20, 30, 38, 3,600 | `kernel/chainparams.cpp` (`checkpointData`) |
+| nMinimumChainWork | `000000000000000000000000000000000000000000000000000000048aa8ea37` | `kernel/chainparams.cpp` (height 5072，2026-09-17 synced node 实测值；v1.1.4 从 height-100 提升) |
+| defaultAssumeValid | `8efac7f149d8f2d0b5819b5188d8ecb0d606a2b443a5d0d5d275e78736a12aec` | `kernel/chainparams.cpp` (block 4,922 hash) |
+| Checkpoints | 0, 1, 2, 5, 10, 20, 30, 38, 3,600, 4,922 | `kernel/chainparams.cpp` (`checkpointData`) |
 
 ## Notes
 
@@ -47,7 +47,7 @@ They are listed here so other docs have one place to copy from.
 - Default chain is RCPUMAIN; `rcpud` without `-chain` launches the RCPU mainnet.
 - `ChainType::MAIN` (Bitcoin mainnet) is disabled at runtime; `-chain=main` throws an error.
 - The Bitcoin template (`CMainParams`) remains in source for structure/tests but cannot be selected as the live chain.
-- `nMinimumChainWork` is the chainwork at **height 100**, measured from a real synced node (lowered in v1.0.8; the earlier `...01fc87aa3c` height-3,600 value was reverted after it blocked empty-datadir IBD). Raise it only from a synced node's `getblockchaininfo.chainwork` — never by hand from an old document.
+- `nMinimumChainWork` is the chainwork at **height 5072**, measured from a real synced node (2026-09-17; raised in v1.1.4, previously a height-100 value from v1.0.8). Raise it only from a synced node's `getblockchaininfo.chainwork` — never by hand from an old document. Every time a hardening tier is advanced, **this table and the `checkpointData` list must be updated in the same change**, or the doc/code drift reappears.
 
 ## Genesis Block
 
@@ -74,13 +74,14 @@ The mainnet was hardened at **height 38** (v1.0.1) with:
 
 This is the **first hardening tier** (approximately 3 hours of history at 5-minute blocks).
 
-Tier 2 was applied at **height 3,600** (v1.0.2): the tier-2 checkpoint and `defaultAssumeValid` remain at 3,600. The tier-2 **chainwork value was reverted** in v1.0.8 to a measured height-100 value because `0x01fc87aa3c` blocked empty-datadir IBD on new nodes; the chainwork part of tier 2 is therefore **not** live at 3,600 today. Subsequent hardening tiers are planned:
+Tier 2 was applied at **height 3,600** (v1.0.2): the tier-2 checkpoint and `defaultAssumeValid` remain at 3,600. The tier-2 **chainwork value was reverted** in v1.0.8 to a measured height-100 value because `0x01fc87aa3c` blocked empty-datadir IBD on new nodes; the chainwork part of tier 2 is therefore **not** live at 3,600 today. In **v1.1.4** the chainwork was re-raised to a height-5,072 measured value and a checkpoint + `defaultAssumeValid` were added at **height 4,922** (tier 2.5), which is the current hardening level. Subsequent hardening tiers are planned:
 
 | Tier | Target height | Approx. age | Action |
 |------|---------------|-------------|--------|
 | 1 (done) | 38 | ~3 hours | Initial checkpoints, chainwork, assumevalid (v1.0.1) |
 | 2 (done) | 3,600 | ~12.5 days (target) | Checkpoint + assumevalid at 3,600 (v1.0.2); nMinimumChainWork reverted to height-100 measured value (v1.0.8) |
-| 3 | 10,000 | ~35 days | Read chainwork from a synced node (`getblockchaininfo.chainwork`), raise `nMinimumChainWork`; add checkpoint, bump assumevalid, release v1.1.0 |
+| 2.5 (done) | 4,922 | ~17 days | Checkpoint + assumevalid at 4,922, `nMinimumChainWork` raised to height-5,072 measured value (v1.1.4) |
+| 3 | 10,000 | ~35 days | Read chainwork from a synced node (`getblockchaininfo.chainwork`), raise `nMinimumChainWork`; add checkpoint, bump assumevalid (future release; do not reuse a past version number) |
 | 4 | 100,000 | ~1 year | Long-term hardening, consider removing early checkpoints |
 
 ### Upgrade Process
@@ -107,8 +108,10 @@ For each tier:
 The tier 2 checkpoint upgrade has been applied at height 3,600 (v1.0.2):
 the checkpoint and `defaultAssumeValid` anchor anti-reorg resistance at
 the tier 2 level. The tier 2 `nMinimumChainWork` was reverted in v1.0.8
-to the height-100 measured value (see Notes) and will be re-raised at
-tier 3 from a synced node's `getblockchaininfo.chainwork`.
+to the height-100 measured value (see Notes), then re-raised in v1.1.4
+to the height-5,072 value with a checkpoint + `defaultAssumeValid` at
+height 4,922 (current hardening level, tier 2.5). Future raises must
+again come from a synced node's `getblockchaininfo.chainwork`.
 Subsequent tiers remain as scheduled.
 Miners and pools should run with `-reindex-chainstate` if they encounter
 unexpected reorgs. Exchanges should require a high number of confirmations
