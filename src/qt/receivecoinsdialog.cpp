@@ -99,6 +99,17 @@ void ReceiveCoinsDialog::setModel(WalletModel *_model)
         if (model->wallet().taprootEnabled()) {
             add_address_type(OutputType::BECH32M, tr("Bech32m (Taproot)"), tr("Bech32m (BIP-350) is an upgrade to Bech32, wallet support is still limited."));
         }
+        // RCPU CT: confidential (rcpux1) receive addresses. Disabled with a hint
+        // when this wallet has no confidential descriptor (e.g. wallets created
+        // before confidential address support that cannot be backfilled).
+        {
+            const auto confidential_index = ui->addressType->count();
+            add_address_type(OutputType::CONFIDENTIAL, tr("Confidential (rcpux1)"), tr("Generates a confidential address (RCPU CT) that blinds the amount of received payments."));
+            if (!model->wallet().confidentialEnabled()) {
+                ui->addressType->setItemData(confidential_index, false, Qt::UserRole - 1);
+                ui->addressType->setItemData(confidential_index, tr("This wallet has no confidential descriptor; use a Bech32 (rcpu1) receive address."), Qt::ToolTipRole);
+            }
+        }
 
         // Set the button to be enabled or disabled based on whether the wallet can give out new addresses.
         ui->receiveButton->setEnabled(model->wallet().canGetAddresses());
