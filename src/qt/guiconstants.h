@@ -39,14 +39,14 @@ static const bool DEFAULT_SPLASHSCREEN = true;
 #define COLOR_BLACK QColor(250, 250, 250)
 
 /* !RCPU Dark Theme -- core palette */
-#define DARK_THEME_BACKGROUND    QColor(24, 24, 27)    /* #18181b zinc-950 */
-#define DARK_THEME_CARD          QColor(39, 39, 42)    /* #27272a zinc-800 */
-#define DARK_THEME_TEXT          QColor(250, 250, 250) /* #fafafa zinc-50 */
-#define DARK_THEME_TEXT_MUTED    QColor(161, 161, 170) /* #a1a1aa zinc-400 */
-#define DARK_THEME_ACCENT        QColor(249, 115, 22)  /* #f97316 orange-500 */
-#define DARK_THEME_BORDER        QColor(63, 63, 70)     /* #3f3f46 zinc-600 */
-#define DARK_THEME_ALERT_BG      QColor(251, 191, 36)  /* #fbbf24 amber-400 */
-#define DARK_THEME_ALERT_TEXT    QColor(0, 0, 0)        /* #000000 */
+#define DARK_THEME_BACKGROUND    QColor(30, 41, 59)    /* #1e293b slate-800 */
+#define DARK_THEME_CARD          QColor(51, 65, 85)    /* #334155 slate-700 */
+#define DARK_THEME_TEXT          QColor(241, 245, 249) /* #f1f5f9 slate-100 */
+#define DARK_THEME_TEXT_MUTED    QColor(148, 163, 184) /* #94a3b8 slate-400 */
+#define DARK_THEME_ACCENT        QColor(56, 189, 248)  /* #38bdf4 sky-400 */
+#define DARK_THEME_BORDER        QColor(71, 85, 105)    /* #475569 slate-600 */
+#define DARK_THEME_ALERT_BG      QColor(34, 211, 238)  /* #22d3ee cyan-400 */
+#define DARK_THEME_ALERT_TEXT    QColor(15, 23, 42)    /* #0f172a slate-900 */
 
 /* Tooltips longer than this (in characters) are converted into rich text,
    so that they can be word-wrapped.
