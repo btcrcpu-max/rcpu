@@ -101,8 +101,8 @@ NODES = [
         'host': '192.168.1.100',
         'port': 22,
         'user': 'root',
-        'password': 'your_password',  # Or use SSH key
-        'rpc_cmd': '/usr/local/bin/rcpu-cli -chain=rcpu -datadir=/root/.rcpu -rpcuser=user -rpcpassword=pass',
+'password': os.environ.get('RCPU_NODE_PASSWORD', ''),  # Prefer SSH key auth
+        'rpc_cmd': '/usr/local/bin/rcpu-cli -chain=rcpu -datadir=/root/.rcpu -rpcport=7337',  # Cookie auth via ~/.rcpu/.cookie
         'is_docker': False,
         'docker_name': 'rcpud',  # For Docker nodes
     },

@@ -17,14 +17,19 @@ from datetime import datetime
 RPC_PORT = os.environ.get('RCPU_RPC_PORT', '7337')
 
 # Edit this section with your node information
+# Security: never hardcode credentials in this file. Prefer SSH key
+# authentication (default in paramiko when 'password' is empty/None) and
+# RPC cookie auth (rcpu-cli reads datadir/.cookie when -rpcuser/-rpcpassword
+# are omitted). If a node still requires password auth, set it via the
+# RCPU_NODE_PASSWORD environment variable, never in source control.
 NODES = [
     {
         'name': 'Node 1',
         'host': 'NODE_1_IP',
         'port': 22,
         'user': 'root',
-        'password': 'YOUR_PASSWORD',
-        'rpc_cmd': '/usr/local/bin/rcpu-cli -chain=rcpu -datadir=/root/.rcpu -rpcuser=YOUR_USER -rpcpassword=YOUR_PASS',
+        'password': os.environ.get('RCPU_NODE_PASSWORD', ''),
+        'rpc_cmd': '/usr/local/bin/rcpu-cli -chain=rcpu -datadir=/root/.rcpu',
         'is_docker': False,
         'docker_name': 'rcpud',
     },
@@ -41,9 +46,10 @@ def get_node_status(node):
     """Get status of a single node"""
     rpc_port = node.get('rpc_port', RPC_PORT)
     ssh = paramiko.SSHClient()
-    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    ssh.load_system_host_keys()
+    ssh.set_missing_host_key_policy(paramiko.RejectPolicy())
     ssh.connect(node['host'], port=node['port'], username=node['user'], 
-                password=node['password'], timeout=15)
+                password=node['password'] or None, timeout=15)
     
     status = {
         'name': node['name'],
@@ -60,11 +66,11 @@ def get_node_status(node):
         # Check RPC binding
         if node['is_docker']:
             _, stdout, _ = ssh.exec_command(
-                f'docker exec {node["docker_name"]} ss -tlnp 2>/dev/null | grep ${{RCPU_RPC_PORT:-7337}}', 
+                f'docker exec {node["docker_name"]} ss -tlnp 2>/dev/null | grep {rpc_port}', 
                 timeout=10)
         else:
             _, stdout, _ = ssh.exec_command(
-                f'ss -tlnp | grep ${{RCPU_RPC_PORT:-7337}}', timeout=10)
+                f'ss -tlnp | grep {rpc_port}', timeout=10)
         
         rpc_listen = stdout.read().decode().strip()
         if '127.0.0.1:' + rpc_port in rpc_listen:

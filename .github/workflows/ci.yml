@@ -24,6 +24,11 @@ jobs:
             pkg-config bsdmainutils python3 autoconf-archive cmake \
             libssl-dev libevent-dev libboost-all-dev \
             libsqlite3-dev libdb-dev libdb++-dev
+      - name: Lint - Python scripts syntax
+        run: |
+          # Fail the build if any scripts/ Python file has a syntax error
+          # (e.g. NameError-prone edits like a missing `import os`).
+          python3 -m py_compile scripts/*.py
       - name: Lint - CVE-2024-52911 ConnectBlock structural guard
         run: |
           # Fail the build if ConnectBlock reintroduces an early return while
