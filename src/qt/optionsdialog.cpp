@@ -99,7 +99,7 @@ OptionsDialog::OptionsDialog(QWidget* parent, bool enableWallet)
     ui->threadsScriptVerif->setMinimum(-GetNumCores());
     ui->threadsScriptVerif->setMaximum(MAX_SCRIPTCHECK_THREADS);
     ui->pruneWarning->setVisible(false);
-    ui->pruneWarning->setStyleSheet("QLabel { color: red; }");
+    ui->pruneWarning->setStyleSheet("QLabel { color: #ef4444; }");
 
     ui->pruneSize->setEnabled(false);
     connect(ui->prune, &QPushButton::toggled, ui->pruneSize, &QWidget::setEnabled);
@@ -412,7 +412,7 @@ void OptionsDialog::togglePruneWarning(bool enabled)
 
 void OptionsDialog::showRestartWarning(bool fPersistent)
 {
-    ui->statusLabel->setStyleSheet("QLabel { color: red; }");
+    ui->statusLabel->setStyleSheet("QLabel { color: #ef4444; }");
 
     if(fPersistent)
     {
@@ -447,7 +447,7 @@ void OptionsDialog::updateProxyValidationState()
     else
     {
         setOkButtonState(false);
-        ui->statusLabel->setStyleSheet("QLabel { color: red; }");
+        ui->statusLabel->setStyleSheet("QLabel { color: #ef4444; }");
         ui->statusLabel->setText(tr("The supplied proxy address is invalid."));
     }
 }

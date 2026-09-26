@@ -230,15 +230,15 @@ void PSBTOperationsDialog::showStatus(const QString &msg, StatusLevel level) {
     m_ui->statusBar->setText(msg);
     switch (level) {
         case StatusLevel::INFO: {
-            m_ui->statusBar->setStyleSheet("QLabel { background-color : lightgreen }");
+            m_ui->statusBar->setStyleSheet("QLabel { background-color : #16a34a; color : #ffffff; }");
             break;
         }
         case StatusLevel::WARN: {
-            m_ui->statusBar->setStyleSheet("QLabel { background-color : orange }");
+            m_ui->statusBar->setStyleSheet("QLabel { background-color : #d97706; color : #ffffff; }");
             break;
         }
         case StatusLevel::ERR: {
-            m_ui->statusBar->setStyleSheet("QLabel { background-color : red }");
+            m_ui->statusBar->setStyleSheet("QLabel { background-color : #dc2626; color : #ffffff; }");
             break;
         }
     }
