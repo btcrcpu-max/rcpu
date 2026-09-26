@@ -179,7 +179,8 @@ std::optional<CAmount> GetOutputAmount(const CTxOut& txout)
 
 bool BlindTransaction(const std::vector<uint256>& input_blinds, CMutableTransaction& tx,
                       std::vector<uint256>& output_blinds, std::vector<uint256>& output_nonces,
-                      const std::vector<std::optional<CPubKey>>& recipient_keys)
+                      const std::vector<std::optional<CPubKey>>& recipient_keys,
+                      const std::vector<bool>* explicit_outputs)
 {
     secp256k1_context* ctx = GetBlindContext();
     const size_t n = tx.vout.size();
@@ -190,22 +191,44 @@ bool BlindTransaction(const std::vector<uint256>& input_blinds, CMutableTransact
         // Per-output recipient key list must line up with the outputs.
         return false;
     }
+    if (explicit_outputs && explicit_outputs->size() != n) {
+        // Per-output keep-explicit marker must line up with the outputs.
+        return false;
+    }
+    // An output marked explicit is left unblinded: plaintext value, no nonce,
+    // no range proof, zero blinding factor. It never takes part in the blind
+    // sum (a zero blind adds nothing) and is never counted as the balancing
+    // output, mirroring how fee outputs are already handled.
+    const auto is_explicit = [&](size_t i) {
+        return explicit_outputs && (*explicit_outputs)[i];
+    };
     output_blinds.resize(n);
     output_nonces.resize(n);
 
-// Balance against the last non-fee output; fees never take part.
+    // Balance against the last non-fee, non-explicit output; fees and
+    // plaintext outputs never take part.
     size_t last_ct = n;
     for (size_t i = 0; i < n; ++i) {
-        if (!tx.vout[i].IsFee()) last_ct = i;
+        if (!tx.vout[i].IsFee() && !is_explicit(i)) last_ct = i;
     }
     if (last_ct == n) {
-        // Fee-only: nothing to commit, do not call pedersen_blind_sum.
+        // Fee/plaintext-only: all outputs are explicit. There is no blinded
+        // output to carry the inputs' blinding factors, so the Pedersen tally
+        // can only balance if every input blind is zero (explicit inputs).
+        // A confidential input with a non-zero blind must not be spent into
+        // all-explicit outputs: the commitment sum would not balance
+        // (bad-txns-ct-balance at the consensus layer). Fail closed instead.
+        for (const uint256& b : input_blinds) {
+            if (!b.IsNull()) {
+                return false;
+            }
+        }
         return true;
     }
 
     // Random blinds for all but the balancing output.
     for (size_t i = 0; i < last_ct; ++i) {
-        if (tx.vout[i].IsFee()) continue;
+        if (tx.vout[i].IsFee() || is_explicit(i)) continue;
         Rand32(output_blinds[i]);
     }
 
@@ -215,7 +238,7 @@ bool BlindTransaction(const std::vector<uint256>& input_blinds, CMutableTransact
         blinds.push_back(b.begin());
     }
     for (size_t i = 0; i < last_ct; ++i) {
-        if (tx.vout[i].IsFee()) continue;
+        if (tx.vout[i].IsFee() || is_explicit(i)) continue;
         blinds.push_back(output_blinds[i].begin());
     }
     if (blinds.empty()) {
@@ -229,13 +252,22 @@ bool BlindTransaction(const std::vector<uint256>& input_blinds, CMutableTransact
 
     // Blind each output.
     for (size_t i = 0; i < n; ++i) {
-        if (tx.vout[i].IsFee()) continue;
+        if (tx.vout[i].IsFee() || is_explicit(i)) continue;
         const CAmount amount = tx.vout[i].nValue.GetAmount();
         if (amount < 0 || !MoneyRange(amount)) {
             return false;
         }
 
         const bool path_b = !recipient_keys.empty() && recipient_keys[i].has_value();
+        if (!path_b && !recipient_keys.empty()) {
+            // Fail closed: when a per-output recipient key list is engaged but
+            // this output carries no key and was not explicitly marked to stay
+            // plaintext, refuse to build the legacy plaintext-nonce path A.
+            // This route is only reachable when the caller opted into path A
+            // via -ctlegacy (empty recipient_keys) or an explicit path-A
+            // output, both of which bypass this check.
+            return false;
+        }
         uint256 nonce;
         if (path_b) {
             // Path B (recipient ECDH): the nonce commitment carries the
@@ -262,14 +294,13 @@ bool BlindTransaction(const std::vector<uint256>& input_blinds, CMutableTransact
             }
             output_nonces[i] = uint256(); // ECDH-derived; not a stored nonce
 } else {
-            // Path A fallback (plaintext nonce): used when no recipient key
-            // is engaged -- either -ctlegacy=1 (no key list at all) or a
-            // per-output key lookup failed (e.g. sending to a foreign address
-            // whose public key this wallet does not know). 1.0.18 downgrades
-            // per-output instead of failing the whole transaction: an
-            // external recipient must still be able to receive from a bare
-            // address. The path-A spending ban (nBanPathAHeight) stays
-            // inactive on mainnet through 1.0.18.
+            // Path A fallback (plaintext nonce): reachable only when the
+            // caller opted into the legacy behaviour via -ctlegacy=1 (empty
+            // recipient_keys). The mainnet default send path never reaches
+            // this branch: outputs without a resolved public key are either
+            // emitted as plaintext (explicit value) or fail closed above.
+            // The path-A spending ban (nBanPathAHeight) stays inactive on
+            // mainnet while it remains INT_MAX.
             Rand32(output_nonces[i]);
             SetNonce(tx.vout[i].nNonce, output_nonces[i]);
             nonce = output_nonces[i];

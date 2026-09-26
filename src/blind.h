@@ -77,11 +77,21 @@ std::optional<CAmount> GetOutputAmount(const CTxOut& txout);
  *                           output is blinded to the recipient via ECDH
  *                           (path B). The vector length must equal the number
  *                           of outputs, otherwise the call fails.
+ * @param[in] explicit_outputs optional per-output keep-explicit marker, indexed
+ *                           by output position. When non-null its length must
+ *                           equal the number of outputs; an output marked true
+ *                           is left unblinded (explicit value, no nonce, no
+ *                           range proof) and takes no part in the blinding
+ *                           balance. Used by the mainnet default send path to
+ *                           emit plaintext (non-CT) outputs to recipients whose
+ *                           public key is unknown instead of falling back to
+ *                           the legacy plaintext-nonce path A.
  * @return true on success
  */
 bool BlindTransaction(const std::vector<uint256>& input_blinds, CMutableTransaction& tx,
                       std::vector<uint256>& output_blinds, std::vector<uint256>& output_nonces,
-                      const std::vector<std::optional<CPubKey>>& recipient_keys = {});
+                      const std::vector<std::optional<CPubKey>>& recipient_keys = {},
+                      const std::vector<bool>* explicit_outputs = nullptr);
 
 /**
  * Blind an output to a specific recipient using ECDH. The nonce commitment

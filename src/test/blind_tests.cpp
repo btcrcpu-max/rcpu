@@ -363,6 +363,40 @@ BOOST_AUTO_TEST_CASE(blind_tx_empty_vout)
     BOOST_CHECK(!BlindTransaction(in_blinds, tx, out_blinds, out_nonces));
 }
 
+// All outputs explicit (fee/plaintext) with a confidential input: there is no
+// blinded output to carry the input's blinding factor, so the Pedersen tally
+// could never balance and the tx would be rejected at consensus
+// (bad-txns-ct-balance). Fail closed at creation instead.
+BOOST_AUTO_TEST_CASE(blind_tx_all_explicit_with_ct_input_fails)
+{
+    // A spent confidential coin carries a non-zero blinding factor.
+    uint256 ct_input_blind;
+    ct_input_blind.begin()[0] = 1;
+    std::vector<uint256> in_blinds = {ct_input_blind};
+
+    CMutableTransaction tx;
+    tx.vout.push_back(MakeExplicitOut(900000));
+    tx.vout.push_back(MakeExplicitOut(700000));
+
+    std::vector<uint256> out_blinds, out_nonces;
+    std::vector<std::optional<CPubKey>> keys = {std::nullopt, std::nullopt};
+    std::vector<bool> keep_explicit = {true, true};
+    BOOST_CHECK(!BlindTransaction(in_blinds, tx, out_blinds, out_nonces, keys, &keep_explicit));
+
+    // Same shape with a zero (explicit) input blind must be accepted: the
+    // plaintext outputs carry no commitment, so the tally trivially balances.
+    std::vector<uint256> zero_in_blinds(1);
+    BOOST_REQUIRE(BlindTransaction(zero_in_blinds, tx, out_blinds, out_nonces, keys, &keep_explicit));
+    BOOST_CHECK(tx.vout[0].nValue.IsExplicit());
+    BOOST_CHECK_EQUAL(tx.vout[0].nValue.GetAmount(), 900000);
+    BOOST_CHECK(tx.vout[1].nValue.IsExplicit());
+    BOOST_CHECK_EQUAL(tx.vout[1].nValue.GetAmount(), 700000);
+    BOOST_CHECK(tx.vout[0].nNonce.vchCommitment.empty());
+    BOOST_CHECK(tx.vout[1].vchRangeproof.empty());
+    BOOST_CHECK(out_blinds[0] == uint256());
+    BOOST_CHECK(out_blinds[1] == uint256());
+}
+
 // Default path B (recipient ECDH): when every output carries a recipient
 // public key, the nonce commitment holds an ephemeral compressed pubkey
 // (odd-Y, 0x03 prefix) instead of the path-A plaintext nonce. A key-less
@@ -436,11 +470,14 @@ BOOST_AUTO_TEST_CASE(blind_tx_path_b_recipient_key)
     }
 }
 
-// 1.0.18 wallet unlock: once a key list is engaged, a non-fee output whose
-// recipient public key cannot be resolved (nullopt) must downgrade to the
-// plaintext-nonce path A for that output only, so a bare-address send never
-// fails. A length mismatch still aborts the transaction.
-BOOST_AUTO_TEST_CASE(blind_tx_path_b_missing_key_falls_back)
+// Path-B hardening (mainnet default send path): once a key list is engaged,
+// a non-fee output whose recipient public key cannot be resolved (nullopt)
+// and which was not explicitly marked to stay plaintext must fail the whole
+// transaction (fail closed) instead of silently downgrading to the
+// plaintext-nonce path A. An output explicitly marked plaintext is emitted
+// unblinded (explicit value, no nonce, no range proof). A length mismatch
+// still aborts the transaction.
+BOOST_AUTO_TEST_CASE(blind_tx_path_b_missing_key_fails_closed)
 {
     CMutableTransaction tx;
     tx.vout.push_back(MakeExplicitOut(123456789));
@@ -448,19 +485,19 @@ BOOST_AUTO_TEST_CASE(blind_tx_path_b_missing_key_falls_back)
     std::vector<uint256> in_blinds(1);
     std::vector<uint256> out_blinds, out_nonces;
 
-    // Engaged key list but this output has no key: per-output path-A
-    // fallback; the output is a valid legacy commitment and the amount must
-    // be rewindable by the legacy decoder (UnblindValue).
+    // Engaged key list but this output has no key and no explicit marker:
+    // the transaction must be rejected, never degraded to path A.
     std::vector<std::optional<CPubKey>> keys_with_nullopt = {std::nullopt};
-    BOOST_REQUIRE(BlindTransaction(in_blinds, tx, out_blinds, out_nonces, keys_with_nullopt));
-    BOOST_CHECK(tx.vout[0].nValue.IsCommitment());
-    BOOST_CHECK(IsLegacyNonceCommit(tx.vout[0].nNonce));
-    CAmount recovered = -1;
-    uint256 blind_out;
-    BOOST_REQUIRE(UnblindValue(tx.vout[0].nValue, tx.vout[0].nNonce,
-                               tx.vout[0].vchRangeproof, recovered, blind_out));
-    BOOST_CHECK_EQUAL(recovered, 123456789);
-    BOOST_CHECK(blind_out == out_blinds[0]);
+    BOOST_CHECK(!BlindTransaction(in_blinds, tx, out_blinds, out_nonces, keys_with_nullopt));
+
+    // The same output explicitly marked to stay plaintext is emitted
+    // unblinded: explicit value, empty nonce, empty range proof.
+    std::vector<bool> keep_explicit = {true};
+    BOOST_REQUIRE(BlindTransaction(in_blinds, tx, out_blinds, out_nonces, keys_with_nullopt, &keep_explicit));
+    BOOST_CHECK(tx.vout[0].nValue.IsExplicit());
+    BOOST_CHECK_EQUAL(tx.vout[0].nValue.GetAmount(), 123456789);
+    BOOST_CHECK(tx.vout[0].nNonce.vchCommitment.empty());
+    BOOST_CHECK(tx.vout[0].vchRangeproof.empty());
 
     // Key-list length does not line up with the outputs: rejected.
     CMutableTransaction tx2;
@@ -470,9 +507,9 @@ BOOST_AUTO_TEST_CASE(blind_tx_path_b_missing_key_falls_back)
     BOOST_CHECK(!BlindTransaction(in_blinds, tx2, out_blinds, out_nonces, keys_too_short));
 }
 
-// Mixed 1.0.18 behaviour: keyed outputs stay path B while the key-less
-// output falls back to path A in the same transaction.
-BOOST_AUTO_TEST_CASE(blind_tx_path_b_mixed_fallback)
+// Keyed outputs stay path B while a key-less plain rcpu1... output is emitted
+// as a plaintext (explicit-value) output in the same transaction.
+BOOST_AUTO_TEST_CASE(blind_tx_path_b_mixed_keyed_and_plaintext)
 {
     CKey recv_key;
     recv_key.MakeNewKey(true);
@@ -485,7 +522,8 @@ BOOST_AUTO_TEST_CASE(blind_tx_path_b_mixed_fallback)
     std::vector<uint256> in_blinds(1);
     std::vector<uint256> out_blinds, out_nonces;
     std::vector<std::optional<CPubKey>> recipient_keys = {recv_pub, std::nullopt};
-    BOOST_REQUIRE(BlindTransaction(in_blinds, tx, out_blinds, out_nonces, recipient_keys));
+    std::vector<bool> keep_explicit = {false, true};
+    BOOST_REQUIRE(BlindTransaction(in_blinds, tx, out_blinds, out_nonces, recipient_keys, &keep_explicit));
 
     // Output 0 (keyed): path B shape, only the recipient's private key works.
     BOOST_CHECK_EQUAL(tx.vout[0].nNonce.vchCommitment.size(), 33U);
@@ -498,14 +536,13 @@ BOOST_AUTO_TEST_CASE(blind_tx_path_b_mixed_fallback)
                                       tx.vout[0].vchRangeproof, path_b_amt, path_b_blind));
     BOOST_CHECK_EQUAL(path_b_amt, 123456789);
 
-    // Output 1 (key-less): legacy path A, readable without any key.
-    BOOST_CHECK(IsLegacyNonceCommit(tx.vout[1].nNonce));
-    CAmount path_a_amt = -1;
-    uint256 path_a_blind;
-    BOOST_REQUIRE(UnblindValue(tx.vout[1].nValue, tx.vout[1].nNonce,
-                               tx.vout[1].vchRangeproof, path_a_amt, path_a_blind));
-    BOOST_CHECK_EQUAL(path_a_amt, 50000000);
-    BOOST_CHECK(path_a_blind == out_blinds[1]);
+    // Output 1 (key-less, plaintext): explicit value, no nonce, no range
+    // proof, zero blinding factor.
+    BOOST_CHECK(tx.vout[1].nValue.IsExplicit());
+    BOOST_CHECK_EQUAL(tx.vout[1].nValue.GetAmount(), 50000000);
+    BOOST_CHECK(tx.vout[1].nNonce.vchCommitment.empty());
+    BOOST_CHECK(tx.vout[1].vchRangeproof.empty());
+    BOOST_CHECK(out_blinds[1] == uint256());
 }
 
 // Fee outputs are exempt: they carry no commitment and need no key. A key
