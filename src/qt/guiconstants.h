@@ -36,7 +36,17 @@ static const bool DEFAULT_SPLASHSCREEN = true;
 /* Transaction list -- TX status decoration - danger, tx needs attention */
 #define COLOR_TX_STATUS_DANGER QColor(200, 100, 100)
 /* Transaction list -- TX status decoration - default color */
-#define COLOR_BLACK QColor(0, 0, 0)
+#define COLOR_BLACK QColor(30, 41, 59)
+
+/* !RCPU Light Blue Theme -- core palette */
+#define DARK_THEME_BACKGROUND    QColor(227, 240, 252) /* #e3f0fc light blue */
+#define DARK_THEME_CARD          QColor(255, 255, 255) /* #ffffff white */
+#define DARK_THEME_TEXT          QColor(30, 41, 59)    /* #1e293b slate-800 */
+#define DARK_THEME_TEXT_MUTED    QColor(71, 92, 118)   /* #475c76 muted blue-gray */
+#define DARK_THEME_ACCENT        QColor(37, 99, 235)   /* #2563eb blue-600 */
+#define DARK_THEME_BORDER        QColor(191, 219, 254) /* #bfdbfe blue-200 */
+#define DARK_THEME_ALERT_BG      QColor(250, 204, 21)  /* #facc15 yellow-400 */
+#define DARK_THEME_ALERT_TEXT    QColor(30, 41, 59)    /* #1e293b slate-800 */
 
 /* Tooltips longer than this (in characters) are converted into rich text,
    so that they can be word-wrapped.

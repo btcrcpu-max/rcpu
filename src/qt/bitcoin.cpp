@@ -592,6 +592,61 @@ int GuiMain(int argc, char* argv[])
     QApplication::setOrganizationDomain(QAPP_ORG_DOMAIN);
     QApplication::setApplicationName(QAPP_APP_NAME_DEFAULT);
 
+    // !RCPU: apply dark theme to the entire application
+    {
+        qApp->setStyleSheet(QString(
+            "QWidget { background-color: %1; color: %2; }"
+            "QMainWindow, QDialog { background-color: %1; }"
+            "QFrame { background-color: %3; border: 1px solid %4; border-radius: 4px; }"
+            "QGroupBox { background-color: %3; border: 1px solid %4; border-radius: 4px; margin-top: 6px; padding-top: 6px; }"
+            "QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top left; padding: 0 4px; color: %2; }"
+            "QTabWidget::pane { background-color: %3; border: 1px solid %4; }"
+            "QTabBar::tab { background-color: %3; color: %5; border: 1px solid %4; padding: 4px 12px; }"
+            "QTabBar::tab:selected { background-color: %1; color: %2; border-bottom-color: %1; }"
+            "QMenuBar { background-color: %1; color: %2; }"
+            "QMenuBar::item:selected { background-color: %3; color: %2; }"
+            "QMenu { background-color: %3; color: %2; border: 1px solid %4; }"
+            "QMenu::item:selected { background-color: %6; color: #ffffff; }"
+            "QPushButton { background-color: %3; color: %2; border: 1px solid %4; border-radius: 3px; padding: 4px 12px; }"
+            "QPushButton:hover { background-color: #dbeafe; }"
+            "QPushButton:pressed { background-color: #bfdbfe; }"
+            "QPushButton:disabled { color: %5; }"
+            "QLineEdit, QValidatedLineEdit, QAbstractSpinBox, QComboBox { background-color: %3; color: %2; border: 1px solid %4; border-radius: 3px; padding: 2px 4px; }"
+            "QLineEdit:focus, QValidatedLineEdit:focus { border: 1px solid %6; }"
+            "QComboBox::drop-down { border: none; }"
+            "QComboBox QAbstractItemView { background-color: %3; color: %2; border: 1px solid %4; selection-background-color: %6; }"
+            "QListView, QTableView, QTreeView { background-color: %3; color: %2; border: 1px solid %4; alternate-background-color: %1; }"
+            "QTableView::item:selected, QListView::item:selected { background-color: %6; color: #ffffff; }"
+            "QHeaderView::section { background-color: %3; color: %2; border: 1px solid %4; padding: 4px; }"
+            "QScrollBar:vertical { background-color: %1; width: 12px; border-radius: 6px; }"
+            "QScrollBar::handle:vertical { background-color: %4; border-radius: 6px; min-height: 20px; }"
+            "QScrollBar::handle:vertical:hover { background-color: %5; }"
+            "QScrollBar:horizontal { background-color: %1; height: 12px; border-radius: 6px; }"
+            "QScrollBar::handle:horizontal { background-color: %4; border-radius: 6px; min-width: 20px; }"
+            "QScrollBar::handle:horizontal:hover { background-color: %5; }"
+            "QProgressBar { background-color: %3; color: %2; border: 1px solid %4; border-radius: 4px; text-align: center; }"
+            "QProgressBar::chunk { background-color: %6; border-radius: 4px; }"
+            "QStatusBar { background-color: %1; color: %5; }"
+            "QToolBar { background-color: %1; border-bottom: 1px solid %4; }"
+            "QLabel#labelAlerts { background-color: %7; color: %8; border-radius: 4px; padding: 4px; }"
+            "QDialogButtonBox QPushButton { min-width: 64px; }"
+            "QSplitter::handle { background-color: %4; }"
+            "QToolTip { background-color: %3; color: %2; border: 1px solid %4; padding: 2px 4px; }"
+            "QCheckBox, QRadioButton { color: %2; }"
+            "QCheckBox::indicator, QRadioButton::indicator { width: 14px; height: 14px; }"
+            "QCheckBox::indicator:checked { background-color: %6; border: 2px solid %6; }"
+            "QCheckBox::indicator:unchecked { background-color: %3; border: 2px solid %4; }"
+        ).arg(DARK_THEME_BACKGROUND.name())
+         .arg(DARK_THEME_TEXT.name())
+         .arg(DARK_THEME_CARD.name())
+         .arg(DARK_THEME_BORDER.name())
+         .arg(DARK_THEME_TEXT_MUTED.name())
+         .arg(DARK_THEME_ACCENT.name())
+         .arg(DARK_THEME_ALERT_BG.name())
+         .arg(DARK_THEME_ALERT_TEXT.name())
+        );
+    }
+
     /// 4. Initialization of translations, so that intro dialog is in user's language
     // Now that QSettings are accessible, initialize translations
     QTranslator qtTranslatorBase, qtTranslator, translatorBase, translator;

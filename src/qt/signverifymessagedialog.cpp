@@ -115,14 +115,14 @@ void SignVerifyMessageDialog::on_signMessageButton_SM_clicked()
 
     CTxDestination destination = DecodeDestination(ui->addressIn_SM->text().toStdString());
     if (!IsValidDestination(destination)) {
-        ui->statusLabel_SM->setStyleSheet("QLabel { color: red; }");
+        ui->statusLabel_SM->setStyleSheet("QLabel { color: #ef4444; }");
         ui->statusLabel_SM->setText(tr("The entered address is invalid.") + QString(" ") + tr("Please check the address and try again."));
         return;
     }
     const PKHash* pkhash = std::get_if<PKHash>(&destination);
     if (!pkhash) {
         ui->addressIn_SM->setValid(false);
-        ui->statusLabel_SM->setStyleSheet("QLabel { color: red; }");
+        ui->statusLabel_SM->setStyleSheet("QLabel { color: #ef4444; }");
         ui->statusLabel_SM->setText(tr("The entered address does not refer to a key.") + QString(" ") + tr("Please check the address and try again."));
         return;
     }
@@ -130,7 +130,7 @@ void SignVerifyMessageDialog::on_signMessageButton_SM_clicked()
     WalletModel::UnlockContext ctx(model->requestUnlock());
     if (!ctx.isValid())
     {
-        ui->statusLabel_SM->setStyleSheet("QLabel { color: red; }");
+        ui->statusLabel_SM->setStyleSheet("QLabel { color: #ef4444; }");
         ui->statusLabel_SM->setText(tr("Wallet unlock was cancelled."));
         return;
     }
@@ -154,12 +154,12 @@ void SignVerifyMessageDialog::on_signMessageButton_SM_clicked()
     }
 
     if (res != SigningResult::OK) {
-        ui->statusLabel_SM->setStyleSheet("QLabel { color: red; }");
+        ui->statusLabel_SM->setStyleSheet("QLabel { color: #ef4444; }");
         ui->statusLabel_SM->setText(QString("<nobr>") + error + QString("</nobr>"));
         return;
     }
 
-    ui->statusLabel_SM->setStyleSheet("QLabel { color: green; }");
+    ui->statusLabel_SM->setStyleSheet("QLabel { color: #22c55e; }");
     ui->statusLabel_SM->setText(QString("<nobr>") + tr("Message signed.") + QString("</nobr>"));
 
     ui->signatureOut_SM->setText(QString::fromStdString(signature));
@@ -202,9 +202,9 @@ void SignVerifyMessageDialog::on_verifyMessageButton_VM_clicked()
     const auto result = MessageVerify(address, signature, message);
 
     if (result == MessageVerificationResult::OK) {
-        ui->statusLabel_VM->setStyleSheet("QLabel { color: green; }");
+        ui->statusLabel_VM->setStyleSheet("QLabel { color: #22c55e; }");
     } else {
-        ui->statusLabel_VM->setStyleSheet("QLabel { color: red; }");
+        ui->statusLabel_VM->setStyleSheet("QLabel { color: #ef4444; }");
     }
 
     switch (result) {
