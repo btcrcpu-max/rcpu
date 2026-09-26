@@ -1049,6 +1049,13 @@ public:
     void SetupDescriptorScriptPubKeyMans(const CExtKey& master_key) EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
     void SetupDescriptorScriptPubKeyMans() EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
 
+    //! RCPU CT: backfill confidential (rcpux1) SPK managers for wallets that
+    //! predate confidential address support. Recovers the master key from an
+    //! existing descriptor and sets up external + internal confidential SPKMs.
+    //! No-op when they already exist, when not a descriptor wallet, or when
+    //! private keys are disabled / locked.
+    void EnsureConfidentialScriptPubKeyMans() EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+
     //! Return the DescriptorScriptPubKeyMan for a WalletDescriptor if it is already in the wallet
     DescriptorScriptPubKeyMan* GetDescriptorScriptPubKeyMan(const WalletDescriptor& desc) const;
 

@@ -272,6 +272,9 @@ public:
     // Return whether the wallet contains a Taproot scriptPubKeyMan
     virtual bool taprootEnabled() = 0;
 
+    // Return whether the wallet contains a confidential (rcpux1) scriptPubKeyMan
+    virtual bool confidentialEnabled() = 0;
+
     // Return whether wallet uses an external signer.
     virtual bool hasExternalSigner() = 0;
 

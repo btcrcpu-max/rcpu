@@ -3077,6 +3077,18 @@ std::shared_ptr<CWallet> CWallet::Create(WalletContext& context, const std::stri
         }
     }
 
+    // RCPU CT: backfill confidential (rcpux1) SPK managers for descriptor wallets
+    // created before confidential address support. No-op if they already exist,
+    // if not a descriptor wallet, or if private keys are disabled/missing.
+    if (!fFirstRun && walletInstance->IsWalletFlagSet(WALLET_FLAG_DESCRIPTORS)) {
+        LOCK(walletInstance->cs_wallet);
+        try {
+            walletInstance->EnsureConfidentialScriptPubKeyMans();
+        } catch (const std::exception& e) {
+            warnings.push_back(strprintf(_("Warning: Failed to add confidential SPK managers: %s"), e.what()));
+        }
+    }
+
     if (!args.GetArg("-addresstype", "").empty()) {
         std::optional<OutputType> parsed = ParseOutputType(args.GetArg("-addresstype", ""));
         if (!parsed) {
@@ -3507,6 +3519,18 @@ bool CWallet::Unlock(const CKeyingMaterial& vMasterKeyIn)
         vMasterKey = vMasterKeyIn;
     }
     NotifyStatusChanged(this);
+
+    // RCPU CT: encrypted wallets are locked during load, so backfilling the
+    // confidential (rcpux1) SPK managers could not happen in Create(); do it
+    // now that the master key is available. No-op when already present.
+    if (IsWalletFlagSet(WALLET_FLAG_DESCRIPTORS)) {
+        LOCK(cs_wallet);
+        try {
+            EnsureConfidentialScriptPubKeyMans();
+        } catch (const std::exception& e) {
+            WalletLogPrintf("Failed to add confidential SPK managers after unlock: %s\n", e.what());
+        }
+    }
     return true;
 }
 
@@ -3761,6 +3785,71 @@ void CWallet::SetupDescriptorScriptPubKeyMans()
         // Ensure imported descriptors are committed to disk
         if (!batch.TxnCommit()) throw std::runtime_error("Error: cannot commit db transaction for descriptors import");
     }
+}
+
+void CWallet::EnsureConfidentialScriptPubKeyMans()
+{
+    AssertLockHeld(cs_wallet);
+
+    // Only meaningful for descriptor wallets with private keys, and only when
+    // the confidential (rcpux1) SPK managers are not already present.
+    if (!IsWalletFlagSet(WALLET_FLAG_DESCRIPTORS)) return;
+    if (IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS)) return;
+    if (GetScriptPubKeyMan(OutputType::CONFIDENTIAL, /*internal=*/false) != nullptr) return;
+
+    // Recover the master key from an existing descriptor SPKM. Wallets created
+    // before confidential address support only carry bech32 descriptors, so we
+    // take the private form ("wpkh(xprv.../84h/0h/0/*)") and decode the xprv.
+    CExtKey master_key;
+    bool have_master_key = false;
+    for (const auto& spk_man_pair : m_spk_managers) {
+        auto* desc_spk_man = dynamic_cast<DescriptorScriptPubKeyMan*>(spk_man_pair.second.get());
+        if (!desc_spk_man) continue;
+        std::string desc_str;
+        if (!desc_spk_man->GetDescriptorString(desc_str, /*priv=*/true)) continue;
+        // Extract "xprv..." token: it sits right after the innermost '('
+        // (nested descriptors such as sh(wpkh(...)) have several parens),
+        // and ends at the first '/' of the account path.
+        const size_t open = desc_str.find_last_of('(');
+        if (open == std::string::npos) continue;
+        const size_t slash = desc_str.find('/', open);
+        if (slash == std::string::npos) continue;
+        const std::string xprv_str = desc_str.substr(open + 1, slash - open - 1);
+        master_key = DecodeExtKey(xprv_str);
+        if (master_key.key.IsValid() && !master_key.chaincode.IsNull()) {
+            have_master_key = true;
+            break;
+        }
+    }
+    if (!have_master_key) {
+        // Likely a locked encrypted wallet; backfill happens on unlock.
+        WalletLogPrintf("cannot recover master key to add confidential SPK managers\n");
+        return;
+    }
+
+    // Create single batch txn
+    WalletBatch batch(GetDatabase());
+    if (!batch.TxnBegin()) throw std::runtime_error("Error: cannot create db transaction for confidential descriptors setup");
+
+    for (bool internal : {false, true}) {
+        auto spk_manager = std::unique_ptr<DescriptorScriptPubKeyMan>(new DescriptorScriptPubKeyMan(*this, m_keypool_size));
+        if (IsCrypted()) {
+            if (IsLocked()) {
+                throw std::runtime_error(std::string(__func__) + ": Wallet is locked, cannot setup new descriptors");
+            }
+            if (!spk_manager->CheckDecryptionKey(vMasterKey) && !spk_manager->Encrypt(vMasterKey, &batch)) {
+                throw std::runtime_error(std::string(__func__) + ": Could not encrypt new descriptors");
+            }
+        }
+        spk_manager->SetupDescriptorGeneration(batch, master_key, OutputType::CONFIDENTIAL, internal);
+        uint256 id = spk_manager->GetID();
+        AddScriptPubKeyMan(id, std::move(spk_manager));
+        AddActiveScriptPubKeyManWithDb(batch, id, OutputType::CONFIDENTIAL, internal);
+    }
+
+    // Ensure information is committed to disk
+    if (!batch.TxnCommit()) throw std::runtime_error("Error: cannot commit db transaction for confidential descriptors setup");
+    WalletLogPrintf("added confidential SPK managers\n");
 }
 
 void CWallet::AddActiveScriptPubKeyMan(uint256 id, OutputType type, bool internal)
