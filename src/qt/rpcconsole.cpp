@@ -888,12 +888,12 @@ void RPCConsole::clear(bool keep_prompt)
     ui->messagesWidget->document()->setDefaultStyleSheet(
         QString(
                 "table { }"
-                "td.time { color: #a1a1aa; font-size: %2; padding-top: 3px; } "
+                "td.time { color: #64748b; font-size: %2; padding-top: 3px; } "
                 "td.message { font-family: %1; font-size: %2; white-space:pre-wrap; } "
-                "td.cmd-request { color: #2dd4bf; } "
-                "td.cmd-error { color: #ef4444; } "
-                ".secwarning { color: #ef4444; }"
-                "b { color: #facc15; } "
+                "td.cmd-request { color: #0f766e; } "
+                "td.cmd-error { color: #dc2626; } "
+                ".secwarning { color: #dc2626; }"
+                "b { color: #b45309; } "
             ).arg(fixedFontInfo.family(), QString("%1pt").arg(consoleFontSize))
         );
 

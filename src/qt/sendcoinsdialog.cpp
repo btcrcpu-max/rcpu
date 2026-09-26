@@ -995,13 +995,13 @@ void SendCoinsDialog::coinControlChangeEdited(const QString& text)
                 else
                 {
                     ui->lineEditCoinControlChange->setText("");
-                    ui->labelCoinControlChangeLabel->setStyleSheet("QLabel{color:#fafafa;}");
+                    ui->labelCoinControlChangeLabel->setStyleSheet("QLabel{color:#1e293b;}");
                     ui->labelCoinControlChangeLabel->setText("");
                 }
             }
             else // Known change address
             {
-                ui->labelCoinControlChangeLabel->setStyleSheet("QLabel{color:#fafafa;}");
+                ui->labelCoinControlChangeLabel->setStyleSheet("QLabel{color:#1e293b;}");
 
                 // Query label
                 QString associatedLabel = model->getAddressTableModel()->labelForAddress(text);
