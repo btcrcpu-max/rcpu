@@ -275,13 +275,27 @@ jobs:
           echo "PACKAGE_VERSION=$PKGVER"
           test -n "$PKGVER" || { echo "ERROR: PKGVER empty"; exit 1; }
           echo "=== looking for installer / exe ==="
-          find . -maxdepth 3 -iname 'setup.exe' -o -iname 'rcpu-qt.exe' -o -iname 'rcpud.exe' | head -50
+          find . -maxdepth 3 \( -iname '*win64-setup.exe' -o -iname 'rcpu-qt.exe' -o -iname 'rcpud.exe' \) | head -50
           ls -la . src src/qt 2>/dev/null | head -80
 
-          EXE=$(ls -1t win64-setup.exe *win-setup.exe bitcoin--win64-setup.exe rcpu-*-win64-setup.exe 2>/dev/null | head -1)
+          EXPECTED="rcpu-${PKGVER}-win64-setup.exe"
+          EXE=""
+          if [ -f "$EXPECTED" ]; then
+            EXE="$EXPECTED"
+          else
+            # only the canonical rcpu-*-win64-setup.exe pattern; never bitcoin--*
+            EXE=$(ls -1t rcpu-*-win64-setup.exe 2>/dev/null | head -1 || true)
+          fi
+
           if [ -n "$EXE" ]; then
+            test -s "$EXE" || { echo "ERROR: $EXE is empty"; exit 1; }
+            # NSIS installer should be multiple MB, not a stub
+            SIZE=$(stat -c%s "$EXE")
+            test "$SIZE" -ge 1000000 || { echo "ERROR: $EXE too small ($SIZE bytes)"; exit 1; }
+            file "$EXE" || true
             zip "rcpu-${PKGVER}-win64-setup.zip" "$EXE"
             sha256sum "$EXE" "rcpu-${PKGVER}-win64-setup.zip" > SHA256SUMS-windows.txt
+            cat SHA256SUMS-windows.txt
             exit 0
           fi
 
@@ -290,6 +304,7 @@ jobs:
           cp -v src/qt/rcpu-qt.exe dist/ 2>/dev/null || cp -v src/rcpu-qt.exe dist/
           cp -v src/rcpud.exe src/rcpu-cli.exe src/rcpu-tx.exe src/rcpu-wallet.exe dist/ 2>/dev/null || true
           test -f dist/rcpu-qt.exe
+          test -s dist/rcpu-qt.exe
           zip -j "rcpu-${PKGVER}-win64-portable.zip" dist/*
           sha256sum "rcpu-${PKGVER}-win64-portable.zip" > SHA256SUMS-windows.txt
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
