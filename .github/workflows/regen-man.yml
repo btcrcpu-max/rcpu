@@ -36,8 +36,12 @@ jobs:
           for b in src/rcpud src/rcpu-cli src/rcpu-tx src/rcpu-wallet src/rcpu-util src/qt/rcpu-qt; do
             test -x "$b" || { echo "missing $b"; exit 1; }
           done
+          QT_QPA_PLATFORM=offscreen ./src/qt/rcpu-qt --version | grep -q '1.1.6'
 
       - name: Regenerate man pages
+        env:
+          QT_QPA_PLATFORM: offscreen
+          DISPLAY: ":0"
         run: |
           python3 contrib/devtools/gen-manpages.py
           git diff --stat doc/man/
