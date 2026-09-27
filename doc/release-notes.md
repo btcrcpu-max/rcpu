@@ -2,6 +2,8 @@
 
 RCPU Core release notes live in [doc/release-notes/](release-notes/):
 
+- [v1.1.5](release-notes/v1.1.5.md) — CT send path fix (fail-closed, #51)
+- [v1.0.25](release-notes/v1.0.25.md) — Windows IBD high-hash fix (CompressedHeader hashRandomX preservation)
 - [v1.0.24](release-notes/v1.0.24.md) — Windows wallet sync fix: RandomX built natively (MSYS2) with chain-hash parity gate
 - [v1.0.23](release-notes/v1.0.23.md) — mainnet Base58 address encoding restored; P2TR Path-B unblind fix
 - [v1.0.22](release-notes/v1.0.22.md) — `computerandomxhash` returns computed hash in mining mode
