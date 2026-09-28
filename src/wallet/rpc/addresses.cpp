@@ -551,6 +551,10 @@ RPCHelpMan getaddressinfo()
                         }},
                         {RPCResult::Type::NUM, "sigsrequired", /*optional=*/true, "The number of signatures required to spend multisig output (only if script is multisig)."},
                         {RPCResult::Type::STR_HEX, "pubkey", /*optional=*/true, "The hex value of the raw public key for single-key addresses (possibly embedded in P2SH or P2WSH)."},
+                        // !RCPU
+                        {RPCResult::Type::BOOL, "confidential", /*optional=*/true, "(RCPU) Whether this is a confidential address"},
+                        {RPCResult::Type::STR_HEX, "blinding_pubkey", /*optional=*/true, "(RCPU) The blinding public key of the confidential address, if confidential"},
+                        // !RCPU END
                         {RPCResult::Type::OBJ, "embedded", /*optional=*/true, "Information about the address embedded in P2SH or P2WSH, if relevant and known.",
                         {
                             {RPCResult::Type::ELISION, "", "Includes all getaddressinfo output fields for the embedded address, excluding metadata (timestamp, hdkeypath, hdseedid)\n"
