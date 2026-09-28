@@ -215,6 +215,10 @@ struct CreatedTransactionResult
     // carries the 20-byte hash, so without this map the wallet record would
     // show the plain rcpu1q address instead of the confidential rcpux1 one.
     std::map<unsigned int, std::string> vout_addr;
+    // RCPU CT: vout index -> original send amount (in satoshis). Persisted
+    // so the sender can display the outgoing amount even though they cannot
+    // unblind a foreign Path-B output.
+    std::map<unsigned int, CAmount> vout_amount;
 
     CreatedTransactionResult(CTransactionRef _tx, CAmount _fee, std::optional<unsigned int> _change_pos, const FeeCalculation& _fee_calc)
         : tx(_tx), fee(_fee), fee_calc(_fee_calc), change_pos(_change_pos) {}

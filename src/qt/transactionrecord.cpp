@@ -88,11 +88,21 @@ QList<TransactionRecord> TransactionRecord::decomposeTransaction(const interface
                 sub.idx = i;
                 sub.involvesWatchAddress = involvesWatchAddress;
 
-                if (!std::get_if<CNoDestination>(&wtx.txout_address[i]))
+                // RCPU CT: prefer the original confidential recipient address
+                // (rcpux1...) persisted in mapValue. The on-chain P2WPKH script
+                // only carries the 20-byte hash, so without this the wallet
+                // record would degrade to the plain rcpu1q address.
+                std::string address_str;
+                const auto addr_it = mapValue.find("vout_addr_" + std::to_string(i));
+                if (addr_it != mapValue.end()) {
+                    address_str = addr_it->second;
+                } else if (!std::get_if<CNoDestination>(&wtx.txout_address[i])) {
+                    address_str = EncodeDestination(wtx.txout_address[i]);
+                }
+                if (!address_str.empty())
                 {
-                    // Sent to Bitcoin Address
                     sub.type = TransactionRecord::SendToAddress;
-                    sub.address = EncodeDestination(wtx.txout_address[i]);
+                    sub.address = address_str;
                 }
                 else
                 {
@@ -101,7 +111,7 @@ QList<TransactionRecord> TransactionRecord::decomposeTransaction(const interface
                     sub.address = mapValue["to"];
                 }
 
-CAmount nValue = i < wtx.txout_amount.size() ? wtx.txout_amount[i] : GetOutputAmount(txout).value_or(0);
+                CAmount nValue = i < wtx.txout_amount.size() ? wtx.txout_amount[i] : GetOutputAmount(txout).value_or(0);
                 // RCPU CT: sender cannot unblind foreign Path-B output, fall back
                 // to the plaintext amount persisted at send time (vout_amount_<idx>).
                 if (nValue == 0) {
@@ -128,7 +138,7 @@ CAmount nValue = i < wtx.txout_amount.size() ? wtx.txout_amount[i] : GetOutputAm
                 // Credit
                 //
 
-TransactionRecord sub(hash, nTime);
+                TransactionRecord sub(hash, nTime);
                 sub.idx = i; // vout index
                 sub.credit = i < wtx.txout_amount.size() ? wtx.txout_amount[i] : GetOutputAmount(txout).value_or(0);
                 // RCPU CT: sender cannot unblind foreign Path-B output, fall back
