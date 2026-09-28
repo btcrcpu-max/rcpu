@@ -245,6 +245,11 @@ jobs:
           # to a hardcoded bcrt1p (Bitcoin regtest) address that RCPU regtest
           # (bech32 hrp "rrcpu") rejects, so the test dies in setup. Re-enable it
           # once the test framework derives addresses from the chain's bech32 hrp.
+          #
+          # The --legacy-wallet run of wallet_coinbase_category.py is left out
+          # too: this build does not enable BDB (Ubuntu ships libdb 5.3 and
+          # configure runs without --with-incompatible-bdb), so skip_if_no_wallet()
+          # raises SkipTest and the test exits 77 (TEST_EXIT_SKIPPED), which still
+          # fails the step. Only the --descriptors (SQLite) variant runs.
           python3 test/functional/wallet_confidential.py --descriptors
-          python3 test/functional/wallet_coinbase_category.py --legacy-wallet
           python3 test/functional/wallet_coinbase_category.py --descriptors
