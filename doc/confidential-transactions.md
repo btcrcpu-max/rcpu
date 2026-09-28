@@ -21,6 +21,15 @@ Key source references:
 | Validation | `src/validation.cpp` (line ~728) | Rejects CT txs before activation height |
 | Fee safety | `src/wallet/fees.cpp` | CT safety cap prevents corrupted fee estimates |
 
+## Who can see the amount
+
+| Output | Third party sees amount | Who can unblind |
+|--------|-------------------------|-----------------|
+| Path A (`0x02`) | yes | any node that rewinds |
+| Path B (`0x03`) | no | sender + recipient spend key |
+| Explicit `rcpu1` | yes | everyone |
+| Fee / coinbase | yes | everyone (by design) |
+
 ## Coinbase and Fees
 
 - **Coinbase outputs are NOT blinded.** Block rewards and fees are paid in
@@ -40,10 +49,14 @@ Key source references:
 
 ## Range Proofs
 
-- Each blinded output includes a **range proof** (Bulletproofs-style),
-  proving the committed amount is in `[0, 2^64)` without revealing the value.
+- Each blinded output includes a **range proof** (Back-Maxwell / Borromean
+  ring signatures in `libsecp256k1-zkp`, **not** Bulletproofs).
+- The proof shows the committed amount is in `[0, 2^64)` without revealing
+  the value.
+- Consensus cap: `MAX_RANGEPROOF_SIZE = 5134` bytes
+  (`src/consensus/consensus.h`).
 - The rangeproof is stored in `vchRangeproof` on the `CTxOut`.
-- Validation rejects outputs with empty rangeproofs when CT is active.
+- Validation rejects empty rangeproofs when CT is active.
 
 ## Wallet CT Output Scanning
 
@@ -70,21 +83,23 @@ This means:
 - Block explorers should display the commitment hash, not a numeric amount.
 - The actual amount is only visible to the wallet that owns the output.
 
-## Sending: Path A vs Path B
+## Sending: Path A vs Path B vs explicit
 
-Since v1.0.21 the wallet supports two blinding paths:
+Since v1.0.21 the wallet supports two blinding paths. Since **v1.1.5**
+the default send path is fail-closed and no longer writes Path A.
 
-- **Path A (format-only)**: legacy nonce prefix `0x02` written on-chain.
-  Anyone can rewind and read the amount. Used when a recipient public key
-  cannot be resolved (ordinary `rcpu1...` address without mapped pubkey,
-  or `-ctlegacy=1`).
-- **Path B (confidential)**: ECDH with the recipient spend pubkey, ephemeral
-  key written as `0x03`-prefixed compressed pubkey. Only the recipient can
-  unblind. Used for `rcpux1...` confidential addresses and recipients with a
-  known pubkey; a missing key on a path-B-required output **fails closed**.
+- **Path B (confidential)**: ECDH with the recipient spend pubkey.
+  Ephemeral key written as a `0x03`-prefixed compressed pubkey.
+  Only the recipient can unblind. Used for `rcpux1...`.
+  A missing key on a Path-B-required output **fails closed**.
+- **Explicit plaintext**: bare `rcpu1...` / unresolved pubkey.
+  Amount is written in the clear (no `0x02` nonce). This is not
+  confidential.
+- **Path A (format-only)**: legacy nonce `0x02 || 32-byte nonce`.
+  Anyone can rewind the amount. Reachable only with `-ctlegacy=1`.
 
-Wallet rule: if `recipient_keys` is non-empty, every non-fee output must have
-a pubkey; change outputs use the wallet's own pubkey (path B).
+Wallet rule: if `recipient_keys` is non-empty, every non-fee output
+must have a pubkey; change outputs use the wallet's own pubkey (Path B).
 
 ## Confidential addresses (`rcpux1...`)
 
@@ -97,9 +112,17 @@ a pubkey; change outputs use the wallet's own pubkey (path B).
 
 ## `-ctlegacy` status (mainnet)
 
-`-ctlegacy=1` (wallet-wide path-A fallback) is **usable on mainnet** since
-v1.0.18, default 0. With the default, outputs lacking a resolvable recipient
-pubkey fall back to path A per-output automatically, so bare `rcpu1...`
-sends work without the flag. The path-A spending ban (`nBanPathAHeight`)
-activates on mainnet at **height 9,193** (v1.1.0). Path A is not
-confidential — use it only for compatibility.
+`-ctlegacy=1` is usable on mainnet since v1.0.18, default 0.
+
+With the default (v1.1.5+):
+
+- `rcpux1...` → Path B
+- bare `rcpu1...` → explicit plaintext output
+- Path A is **not** the automatic fallback
+
+The Path A *consensus* ban (`nBanPathAHeight`) is **inactive on
+mainnet** (`INT_MAX`, deferred in v1.1.1). The previously advertised
+height **9,193** was withdrawn before activation. Testnet bans Path A
+from height 0. See `doc/consensus-params.md`.
+
+Path A is not confidential — use it only for compatibility.
