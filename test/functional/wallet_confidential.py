@@ -115,9 +115,10 @@ class WalletConfidentialTest(BitcoinTestFramework):
         self.log.info("A private-keys-disabled wallet keeps failing")
         node.createwallet(wallet_name="watchw", disable_private_keys=True, blank=True, descriptors=True)
         watchw = node.get_wallet_rpc("watchw")
+        # No keys at all: the generic CanGetAddresses() check (-4) fires before the confidential-SPKM lookup.
         assert_raises_rpc_error(
-            -12,
-            "No confidential addresses available",
+            -4,
+            "no available keys",
             watchw.getnewaddress, "", "confidential",
         )
 
