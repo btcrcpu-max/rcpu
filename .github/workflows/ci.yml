@@ -185,3 +185,50 @@ jobs:
                        serialize_tests; do
             grep -q "${suite}" /tmp/rcpu-unit.log || { echo "suite not executed: ${suite}"; exit 1; }
           done
+
+  functional-tests:
+    name: functional tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+      - name: Install dependencies
+        run: |
+          sudo rm -f /etc/apt/sources.list.d/google-chrome.list || true
+          sudo apt-get update -qq
+          sudo apt-get install -y build-essential libtool autotools-dev automake \
+            pkg-config bsdmainutils python3 autoconf-archive cmake \
+            libssl-dev libevent-dev libboost-all-dev \
+            libsqlite3-dev libdb-dev libdb++-dev
+      - name: Build RandomX dependency
+        run: |
+          curl --fail -L -o /tmp/randomx-src.tar.gz https://github.com/tevador/RandomX/archive/refs/tags/v1.2.1.tar.gz
+          echo "2e6dd3bed96479332c4c8e4cab2505699ade418a07797f64ee0d4fa394555032  /tmp/randomx-src.tar.gz" | sha256sum -c -
+          tar -xf /tmp/randomx-src.tar.gz -C /tmp
+          cd /tmp/RandomX-1.2.1
+          patch -p1 < ${{ github.workspace }}/depends/patches/randomx/custom_configuration.patch
+          mkdir build && cd build
+          cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON
+          make -j$(nproc)
+          sudo make install
+          sudo ldconfig
+      - name: Build
+        run: |
+          ./autogen.sh
+          CPPFLAGS="-I/usr/local/include" LDFLAGS="-L/usr/local/lib" \
+            ./configure --without-gui --prefix=/opt/rcpu
+          make -j$(nproc)
+      - name: Functional tests - RCPU CT wallet suite
+        env:
+          BITCOIND: ${{ github.workspace }}/src/rcpud
+          BITCOINCLI: ${{ github.workspace }}/src/rcpu-cli
+        run: |
+          # Run a scoped subset of functional tests that exercise RCPU-specific
+          # wallet and mempool behaviour. Full test_runner.py cannot pass on
+          # RCPU because upstream legacy tests expect unmodified Bitcoin chain
+          # params (ChainType::MAIN disabled, CT serialization, etc).
+          python3 test/functional/wallet_confidential.py
+          python3 test/functional/mempool_spend_coinbase.py
+          python3 test/functional/wallet_coinbase_category.py --legacy-wallet
+          python3 test/functional/wallet_coinbase_category.py --descriptors
