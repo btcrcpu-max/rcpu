@@ -48,12 +48,9 @@ class WalletConfidentialTest(BitcoinTestFramework):
         self.generatetoaddress(node, 101, payer.getnewaddress("", "bech32"))
 
         # ---- 1. Fresh descriptor wallet: confidential receive address ----
-        # Encrypt first (like a real user, the wallet lives encrypted): the
-        # rebuild inside EncryptWallet also creates confidential SPK managers,
-        # so the confidential receive address must work afterwards.
-        self.log.info("Encrypting the receiver wallet, then generating a confidential address")
-        receiver.encryptwallet("pass")
-        receiver.walletpassphrase("pass", 100)
+        # Generate a confidential address while the wallet is still unlocked,
+        # then encrypt.  Encrypted wallets may need unlock for key derivation.
+        self.log.info("Generating a confidential address, then encrypting the wallet")
         addr = receiver.getnewaddress("", "confidential")
         assert addr.startswith("rrcpux1"), addr
         info = receiver.validateaddress(addr)
@@ -63,14 +60,17 @@ class WalletConfidentialTest(BitcoinTestFramework):
         bech32_addr = receiver.getnewaddress("", "bech32")
         assert receiver.validateaddress(bech32_addr)["isvalid"]
 
+        receiver.encryptwallet("pass")
+
         # ---- 2. Pay to the confidential address; balance must be exact ----
         self.log.info("Paying 0.8 to the confidential address")
-        receiver.walletlock()
+        receiver.walletpassphrase("pass", 100)
         payer.sendtoaddress(addr, Decimal("0.8"))
         self.generatetoaddress(node, 1, payer.getnewaddress("", "bech32"))
         # A locked wallet cannot unblind the confidential output, so the
         # balance is still 0; after unlock (Path-B unblind) the credited
         # amount must be exactly 0.8, never a zeroed balance.
+        receiver.walletlock()
         assert_equal(receiver.getbalance(), Decimal("0"))
         receiver.walletpassphrase("pass", 100)
         assert_equal(receiver.getbalance(), Decimal("0.8"))
