@@ -36,7 +36,7 @@ class CoinbaseCategoryTest(BitcoinTestFramework):
 
     def run_test(self):
         # Generate one block to an address
-        address = self.nodes[0].getnewaddress()
+        address = self.nodes[0].getnewaddress("", "bech32")
         self.generatetoaddress(self.nodes[0], 1, address)
         hash = self.nodes[0].getbestblockhash()
         txid = self.nodes[0].getblock(hash)["tx"][0]

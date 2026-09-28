@@ -219,6 +219,17 @@ jobs:
           CPPFLAGS="-I/usr/local/include" LDFLAGS="-L/usr/local/lib" \
             ./configure --without-gui --prefix=/opt/rcpu
           make -j$(nproc)
+      - name: Verify binaries and create compatibility symlinks
+        run: |
+          ls -la src/rcpud src/rcpu-cli
+          ./src/rcpud -version
+          # test_framework.py defaults to src/bitcoind; create symlinks so the
+          # default path works without relying solely on the BITCOIND env var.
+          ln -sf rcpud src/bitcoind
+          ln -sf rcpu-cli src/bitcoin-cli
+          ln -sf rcpu-tx src/bitcoin-tx
+          ln -sf rcpu-util src/bitcoin-util
+          ln -sf rcpu-wallet src/bitcoin-wallet
       - name: Functional tests - RCPU CT wallet suite
         env:
           BITCOIND: ${{ github.workspace }}/src/rcpud
@@ -228,7 +239,7 @@ jobs:
           # wallet and mempool behaviour. Full test_runner.py cannot pass on
           # RCPU because upstream legacy tests expect unmodified Bitcoin chain
           # params (ChainType::MAIN disabled, CT serialization, etc).
-          python3 test/functional/wallet_confidential.py
+          python3 test/functional/wallet_confidential.py --descriptors
           python3 test/functional/mempool_spend_coinbase.py
           python3 test/functional/wallet_coinbase_category.py --legacy-wallet
           python3 test/functional/wallet_coinbase_category.py --descriptors

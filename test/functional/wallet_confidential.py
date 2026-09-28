@@ -45,7 +45,7 @@ class WalletConfidentialTest(BitcoinTestFramework):
         receiver = node.get_wallet_rpc("receiver")
 
         self.log.info("Mining coins for the payer")
-        self.generatetoaddress(node, 101, payer.getnewaddress())
+        self.generatetoaddress(node, 101, payer.getnewaddress("", "bech32"))
 
         # ---- 1. Fresh descriptor wallet: confidential receive address ----
         # Encrypt first (like a real user, the wallet lives encrypted): the
@@ -67,7 +67,7 @@ class WalletConfidentialTest(BitcoinTestFramework):
         self.log.info("Paying 0.8 to the confidential address")
         receiver.walletlock()
         payer.sendtoaddress(addr, Decimal("0.8"))
-        self.generatetoaddress(node, 1, payer.getnewaddress())
+        self.generatetoaddress(node, 1, payer.getnewaddress("", "bech32"))
         # A locked wallet cannot unblind the confidential output, so the
         # balance is still 0; after unlock (Path-B unblind) the credited
         # amount must be exactly 0.8, never a zeroed balance.
