@@ -233,28 +233,45 @@ QString TransactionDesc::toHTML(interfaces::Node& node, interfaces::Wallet& wall
                 if ((toSelf == ISMINE_SPENDABLE) && (fAllFromMe == ISMINE_SPENDABLE))
                     continue;
 
-                if (!wtx.value_map.count("to") || wtx.value_map["to"].empty())
-                {
+                // RCPU CT: prefer the original confidential recipient address
+                // (rcpux1...) persisted in mapValue. The on-chain P2WPKH script
+                // only carries the 20-byte hash, so without this the details
+                // would degrade to the plain rcpu1q address.
+                std::string to_addr;
+                const auto to_it = wtx.value_map.find("vout_addr_" + std::to_string(i));
+                if (to_it != wtx.value_map.end()) {
+                    to_addr = to_it->second;
+                } else if (!wtx.value_map.count("to") || wtx.value_map["to"].empty()) {
                     // Offline transaction
                     CTxDestination address;
                     if (ExtractDestination(txout.scriptPubKey, address))
                     {
-                        strHTML += "<b>" + tr("To") + ":</b> ";
-                        std::string name;
-                        if (wallet.getAddress(
-                                address, &name, /* is_mine= */ nullptr, /* purpose= */ nullptr) && !name.empty())
-                            strHTML += GUIUtil::HtmlEscape(name) + " ";
-                        strHTML += GUIUtil::HtmlEscape(EncodeDestination(address));
-                        if(toSelf == ISMINE_SPENDABLE)
-                            strHTML += " (" + tr("own address") + ")";
-                        else if(toSelf & ISMINE_WATCH_ONLY)
-                            strHTML += " (" + tr("watch-only") + ")";
-                        strHTML += "<br>";
+                        to_addr = EncodeDestination(address);
                     }
                 }
+                if (!to_addr.empty())
+                {
+                    strHTML += "<b>" + tr("To") + ":</b> ";
+                    // For memo addresses we don't have getAddress() metadata,
+                    // so skip the name lookup and just display the address.
+                    strHTML += GUIUtil::HtmlEscape(to_addr);
+                    if(toSelf == ISMINE_SPENDABLE)
+                        strHTML += " (" + tr("own address") + ")";
+                    else if(toSelf & ISMINE_WATCH_ONLY)
+                        strHTML += " (" + tr("watch-only") + ")";
+                    strHTML += "<br>";
+                }
 
-CAmount nOutAmount = 0;
-                wallet.getUnblindedAmount(txout, nOutAmount);
+                CAmount nOutAmount = 0;
+                // RCPU CT: prefer the original send amount persisted in mapValue.
+                // The sender cannot unblind a foreign Path-B output.
+                const auto amt_it = wtx.value_map.find("vout_amount_" + std::to_string(i));
+                if (amt_it != wtx.value_map.end()) {
+                    nOutAmount = LocaleIndependentAtoi<CAmount>(amt_it->second);
+                }
+                if (nOutAmount == 0) {
+                    wallet.getUnblindedAmount(txout, nOutAmount);
+                }
 strHTML += "<b>" + tr("Debit") + ":</b> " + BitcoinUnits::formatHtmlWithUnit(unit, -nOutAmount) + "<br>";
                 if(toSelf)
                     strHTML += "<b>" + tr("Credit") + ":</b> " + BitcoinUnits::formatHtmlWithUnit(unit, nOutAmount) + "<br>";

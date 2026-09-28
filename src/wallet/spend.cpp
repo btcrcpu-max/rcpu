@@ -1406,6 +1406,7 @@ CTxOut txout(recipient.nAmount, GetScriptForDestination(recipient.dest));
 
 // RCPU CT: blind outputs when confidential-transactions mode is enabled.
     std::map<unsigned int, std::string> vout_addr; // vout -> encoded recipient dest (rcpux1...)
+    std::map<unsigned int, CAmount> vout_amount;    // vout -> original send amount (satoshis)
     if (g_con_elementsmode && !txNew.vout.empty()) {
         const int32_t nLegacyVersion = txNew.nVersion; // restored when the tx is all-plaintext
         std::vector<uint256> input_blinds(txNew.vin.size());
@@ -1466,6 +1467,11 @@ std::vector<std::optional<CPubKey>> recipient_keys;
                     if (change_key_dest) {
                         pubkey = change_key;
                         vout_addr[vi] = EncodeDestination(*change_key_dest);
+                        // RCPU CT: persist change amount.
+                        // The change output was created at line 1248 as
+                        // CTxOut(change_amount, scriptChange), so use the same
+                        // local variable that constructed it.
+                        vout_amount[vi] = change_amount;
                     }
                 } else {
                     const size_t ri = vi - (change_pos && *change_pos < vi ? 1 : 0);
@@ -1480,6 +1486,7 @@ std::vector<std::optional<CPubKey>> recipient_keys;
                             }
                             pubkey = blinding;
                             vout_addr[vi] = EncodeDestination(vecSend[ri].dest);
+                            vout_amount[vi] = vecSend[ri].nAmount;  // RCPU CT: persist send amount
                         }
                     }
                 }
@@ -1588,8 +1595,9 @@ std::vector<std::optional<CPubKey>> recipient_keys;
               feeCalc.est.fail.start, feeCalc.est.fail.end,
               (feeCalc.est.fail.totalConfirmed + feeCalc.est.fail.inMempool + feeCalc.est.fail.leftMempool) > 0.0 ? 100 * feeCalc.est.fail.withinTarget / (feeCalc.est.fail.totalConfirmed + feeCalc.est.fail.inMempool + feeCalc.est.fail.leftMempool) : 0.0,
               feeCalc.est.fail.withinTarget, feeCalc.est.fail.totalConfirmed, feeCalc.est.fail.inMempool, feeCalc.est.fail.leftMempool);
-CreatedTransactionResult created_result(tx, current_fee, change_pos, feeCalc);
+    CreatedTransactionResult created_result(tx, current_fee, change_pos, feeCalc);
     created_result.vout_addr = std::move(vout_addr);
+    created_result.vout_amount = std::move(vout_amount);
     return created_result;
 }
 

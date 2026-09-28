@@ -106,5 +106,32 @@ BOOST_FIXTURE_TEST_CASE(wallet_duplicated_preset_inputs_test, TestChain100Setup)
     BOOST_CHECK(!res_tx.has_value());
 }
 
+BOOST_FIXTURE_TEST_CASE(vout_amount_memo_persisted, TestChain100Setup)
+{
+    // RCPU CT: verify CreatedTransactionResult::vout_amount is populated so the
+    // original send amount can be persisted in mapValue and displayed in
+    // Qt/RPC when the recipient is a confidential address (Issue #59).
+    CreateAndProcessBlock({}, GetScriptForRawPubKey(coinbaseKey.GetPubKey()));
+    auto wallet = CreateSyncedWallet(*m_node.chain, WITH_LOCK(Assert(m_node.chainman)->GetMutex(), return m_node.chainman->ActiveChain()), coinbaseKey);
+
+    CAmount send_amount = 10 * COIN;
+    CRecipient recipient{PubKeyDestination({}), send_amount, /*fSubtractFeeFromAmount=*/false};
+    CCoinControl coin_control;
+    auto res = CreateTransaction(*wallet, {recipient}, /*change_pos=*/std::nullopt, coin_control);
+    BOOST_REQUIRE(res);
+    const auto& txr = *res;
+
+    // The recipient amount must be recorded in vout_amount
+    BOOST_CHECK(!txr.vout_amount.empty());
+    bool found = false;
+    for (const auto& [idx, amt] : txr.vout_amount) {
+        if (amt == send_amount) {
+            found = true;
+            break;
+        }
+    }
+    BOOST_CHECK(found);
+}
+
 BOOST_AUTO_TEST_SUITE_END()
 } // namespace wallet

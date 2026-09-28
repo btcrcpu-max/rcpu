@@ -88,11 +88,27 @@ QList<TransactionRecord> TransactionRecord::decomposeTransaction(const interface
                 sub.idx = i;
                 sub.involvesWatchAddress = involvesWatchAddress;
 
-                if (!std::get_if<CNoDestination>(&wtx.txout_address[i]))
+                // RCPU CT: prefer the original confidential recipient address
+                // (rcpux1...) persisted in mapValue. The on-chain P2WPKH script
+                // only carries the 20-byte hash, so without this the wallet
+                // record would degrade to the plain rcpu1q address.
+                std::string address_str;
+                const auto addr_it = mapValue.find("vout_addr_" + std::to_string(i));
+                if (addr_it != mapValue.end()) {
+                    address_str = addr_it->second;
+                } else if (!std::get_if<CNoDestination>(&wtx.txout_address[i])) {
+                    address_str = EncodeDestination(wtx.txout_address[i]);
+                }
+                if (!address_str.empty())
                 {
-                    // Sent to Bitcoin Address
                     sub.type = TransactionRecord::SendToAddress;
-                    sub.address = EncodeDestination(wtx.txout_address[i]);
+                    sub.address = address_str;
+                }
+                else
+                {
+                    // Sent to IP, or other non-address transaction like OP_EVAL
+                    sub.type = TransactionRecord::SendToOther;
+                    sub.address = mapValue["to"];
                 }
                 else
                 {

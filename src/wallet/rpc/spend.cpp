@@ -31,6 +31,7 @@
 #ifdef DOMAIN
 #undef DOMAIN
 #endif
+#include <string>
 #include <util/vector.h>
 #include <wallet/coincontrol.h>
 #include <wallet/feebumper.h>
@@ -205,6 +206,13 @@ const CTransactionRef& tx = res->tx;
     // pubkey would be lost from the record.
     for (const auto& [vout_idx, addr] : res->vout_addr) {
         map_value[std::string("vout_addr_") + std::to_string(vout_idx)] = addr;
+    }
+    // RCPU CT: also persist the original send amount per vout so the sender
+    // can display the outgoing amount even though they cannot unblind a
+    // foreign Path-B output. Stored as satoshis (plain integer) to match the
+    // read side (LocaleIndependentAtoi<CAmount>) in transactionrecord.cpp.
+    for (const auto& [vout_idx, amount] : res->vout_amount) {
+        map_value[std::string("vout_amount_") + std::to_string(vout_idx)] = std::to_string(amount);
     }
     wallet.CommitTransaction(tx, std::move(map_value), /*orderForm=*/{});
     if (verbose) {
