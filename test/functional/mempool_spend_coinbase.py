@@ -19,6 +19,7 @@ from test_framework.wallet import MiniWallet
 
 class MempoolSpendCoinbaseTest(BitcoinTestFramework):
     def set_test_params(self):
+        self.chain = 'rcpuregtest'
         self.num_nodes = 1
 
     def run_test(self):

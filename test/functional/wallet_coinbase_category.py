@@ -17,6 +17,7 @@ class CoinbaseCategoryTest(BitcoinTestFramework):
         self.add_wallet_options(parser)
 
     def set_test_params(self):
+        self.chain = 'rcpuregtest'
         self.num_nodes = 1
         self.setup_clean_chain = True
 

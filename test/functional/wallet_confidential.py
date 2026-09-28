@@ -30,6 +30,7 @@ class WalletConfidentialTest(BitcoinTestFramework):
         self.add_wallet_options(parser)
 
     def set_test_params(self):
+        self.chain = 'rcpuregtest'
         self.setup_clean_chain = True
         self.num_nodes = 1
 
