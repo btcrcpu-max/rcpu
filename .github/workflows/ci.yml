@@ -236,10 +236,15 @@ jobs:
           BITCOINCLI: ${{ github.workspace }}/src/rcpu-cli
         run: |
           # Run a scoped subset of functional tests that exercise RCPU-specific
-          # wallet and mempool behaviour. Full test_runner.py cannot pass on
-          # RCPU because upstream legacy tests expect unmodified Bitcoin chain
-          # params (ChainType::MAIN disabled, CT serialization, etc).
+          # wallet behaviour. Full test_runner.py cannot pass on RCPU because
+          # upstream legacy tests expect unmodified Bitcoin chain params
+          # (ChainType::MAIN disabled, CT serialization, etc).
+          #
+          # mempool_spend_coinbase.py is deliberately left out for now: it needs
+          # the shared pre-mined cache built by _initialize_chain(), which mines
+          # to a hardcoded bcrt1p (Bitcoin regtest) address that RCPU regtest
+          # (bech32 hrp "rrcpu") rejects, so the test dies in setup. Re-enable it
+          # once the test framework derives addresses from the chain's bech32 hrp.
           python3 test/functional/wallet_confidential.py --descriptors
-          python3 test/functional/mempool_spend_coinbase.py
           python3 test/functional/wallet_coinbase_category.py --legacy-wallet
           python3 test/functional/wallet_coinbase_category.py --descriptors
