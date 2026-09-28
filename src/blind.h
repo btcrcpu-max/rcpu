@@ -17,6 +17,16 @@
 class CKey;
 
 /**
+ * Derive the shared secret used to seed the range-proof nonce of a Path B
+ * output: ss = ECDH(privkey, pubkey) with the copy-X32 hash function
+ * (no SHA256, no HKDF). Exposed for unit tests that replay the frozen
+ * vectors of doc/ct-path-c.md Appendix A against the repository's own
+ * implementation; production callers should use BlindOutputToRecipient /
+ * UnblindValueWithKey instead.
+ */
+bool ComputeECDHNonce(const CKey& privkey, const CPubKey& pubkey, uint256& nonce_out);
+
+/**
  * Blind a single output: generate a blinding factor and a nonce, create the
  * Pedersen value commitment, store the nonce commitment, and produce the
  * range proof. The output amount remains recoverable by the holder of the
