@@ -347,7 +347,7 @@ mkdir -p "$DISTSRC"
 
         case "$HOST" in
             *mingw*)
-                cp "${DISTSRC}/doc/README_windows.txt" "${DISTNAME}/readme.txt"
+                cp "${DISTSRC}/doc/README_windows_rcpu.txt" "${DISTNAME}/readme.txt"
                 ;;
             *linux*)
                 cp "${DISTSRC}/README.md" "${DISTNAME}/"

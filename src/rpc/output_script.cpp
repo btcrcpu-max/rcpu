@@ -50,6 +50,10 @@ static RPCHelpMan validateaddress()
                 {RPCResult::Type::BOOL, "iswitness", /*optional=*/true, "If the address is a witness address"},
                 {RPCResult::Type::NUM, "witness_version", /*optional=*/true, "The version number of the witness program"},
                 {RPCResult::Type::STR_HEX, "witness_program", /*optional=*/true, "The hex value of the witness program"},
+                // !RCPU
+                {RPCResult::Type::BOOL, "confidential", /*optional=*/true, "(RCPU) Whether this is a confidential address"},
+                {RPCResult::Type::STR_HEX, "blinding_pubkey", /*optional=*/true, "(RCPU) The blinding public key of the confidential address, if confidential"},
+                // !RCPU END
                 {RPCResult::Type::STR, "error", /*optional=*/true, "Error message, if any"},
                 {RPCResult::Type::ARR, "error_locations", /*optional=*/true, "Indices of likely error locations in address, if known (e.g. Bech32 errors)",
                     {
