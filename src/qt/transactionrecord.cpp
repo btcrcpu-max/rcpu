@@ -110,14 +110,8 @@ QList<TransactionRecord> TransactionRecord::decomposeTransaction(const interface
                     sub.type = TransactionRecord::SendToOther;
                     sub.address = mapValue["to"];
                 }
-                else
-                {
-                    // Sent to IP, or other non-address transaction like OP_EVAL
-                    sub.type = TransactionRecord::SendToOther;
-                    sub.address = mapValue["to"];
-                }
 
-CAmount nValue = i < wtx.txout_amount.size() ? wtx.txout_amount[i] : GetOutputAmount(txout).value_or(0);
+                CAmount nValue = i < wtx.txout_amount.size() ? wtx.txout_amount[i] : GetOutputAmount(txout).value_or(0);
                 // RCPU CT: sender cannot unblind foreign Path-B output, fall back
                 // to the plaintext amount persisted at send time (vout_amount_<idx>).
                 if (nValue == 0) {
@@ -144,7 +138,7 @@ CAmount nValue = i < wtx.txout_amount.size() ? wtx.txout_amount[i] : GetOutputAm
                 // Credit
                 //
 
-TransactionRecord sub(hash, nTime);
+                TransactionRecord sub(hash, nTime);
                 sub.idx = i; // vout index
                 sub.credit = i < wtx.txout_amount.size() ? wtx.txout_amount[i] : GetOutputAmount(txout).value_or(0);
                 // RCPU CT: sender cannot unblind foreign Path-B output, fall back
