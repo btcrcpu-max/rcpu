@@ -39,9 +39,9 @@ class WalletConfidentialTest(BitcoinTestFramework):
     def run_test(self):
         self.log.info("Setting up wallets")
         node = self.nodes[0]
-        node.createwallet(wallet_name="payer")
+        node.createwallet(wallet_name="payer", descriptors=True)
         payer = node.get_wallet_rpc("payer")
-        node.createwallet(wallet_name="receiver")
+        node.createwallet(wallet_name="receiver", descriptors=True)
         receiver = node.get_wallet_rpc("receiver")
 
         self.log.info("Mining coins for the payer")
