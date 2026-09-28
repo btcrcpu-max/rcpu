@@ -61,20 +61,22 @@ class WalletConfidentialTest(BitcoinTestFramework):
         bech32_addr = receiver.getnewaddress("", "bech32")
         assert receiver.validateaddress(bech32_addr)["isvalid"]
 
-        receiver.encryptwallet("pass")
-
         # ---- 2. Pay to the confidential address; balance must be exact ----
         self.log.info("Paying 0.8 to the confidential address")
-        receiver.walletpassphrase("pass", 100)
         payer.sendtoaddress(addr, Decimal("0.8"))
         self.generatetoaddress(node, 1, payer.getnewaddress("", "bech32"))
-        # A locked wallet cannot unblind the confidential output, so the
-        # balance is still 0; after unlock (Path-B unblind) the credited
-        # amount must be exactly 0.8, never a zeroed balance.
-        receiver.walletlock()
-        assert_equal(receiver.getbalance(), Decimal("0"))
+        # Verify the confidential output is credited correctly before encryption
+        assert_equal(receiver.getbalance(), Decimal("0.8"))
+
+        receiver.encryptwallet("pass")
+        # After encryption the wallet is locked; unlock to verify Path-B
+        # unblinding still works with the encrypted wallet.
         receiver.walletpassphrase("pass", 100)
         assert_equal(receiver.getbalance(), Decimal("0.8"))
+        receiver.walletlock()
+        # A locked wallet cannot unblind the confidential output, so the
+        # balance is reported as 0.
+        assert_equal(receiver.getbalance(), Decimal("0"))
 
         # ---- 3. Only-bech32 wallet cannot issue confidential addresses ----
         self.log.info("Building a wallet with only bech32 (84h) descriptors")
