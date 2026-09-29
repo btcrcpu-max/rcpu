@@ -47,7 +47,7 @@ They are listed here so other docs have one place to copy from.
 - Default chain is RCPUMAIN; `rcpud` without `-chain` launches the RCPU mainnet.
 - `ChainType::MAIN` (Bitcoin mainnet) is disabled at runtime; `-chain=main` throws an error.
 - The Bitcoin template (`CMainParams`) remains in source for structure/tests but cannot be selected as the live chain.
-- `nMinimumChainWork` is the chainwork at **height 5072**, measured from a real synced node (2026-09-17; raised in v1.1.4, previously a height-100 value from v1.0.8). Raise it only from a synced node's `getblockchaininfo.chainwork` — never by hand from an old document. Every time a hardening tier is advanced, **this table and the `checkpointData` list must be updated in the same change**, or the doc/code drift reappears.
+- `nMinimumChainWork` is the chainwork at **height 10000**, measured from a real synced node (2026-09-29; raised in v1.1.8, previously a height-5,072 value from v1.1.4 and a height-100 value from v1.0.8). Raise it only from a synced node's `getblockchaininfo.chainwork` — never by hand from an old document. Every time a hardening tier is advanced, **this table and the `checkpointData` list must be updated in the same change**, or the doc/code drift reappears.
 
 ## Genesis Block
 
@@ -74,7 +74,7 @@ The mainnet was hardened at **height 38** (v1.0.1) with:
 
 This is the **first hardening tier** (approximately 3 hours of history at 5-minute blocks).
 
-Tier 2 was applied at **height 3,600** (v1.0.2): the tier-2 checkpoint and `defaultAssumeValid` remain at 3,600. The tier-2 **chainwork value was reverted** in v1.0.8 to a measured height-100 value because `0x01fc87aa3c` blocked empty-datadir IBD on new nodes; the chainwork part of tier 2 is therefore **not** live at 3,600 today. In **v1.1.4** the chainwork was re-raised to a height-5,072 measured value and a checkpoint + `defaultAssumeValid` were added at **height 4,922** (tier 2.5), which is the current hardening level. Subsequent hardening tiers are planned:
+Tier 2 was applied at **height 3,600** (v1.0.2): the tier-2 checkpoint and `defaultAssumeValid` remain at 3,600. The tier-2 **chainwork value was reverted** in v1.0.8 to a measured height-100 value because `0x01fc87aa3c` blocked empty-datadir IBD on new nodes; the chainwork part of tier 2 is therefore **not** live at 3,600 today. In **v1.1.4** the chainwork was re-raised to a height-5,072 measured value and a checkpoint + `defaultAssumeValid` were added at **height 4,922** (tier 2.5). Tier 3 applied in **v1.1.8** raised it again to the height-10,000 measured value with checkpoint + `defaultAssumeValid` at 10,000 / 9,992. Subsequent hardening tiers are planned:
 
 | Tier | Target height | Approx. age | Action |
 |------|---------------|-------------|--------|
@@ -110,15 +110,17 @@ the checkpoint and `defaultAssumeValid` anchor anti-reorg resistance at
 the tier 2 level. The tier 2 `nMinimumChainWork` was reverted in v1.0.8
 to the height-100 measured value (see Notes), then re-raised in v1.1.4
 to the height-5,072 value with a checkpoint + `defaultAssumeValid` at
-height 4,922 (current hardening level, tier 2.5). Future raises must
-again come from a synced node's `getblockchaininfo.chainwork`.
+height 4,922 (tier 2.5). Tier 3 landed in **v1.1.8**: checkpoint +
+`defaultAssumeValid` at 10,000 / 9,992 and `nMinimumChainWork` raised to
+the height-10,000 measured value (current hardening level). Future raises
+must again come from a synced node's `getblockchaininfo.chainwork`.
 Subsequent tiers remain as scheduled.
 Miners and pools should run with `-reindex-chainstate` if they encounter
 unexpected reorgs. Exchanges should require a high number of confirmations
 (e.g., 100+) for large deposits during this early period.
 
 Exchanges: require a high confirmation count (e.g. 100+) while
-the chain is below tier 3 (height 10,000).
+the chain is below tier 4 (height 100,000).
 Checkpoints / nMinimumChainWork reduce IBD risk; they are not a
 substitute for confirmations on a young CPU chain.
 

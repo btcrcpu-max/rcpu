@@ -51,11 +51,13 @@ RCPU defaults to **Bech32 (SegWit)** addresses, prefixed with `rcpu1`.
 > disabled. Do not generate Base58 addresses with the wallet; use `rcpu1...`
 > (and `rcpux1...` for confidential receives).
 
-RCPU also supports **confidential addresses** (`rcpux1...`) since v1.0.21.
-Sending to a `rcpux1...` address uses Path-B (ECDH) blinding: only the
-recipient can unblind the amount. Sending to an ordinary `rcpu1...` address
-falls back to Path-A (format-only confidentiality). See
-[doc/confidential-transactions.md](doc/confidential-transactions.md) and
+RCPU supports **confidential addresses** (`rcpux1...`) since v1.0.21.
+Sending to a `rcpux1...` address uses **Path C** (ECDH + HKDF rewind nonce,
+`0x04`) by default since v1.1.7: only the recipient can unblind the amount.
+Sending to an ordinary `rcpu1...` address produces an **explicit plaintext
+output** (amount visible on-chain); it does **not** fall back to Path A.
+Path A (format-only confidentiality) is only reachable with `-ctlegacy=1`.
+See [doc/confidential-transactions.md](doc/confidential-transactions.md) and
 [doc/threat-model.md](doc/threat-model.md).
 
 ## Quick Start
