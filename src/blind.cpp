@@ -60,7 +60,14 @@ void SetNonce(CConfidentialNonce& nc, const uint256& nonce)
 std::memcpy(&nc.vchCommitment[1], nonce.begin(), 32);
 }
 
-static bool ComputeECDHNonce(const CKey& privkey, const CPubKey& pubkey, uint256& nonce_out)
+} // namespace
+
+// Derive the Path B range-proof nonce: the ECDH shared secret between a
+// private key and a public key, using the copy-X32 hash callback (no SHA256).
+// Frozen by the regression vectors in doc/ct-path-c.md Appendix A; declared
+// in blind.h so unit tests can replay them against this implementation. Any
+// future Path C patch must keep this function byte-identical.
+bool ComputeECDHNonce(const CKey& privkey, const CPubKey& pubkey, uint256& nonce_out)
 {
     secp256k1_context* ctx = GetBlindContext();
     secp256k1_pubkey sp;
@@ -72,8 +79,6 @@ static bool ComputeECDHNonce(const CKey& privkey, const CPubKey& pubkey, uint256
     }
     return true;
 }
-
-} // namespace
 
 // Path A commits to the raw nonce with a fixed 0x02 prefix. Any other
 // encoding — including the ECDH path B carried in a 33-byte ephemeral pubkey

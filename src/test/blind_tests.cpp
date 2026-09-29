@@ -13,7 +13,9 @@
 #include <streams.h>
 #include <test/util/setup_common.h>
 #include <uint256.h>
+#include <util/strencodings.h>
 
+#include <algorithm>
 #include <optional>
 #include <vector>
 
@@ -568,12 +570,117 @@ BOOST_AUTO_TEST_CASE(blind_tx_path_b_fee_exempt)
     BOOST_CHECK(tx.vout[1].nValue.IsExplicit());
     BOOST_CHECK_EQUAL(tx.vout[1].nValue.GetAmount(), 10000);
 
-    CAmount recovered = -1;
+CAmount recovered = -1;
     uint256 blind_out;
     BOOST_REQUIRE(UnblindValueWithKey(recv_key, tx.vout[0].nValue, tx.vout[0].nNonce,
                                       tx.vout[0].vchRangeproof, recovered, blind_out));
     BOOST_CHECK_EQUAL(recovered, 123456789);
     BOOST_CHECK(blind_out == out_blinds[0]);
+}
+
+// Appendix A of doc/ct-path-c.md: replay vector B1 through the repository's
+// own ComputeECDHNonce (declared in blind.h). ss must be byte-identical in
+// both directions (sender ephem x recipient_pub, receiver priv x ephem_pub),
+// the nonce commitment must carry the 0x03-prefixed ephemeral pubkey, and a
+// key-less Path A decoder must fail closed (no garbage amount). Also asserts
+// the negative case: flipping the prefix to 0x02 must not let the X bytes be
+// reinterpreted as a Path A raw nonce. Any future Path C patch must keep
+// these values byte-identical or historical Path B UTXOs stop unblinding.
+BOOST_AUTO_TEST_CASE(path_b_vector_b1_compute_ecdh_nonce)
+{
+    // Deterministic scalars from the frozen vector: parallel to how
+    // blind_tx_path_b_recipient_key builds outputs, but with fixed keys so
+    // the ECDH shared secret itself is pinned.
+    const auto recipient_priv_hex = ParseHex("0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20");
+    const auto recipient_pub_hex = ParseHex("0284bf7562262bbd6940085748f3be6afa52ae317155181ece31b66351ccffa4b0");
+    const auto ephemeral_priv_hex = ParseHex("2122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f42");
+    const auto ephemeral_pub_hex = ParseHex("0338be4e8cfa078d48299b557033a07024a46963c874c666f0cfb9b753425da2cc");
+
+    CKey recipient_priv;
+    recipient_priv.Set(recipient_priv_hex.begin(), recipient_priv_hex.end(), true);
+    BOOST_REQUIRE(recipient_priv.IsValid());
+    const CPubKey recipient_pub{recipient_pub_hex.begin(), recipient_pub_hex.end()};
+    BOOST_REQUIRE(recipient_pub.IsValid());
+
+    CKey ephemeral_priv;
+    ephemeral_priv.Set(ephemeral_priv_hex.begin(), ephemeral_priv_hex.end(), true);
+    BOOST_REQUIRE(ephemeral_priv.IsValid());
+    const CPubKey ephemeral_pub{ephemeral_pub_hex.begin(), ephemeral_pub_hex.end()};
+    BOOST_REQUIRE(ephemeral_pub.IsValid());
+
+    // Sanity: the frozen private keys derive the frozen public keys, so the
+    // vector is internally consistent.
+    BOOST_CHECK(recipient_priv.GetPubKey() == recipient_pub);
+    BOOST_CHECK(ephemeral_priv.GetPubKey() == ephemeral_pub);
+
+    // 1) Sender side: ss = ComputeECDHNonce(ephemeral_priv, recipient_pub).
+    // The frozen ss is the raw big-endian X coordinate: CopyX32 copies the
+    // shared-point X verbatim into the uint256 buffer, so compare byte-exact
+    // (a uint256S comparison would read the buffer in reverse byte order).
+    uint256 ss_sender;
+    BOOST_REQUIRE(ComputeECDHNonce(ephemeral_priv, recipient_pub, ss_sender));
+    const auto ss_expected = ParseHex("8ff9563819af439784eff54bd65e65614b14c7fe66b6b2f6010a72ec681f38f0");
+    BOOST_REQUIRE_EQUAL(ss_expected.size(), 32U);
+    BOOST_CHECK(std::equal(ss_sender.begin(), ss_sender.end(), ss_expected.begin()));
+
+    // 2) Receiver side: ss = ComputeECDHNonce(recipient_priv, ephemeral_pub),
+    // must be the very same 32 bytes (ECDH symmetry).
+    uint256 ss_receiver;
+    BOOST_REQUIRE(ComputeECDHNonce(recipient_priv, ephemeral_pub, ss_receiver));
+    BOOST_CHECK(ss_receiver == ss_sender);
+    BOOST_CHECK(std::equal(ss_receiver.begin(), ss_receiver.end(), ss_expected.begin()));
+
+    // 6) The on-chain nonce commitment must be the frozen ephemeral pubkey:
+    // 33 bytes, 0x03 prefix, and never legacy-shaped.
+    CConfidentialNonce nonce_commit;
+    nonce_commit.vchCommitment.assign(ephemeral_pub_hex.begin(), ephemeral_pub_hex.end());
+    BOOST_CHECK_EQUAL(nonce_commit.vchCommitment.size(), 33U);
+    BOOST_CHECK_EQUAL(nonce_commit.vchCommitment[0], 0x03);
+    BOOST_CHECK(!IsLegacyNonceCommit(nonce_commit));
+
+    // 3-5) Full round trip with the frozen recipient key and the frozen
+    // amount: BlindOutputToRecipient -> UnblindValueWithKey(recipient_priv)
+    // recovers the exact amount (assertion 3); a key-less UnblindValue fails
+    // (assertion 4) and GetOutputAmount is nullopt, never a zero amount
+    // (assertion 5).
+    const CAmount amount = 500000000;
+    CConfidentialValue conf_value;
+    CConfidentialNonce nc;
+    std::vector<unsigned char> rangeproof;
+    uint256 out_blind;
+    BOOST_REQUIRE(BlindOutputToRecipient(conf_value, nc, rangeproof, out_blind, amount, recipient_pub));
+
+    CAmount recovered = -1;
+    uint256 recovered_blind;
+    BOOST_REQUIRE(UnblindValueWithKey(recipient_priv, conf_value, nc, rangeproof, recovered, recovered_blind));
+    BOOST_CHECK_EQUAL(recovered, amount);
+    BOOST_CHECK(recovered_blind == out_blind);
+
+    CAmount keyless = -1;
+    uint256 keyless_blind;
+    BOOST_CHECK(!UnblindValue(conf_value, nc, rangeproof, keyless, keyless_blind));
+    CTxOut txout;
+    txout.nValue = conf_value;
+    txout.nNonce = nc;
+    txout.vchRangeproof = rangeproof;
+    BOOST_CHECK(!GetOutputAmount(txout).has_value());
+
+    // Negative: flipping the prefix to 0x02 must not turn the ephemeral
+    // pubkey's X coordinate into a usable Path A raw nonce. The commitment is
+    // legacy-shaped on the surface (GetNonce decodes the X bytes), but the
+    // rewind must still fail: the X coordinate is not the nonce the range
+    // proof was signed with, so a key-less decoder gets no amount.
+    CConfidentialNonce flipped = nonce_commit;
+    flipped.vchCommitment[0] = 0x02;
+    BOOST_CHECK(IsLegacyNonceCommit(flipped));
+    BOOST_CHECK(!GetNonce(flipped).IsNull());
+    CAmount amt = -1;
+    uint256 blind2;
+    BOOST_CHECK(!UnblindValue(conf_value, flipped, rangeproof, amt, blind2));
+    BOOST_CHECK_EQUAL(amt, -1);
+    CTxOut flipped_out = txout;
+    flipped_out.nNonce = flipped;
+    BOOST_CHECK(!GetOutputAmount(flipped_out).has_value());
 }
 
 BOOST_AUTO_TEST_SUITE_END()
