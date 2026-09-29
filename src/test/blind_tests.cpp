@@ -10,6 +10,9 @@
 #include <primitives/confidential.h>
 #include <primitives/transaction.h>
 #include <script/script.h>
+#include <secp256k1.h>
+#include <secp256k1_generator.h>
+#include <secp256k1_rangeproof.h>
 #include <streams.h>
 #include <test/util/setup_common.h>
 #include <uint256.h>
@@ -678,9 +681,314 @@ BOOST_AUTO_TEST_CASE(path_b_vector_b1_compute_ecdh_nonce)
     uint256 blind2;
     BOOST_CHECK(!UnblindValue(conf_value, flipped, rangeproof, amt, blind2));
     BOOST_CHECK_EQUAL(amt, -1);
-    CTxOut flipped_out = txout;
+CTxOut flipped_out = txout;
     flipped_out.nNonce = flipped;
     BOOST_CHECK(!GetOutputAmount(flipped_out).has_value());
+}
+
+// -------------------------------------------------------------------------
+// Path C (0x04 || X nonce, HKDF rewind nonce). Wallet-layer only, off by
+// default: BlindOutputToRecipientV2 / UnblindValueWithKeyV2 exist for the
+// upcoming rcpux1 (Path C) default switch; the current default send path
+// (Path B / explicit) is untouched by this patch.
+// -------------------------------------------------------------------------
+
+namespace {
+// A realistic non-trivial scriptPubKey (22-byte P2WPKH-shaped) to bind into
+// the Path C HKDF info domain.
+CScript PathCTestScriptPubKey()
+{
+    return CScript() << OP_0 << std::vector<unsigned char>(20, 0x42);
+}
+} // namespace
+
+// Path C sender -> recipient round trip through the V2 API: the commitment is
+// 0x04 || X (never legacy-shaped), the recipient spend key rewinds the exact
+// amount and blinding factor, and a key-less Path A decoder fails closed.
+BOOST_AUTO_TEST_CASE(path_c_recipient_roundtrip_v2)
+{
+    CKey recv_key;
+    recv_key.MakeNewKey(true);
+    BOOST_REQUIRE(recv_key.IsValid());
+    const CPubKey recv_pub = recv_key.GetPubKey();
+    const CScript spk = PathCTestScriptPubKey();
+
+    const CAmount amount = 43210;
+    CConfidentialValue conf_value;
+    CConfidentialNonce nonce_commit;
+    std::vector<unsigned char> rangeproof;
+    uint256 blind;
+
+    BOOST_REQUIRE(BlindOutputToRecipientV2(conf_value, nonce_commit, rangeproof, blind, amount, recv_pub, spk));
+    BOOST_REQUIRE_EQUAL(nonce_commit.vchCommitment.size(), 33U);
+    BOOST_CHECK_EQUAL(nonce_commit.vchCommitment[0], 0x04);
+    BOOST_CHECK(IsPathCNonceCommit(nonce_commit));
+    // 0x04 must never be mistaken for a legacy plaintext nonce.
+    BOOST_CHECK(!IsLegacyNonceCommit(nonce_commit));
+    BOOST_CHECK(GetNonce(nonce_commit).IsNull());
+
+    CAmount amount_out = -1;
+    uint256 blind_out;
+    BOOST_REQUIRE(UnblindValueWithKeyV2(recv_key, conf_value, nonce_commit, rangeproof, spk, amount_out, blind_out));
+    BOOST_CHECK_EQUAL(amount_out, amount);
+    BOOST_CHECK(blind_out == blind);
+
+    // A key-less Path A rewind on a Path C commitment must fail closed, never
+    // conflating failure with a zero amount.
+    CAmount keyless = -1;
+    uint256 keyless_blind;
+    BOOST_CHECK(!UnblindValue(conf_value, nonce_commit, rangeproof, keyless, keyless_blind));
+    BOOST_CHECK_EQUAL(keyless, -1);
+    CTxOut txout;
+    txout.nValue = conf_value;
+    txout.nNonce = nonce_commit;
+    txout.vchRangeproof = rangeproof;
+    BOOST_CHECK(!GetOutputAmount(txout).has_value());
+}
+
+// X-only recovery covers both Y parities: a Path C nonce carries X only, and
+// ReconstructPathCEphemeral reconstructs a key with the SAME X regardless of
+// the sender's parity. For a valid curve X both 02||X and 03||X parse (x^3+7
+// is a QR), so recovery deterministically yields the even-Y point; the Y flip
+// is harmless because the rewind nonce is CopyX32(ECDH(...)), which reads only
+// the X coordinate (see path_c_view_seed_rewinds_sender_nonce / doc
+// 7b check). Each output draws a fresh ephemeral, so repeated sends must
+// produce distinct nonce commitments.
+BOOST_AUTO_TEST_CASE(path_c_even_odd_y_recovery_and_fresh_ephemeral)
+{
+    // Feed 0x04 || X built from a known even-Y key and a known odd-Y key
+    // directly into the recovery path: both must come back with the same X.
+    for (unsigned char desired_prefix : {static_cast<unsigned char>(0x02), static_cast<unsigned char>(0x03)}) {
+        CKey eph_key;
+        CPubKey eph_pub;
+        for (int tries = 0; tries < 100; ++tries) {
+            eph_key.MakeNewKey(true);
+            eph_pub = eph_key.GetPubKey();
+            if (eph_pub.size() == 33 && eph_pub[0] == desired_prefix) break;
+        }
+        BOOST_REQUIRE_EQUAL(eph_pub.size(), 33U);
+        BOOST_REQUIRE_EQUAL(eph_pub[0], desired_prefix);
+
+        CConfidentialNonce nc;
+        nc.vchCommitment.resize(33);
+        nc.vchCommitment[0] = 0x04;
+        std::copy(eph_pub.begin() + 1, eph_pub.end(), nc.vchCommitment.begin() + 1);
+
+        CPubKey recovered;
+        BOOST_REQUIRE(ReconstructPathCEphemeral(nc, recovered));
+        BOOST_REQUIRE(recovered.IsValid());
+        BOOST_REQUIRE_EQUAL(recovered.size(), 33U);
+        BOOST_CHECK_EQUAL_COLLECTIONS(&nc.vchCommitment[1], &nc.vchCommitment[1] + 32,
+                                      &recovered[1], &recovered[1] + 32);
+    }
+
+    // Spend-side round trip: the recipient's spend key rewinds the exact
+    // amount and blinding factor through the V2 entry point.
+    {
+        CKey recv_key;
+        recv_key.MakeNewKey(true);
+        const CPubKey recv_pub = recv_key.GetPubKey();
+        const CScript spk = PathCTestScriptPubKey();
+
+        CConfidentialValue conf_value;
+        CConfidentialNonce nonce_commit;
+        std::vector<unsigned char> rangeproof;
+        uint256 blind;
+        BOOST_REQUIRE(BlindOutputToRecipientV2(conf_value, nonce_commit, rangeproof, blind, 1 * COIN, recv_pub, spk));
+        BOOST_REQUIRE(IsPathCNonceCommit(nonce_commit));
+
+        CAmount amount_out = -1;
+        uint256 blind_out;
+        BOOST_REQUIRE(UnblindValueWithKeyV2(recv_key, conf_value, nonce_commit, rangeproof, spk, amount_out, blind_out));
+        BOOST_CHECK_EQUAL(amount_out, 1 * COIN);
+        BOOST_CHECK(blind_out == blind);
+    }
+
+    // Fresh ephemeral per output: two sends to the same recipient must carry
+    // different 0x04 || X payloads.
+    CKey recv_key;
+    recv_key.MakeNewKey(true);
+    const CPubKey recv_pub = recv_key.GetPubKey();
+    const CScript spk = PathCTestScriptPubKey();
+    CConfidentialValue c1, c2;
+    CConfidentialNonce n1, n2;
+    std::vector<unsigned char> p1, p2;
+    uint256 b1, b2;
+    BOOST_REQUIRE(BlindOutputToRecipientV2(c1, n1, p1, b1, 2 * COIN, recv_pub, spk));
+    BOOST_REQUIRE(BlindOutputToRecipientV2(c2, n2, p2, b2, 2 * COIN, recv_pub, spk));
+    BOOST_CHECK(n1.vchCommitment != n2.vchCommitment);
+}
+
+// Malformed Path C nonce commitments must be rejected before any key
+// reconstruction: wrong length, wrong prefix, or an X with no valid Y.
+BOOST_AUTO_TEST_CASE(path_c_reconstruct_rejects_malformed)
+{
+    CKey recv_key;
+    recv_key.MakeNewKey(true);
+    const CPubKey recv_pub = recv_key.GetPubKey();
+    const CScript spk = PathCTestScriptPubKey();
+
+    CConfidentialValue conf_value;
+    CConfidentialNonce nonce_commit;
+    std::vector<unsigned char> rangeproof;
+    uint256 blind;
+    BOOST_REQUIRE(BlindOutputToRecipientV2(conf_value, nonce_commit, rangeproof, blind, 3 * COIN, recv_pub, spk));
+
+    // Wrong length (32 or 34 bytes): never Path C shaped.
+    CConfidentialNonce short_nc = nonce_commit;
+    short_nc.vchCommitment.pop_back();
+    BOOST_CHECK(!IsPathCNonceCommit(short_nc));
+    CPubKey out;
+    BOOST_CHECK(!ReconstructPathCEphemeral(short_nc, out));
+
+    // Plaintext-nonce prefix 0x02 and Path B prefix 0x03 are not Path C.
+    CConfidentialNonce swapped = nonce_commit;
+    swapped.vchCommitment[0] = 0x02;
+    BOOST_CHECK(!IsPathCNonceCommit(swapped));
+    BOOST_CHECK(!ReconstructPathCEphemeral(swapped, out));
+    swapped.vchCommitment[0] = 0x03;
+    BOOST_CHECK(!IsPathCNonceCommit(swapped));
+    BOOST_CHECK(!ReconstructPathCEphemeral(swapped, out));
+
+    // An unknown prefix must fail the V2 unblind dispatch, not fall back.
+    CConfidentialNonce unknown = nonce_commit;
+    unknown.vchCommitment[0] = 0x05;
+    CAmount amount_out = -1;
+    uint256 blind_out;
+    BOOST_CHECK(!UnblindValueWithKeyV2(recv_key, conf_value, unknown, rangeproof, spk, amount_out, blind_out));
+    BOOST_CHECK_EQUAL(amount_out, -1);
+}
+
+// View-key rewind == sender nonce, by construction: both share the same HKDF
+// Extract PRK (view_seed = HMAC("rcpu-pathc-v1", ss)) and the same Expand
+// info (scriptPubKey || 0x01 || le64(64)). Replays the frozen B1 ss so the
+// derivation itself is pinned, not just the ECDH step.
+BOOST_AUTO_TEST_CASE(path_c_view_seed_rewinds_sender_nonce)
+{
+    // Frozen B1 vector (Appendix A): recipient and ephemeral keys plus the
+    // pinned shared secret, replayed through the repo's own ComputeECDHNonce.
+    const auto recipient_priv_hex = ParseHex("0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20");
+    const auto recipient_pub_hex = ParseHex("0284bf7562262bbd6940085748f3be6afa52ae317155181ece31b66351ccffa4b0");
+    const auto ephemeral_priv_hex = ParseHex("2122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f42");
+    const auto ss_expected = ParseHex("8ff9563819af439784eff54bd65e65614b14c7fe66b6b2f6010a72ec681f38f0");
+
+    CKey recipient_priv;
+    recipient_priv.Set(recipient_priv_hex.begin(), recipient_priv_hex.end(), true);
+    BOOST_REQUIRE(recipient_priv.IsValid());
+    const CPubKey recipient_pub{recipient_pub_hex.begin(), recipient_pub_hex.end()};
+    BOOST_REQUIRE(recipient_pub.IsValid());
+    CKey ephemeral_priv;
+    ephemeral_priv.Set(ephemeral_priv_hex.begin(), ephemeral_priv_hex.end(), true);
+    BOOST_REQUIRE(ephemeral_priv.IsValid());
+
+    uint256 ss;
+    BOOST_REQUIRE(ComputeECDHNonce(ephemeral_priv, recipient_pub, ss));
+    BOOST_REQUIRE_EQUAL(ss_expected.size(), 32U);
+    BOOST_CHECK(std::equal(ss.begin(), ss.end(), ss_expected.begin()));
+
+    const CScript spk = PathCTestScriptPubKey();
+
+    // Sender nonce.
+    uint256 sender_nonce;
+    BOOST_REQUIRE(DerivePathCNonce(ss, spk, sender_nonce));
+
+    // View seed and its rewind nonce.
+    uint256 view_seed;
+    BOOST_REQUIRE(DeriveViewSeed(ss, spk, view_seed));
+    uint256 view_nonce;
+    BOOST_REQUIRE(DeriveRewindNonceFromViewSeed(view_seed, spk, view_nonce));
+
+    // The whole point of the PRK construction: byte-identical nonces.
+    BOOST_CHECK(std::equal(view_nonce.begin(), view_nonce.end(), sender_nonce.begin()));
+
+    // The scriptPubKey is bound in the Expand info: a different script must
+    // produce a different rewind nonce from the same view_seed.
+    const CScript other_spk = CScript() << OP_0 << std::vector<unsigned char>(20, 0x99);
+    uint256 other_nonce;
+    BOOST_REQUIRE(DeriveRewindNonceFromViewSeed(view_seed, other_spk, other_nonce));
+    BOOST_CHECK(!(other_nonce == view_nonce));
+
+    // A full view-side unblind of a real Path C output: the view seed holder
+    // (no spend key, no ECDH) recovers the exact amount.
+    const CAmount amount = 987654321;
+    CConfidentialValue conf_value;
+    CConfidentialNonce nonce_commit;
+    std::vector<unsigned char> rangeproof;
+    uint256 blind;
+    BOOST_REQUIRE(BlindOutputToRecipientV2(conf_value, nonce_commit, rangeproof, blind, amount, recipient_pub, spk));
+    BOOST_REQUIRE(IsPathCNonceCommit(nonce_commit));
+    CPubKey ephemeral_pub;
+    BOOST_REQUIRE(ReconstructPathCEphemeral(nonce_commit, ephemeral_pub));
+    uint256 view_ss;
+    BOOST_REQUIRE(ComputeECDHNonce(recipient_priv, ephemeral_pub, view_ss));
+    uint256 view_seed2;
+    BOOST_REQUIRE(DeriveViewSeed(view_ss, spk, view_seed2));
+    uint256 view_nonce2;
+    BOOST_REQUIRE(DeriveRewindNonceFromViewSeed(view_seed2, spk, view_nonce2));
+
+    secp256k1_context* ctx = secp256k1_context_create(SECP256K1_CONTEXT_VERIFY);
+    BOOST_REQUIRE(ctx != nullptr);
+    secp256k1_pedersen_commitment commit;
+    BOOST_REQUIRE(secp256k1_pedersen_commitment_parse(ctx, &commit, conf_value.vchCommitment.data()) == 1);
+    uint64_t value = 0;
+    uint64_t min_value = 0, max_value = 0;
+    uint256 blind_out;
+    const int rc = secp256k1_rangeproof_rewind(ctx, blind_out.begin(), &value, nullptr, nullptr, view_nonce2.begin(),
+                                               &min_value, &max_value, &commit, rangeproof.data(), rangeproof.size(),
+                                               nullptr, 0, secp256k1_generator_h);
+    secp256k1_context_destroy(ctx);
+    BOOST_CHECK_EQUAL(rc, 1);
+    BOOST_CHECK_EQUAL(static_cast<CAmount>(value), amount);
+    BOOST_CHECK(blind_out == blind);
+}
+
+// V2 unblind dispatch: 0x03 stays Path B (CopyX32), 0x02 stays Path A
+// (plaintext nonce), so the new entry point is a superset of the old ones and
+// the historical paths keep working verbatim.
+BOOST_AUTO_TEST_CASE(path_c_unblind_v2_dispatch_preserves_legacy)
+{
+    const CScript spk = PathCTestScriptPubKey();
+
+    // Path B output: 0x03 prefix, CopyX32 nonce. UnblindValueWithKeyV2 must
+    // delegate to the original behavior and ignore the extra scriptPubKey.
+    {
+        CKey recv_key;
+        recv_key.MakeNewKey(true);
+        const CPubKey recv_pub = recv_key.GetPubKey();
+
+        const CAmount amount = 111;
+        CConfidentialValue conf_value;
+        CConfidentialNonce nonce_commit;
+        std::vector<unsigned char> rangeproof;
+        uint256 blind;
+        BOOST_REQUIRE(BlindOutputToRecipient(conf_value, nonce_commit, rangeproof, blind, amount, recv_pub));
+        BOOST_REQUIRE_EQUAL(nonce_commit.vchCommitment[0], 0x03);
+
+        CAmount amount_out = -1;
+        uint256 blind_out;
+        BOOST_REQUIRE(UnblindValueWithKeyV2(recv_key, conf_value, nonce_commit, rangeproof, spk, amount_out, blind_out));
+        BOOST_CHECK_EQUAL(amount_out, amount);
+        BOOST_CHECK(blind_out == blind);
+    }
+
+    // Path A output: 0x02 prefix, plaintext nonce. UnblindValueWithKeyV2 must
+    // delegate to the key-less rewind (UnblindValue), not treat it as Path B/C.
+    {
+        const CAmount amount = 222;
+        CConfidentialValue conf_value;
+        CConfidentialNonce nonce_commit;
+        std::vector<unsigned char> rangeproof;
+        uint256 blind;
+        uint256 nonce;
+        BOOST_REQUIRE(BlindOutput(conf_value, nonce_commit, rangeproof, blind, nonce, amount));
+        BOOST_REQUIRE_EQUAL(nonce_commit.vchCommitment[0], 0x02);
+
+        CAmount amount_out = -1;
+        uint256 blind_out;
+        BOOST_REQUIRE(UnblindValueWithKeyV2(CKey(), conf_value, nonce_commit, rangeproof, spk, amount_out, blind_out));
+        BOOST_CHECK_EQUAL(amount_out, amount);
+        BOOST_CHECK(blind_out == blind);
+    }
 }
 
 BOOST_AUTO_TEST_SUITE_END()
