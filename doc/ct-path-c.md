@@ -189,8 +189,9 @@ generator itself is not part of this PR (test vectors live in src/test).
 Purpose: any future change to `DerivePathCNonce`, `DeriveViewSeed`, or
 `DeriveRewindNonceFromViewSeed` must keep these byte-identical.
 
-Reuse B1 keys and `scriptPubKey` (P2WPKH-shaped).
-`ss` is the B1 shared secret (CopyX32, unchanged).
+B1 keys are reused **only for ss** (Appendix A invariant).
+C1 uses a separate test fixture `scriptPubKey` (P2WPKH-shaped, `spkA` below);
+it is not B1's P2TR.
 
 | field | encoding | value |
 |---|---|---|
