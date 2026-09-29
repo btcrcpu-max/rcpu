@@ -677,13 +677,13 @@ bech32_hrp = "rcpu";
         m_assumeutxo_data = {
         };
 
-// genesis placeholder, NOT used for consensus. Fill from a synced
-        // node with: getchaintxstats 4096 <checkpoint_or_tip_hash>. Do not
-        // invent values.
+// Data from RPC "getchaintxstats 4096", window ending at height 10220
+        // (hash 63714605b5ca0d0cd2a769884e2bc4a2564730b6cd960ad17b9288a6b0a13d6c),
+        // measured 2026-09-29 from a synced v1.1.7 node. Do not invent values.
         chainTxData = ChainTxData{
-            .nTime    = 1788566400,
-            .nTxCount = 1,
-            .dTxRate  = 0.0,
+            .nTime    = 1790690923,
+            .nTxCount = 15002,
+            .dTxRate  = 0.009489032127894056,
         };
     }
 };
