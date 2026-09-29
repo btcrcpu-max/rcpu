@@ -35,9 +35,9 @@ They are listed here so other docs have one place to copy from.
 | Base58 prefix (legacy) | 0 / 5 / 128 | `src/kernel/chainparams.cpp` (`base58Prefixes`) |
 | Genesis hash | `8f8128ffccc36d188eabd7846dea187d23cba18cbb45cc16d62ec9b8ac2af8e8` | `CreateRcpuGenesisBlock` (nTime=1788566400) |
 | Genesis coinbase | `22/Feb/2024 S&P 5087.03 @elonmusk ...` | `kernel/chainparams.cpp` (frozen, do not modify) |
-| nMinimumChainWork | `000000000000000000000000000000000000000000000000000000048aa8ea37` | `kernel/chainparams.cpp` (height 5072，2026-09-17 synced node 实测值；v1.1.4 从 height-100 提升) |
-| defaultAssumeValid | `8efac7f149d8f2d0b5819b5188d8ecb0d606a2b443a5d0d5d275e78736a12aec` | `kernel/chainparams.cpp` (block 4,922 hash) |
-| Checkpoints | 0, 1, 2, 5, 10, 20, 30, 38, 3,600, 4,922 | `kernel/chainparams.cpp` (`checkpointData`) |
+| nMinimumChainWork | `000000000000000000000000000000000000000000000000000000084efb7f04` | `kernel/chainparams.cpp` (height 10000，2026-09-29 synced node 实测值；v1.1.8) |
+| defaultAssumeValid | `d829fb9b1473f6adf98501c613046c42360786b9d5b826ebbb58ad86cd1ba83b` | `kernel/chainparams.cpp` (block 9,992 hash；安全边距 below checkpoint) |
+| Checkpoints | 0, 1, 2, 5, 10, 20, 30, 38, 3,600, 4,922, 10,000 | `kernel/chainparams.cpp` (`checkpointData`) |
 
 ## Notes
 
@@ -81,7 +81,7 @@ Tier 2 was applied at **height 3,600** (v1.0.2): the tier-2 checkpoint and `defa
 | 1 (done) | 38 | ~3 hours | Initial checkpoints, chainwork, assumevalid (v1.0.1) |
 | 2 (done) | 3,600 | ~12.5 days (target) | Checkpoint + assumevalid at 3,600 (v1.0.2); nMinimumChainWork reverted to height-100 measured value (v1.0.8) |
 | 2.5 (done) | 4,922 | ~17 days | Checkpoint + assumevalid at 4,922, `nMinimumChainWork` raised to height-5,072 measured value (v1.1.4) |
-| 3 | 10,000 | ~35 days | Read chainwork from a synced node (`getblockchaininfo.chainwork`), raise `nMinimumChainWork`; add checkpoint, bump assumevalid (future release; do not reuse a past version number) |
+| 3 (done) | 10,000 | ~35 days | Checkpoint + assumevalid at 9,992 / 10,000, `nMinimumChainWork` raised to height-10,000 measured value (v1.1.8) |
 | 4 | 100,000 | ~1 year | Long-term hardening, consider removing early checkpoints |
 
 ### Upgrade Process
