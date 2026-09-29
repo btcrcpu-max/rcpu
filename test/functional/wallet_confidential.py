@@ -4,11 +4,14 @@
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test confidential (rcpux1) receive addresses and descriptor backfill.
 
-Exercises the Path-B receive flow end to end:
+Exercises the Path-C receive flow end to end (the wallet default send path
+for rcpux1 destinations since the Path C switch; existing Path B outputs
+remain spendable):
  1. A fresh descriptor wallet generates a confidential address
     (rrcpux1... on regtest) whose validateaddress reports confidential=true.
  2. A payment sent to that address credits the correct amount after unlock
-    (not a zeroed balance).
+    (not a zeroed balance). The sender's default send path is Path C
+    (nonce 0x04 || X), so this exercises UnblindValueWithKeyV2 scanning.
  3. A wallet that only holds bech32 (84h) descriptors cannot issue
     confidential addresses before it is reloaded.
  4. After reloading, the missing confidential SPK managers are backfilled

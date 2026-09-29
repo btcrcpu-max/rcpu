@@ -25,8 +25,11 @@ extern bool g_con_elementsmode;
  *     0x00            : null (no data follows)
  *     0x01            : explicit value (nExplicitSize-1 bytes follow)
  *     PrefixA/PrefixB : committed value (33-byte compressed EC point follows)
+ *     PrefixC         : committed value (33-byte X-only / HKDF path follows)
  */
-template<size_t ExplicitSize, unsigned char PrefixA, unsigned char PrefixB>
+// Default PrefixC=0xFF avoids duplicate-case with 0/1/PrefixA/PrefixB
+// in Unserialize when a specialization does not supply a PrefixC.
+template<size_t ExplicitSize, unsigned char PrefixA, unsigned char PrefixB, unsigned char PrefixC = 0xFF>
 class CConfidentialCommitment
 {
 public:
@@ -64,6 +67,7 @@ public:
             /* Confidential commitment */
             case PrefixA:
             case PrefixB:
+            case PrefixC:
                 vchCommitment.resize(nCommittedSize);
                 break;
             /* Invalid serialization! */
@@ -88,7 +92,7 @@ public:
 
     bool IsCommitment() const
     {
-        return vchCommitment.size()==nCommittedSize && (vchCommitment[0]==PrefixA || vchCommitment[0]==PrefixB);
+        return vchCommitment.size()==nCommittedSize && (vchCommitment[0]==PrefixA || vchCommitment[0]==PrefixB || vchCommitment[0]==PrefixC);
     }
 
     bool IsValid() const
@@ -136,7 +140,7 @@ public:
  * A 33-byte data field that typically is used to convey to the
  * recipient the ECDH ephemeral key (an EC point) for deriving the
  * transaction output blinding factor. */
-class CConfidentialNonce : public CConfidentialCommitment<33, 2, 3>
+class CConfidentialNonce : public CConfidentialCommitment<33, 2, 3, 4>
 {
 public:
     CConfidentialNonce() { SetNull(); }

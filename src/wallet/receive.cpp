@@ -22,10 +22,14 @@ namespace wallet {
 //   - explicit outputs are returned as-is;
 //   - 33-byte 0x02-prefixed commitments (path A, plaintext nonce) rewind the
 //     range proof with UnblindValue -- no key needed;
-//   - 33-byte 0x03-prefixed commitments (path B, ECDH ephemeral pubkey) are
-//     unblinded with UnblindValueWithKey using the private key resolved from
-//     the output script (P2PK / P2PKH / P2WPKH / P2TR only; scripted outputs
-//     have no single signing key and fail closed);
+//   - 33-byte 0x03-prefixed commitments (path B, ECDH ephemeral pubkey, CopyX32
+//     nonce) are unblinded with UnblindValueWithKey using the private key
+//     resolved from the output script;
+//   - 33-byte 0x04-prefixed commitments (path C, ECDH ephemeral X + HKDF rewind
+//     nonce) are unblinded with UnblindValueWithKeyV2 using the same private
+//     key, binding the output scriptPubKey into the HKDF info domain
+//     (P2PK / P2PKH / P2WPKH / P2TR only; scripted outputs have no single
+//     signing key and fail closed);
 //   - any other commitment shape fails closed.
 // On failure the output is not ours / not unblindable: callers must treat the
 // output as worth zero and never conflate failure with a truthful zero.
@@ -40,7 +44,7 @@ bool UnblindWalletOutput(const CWallet& wallet, const CTxOut& txout, CAmount& va
     if (nc.size() == 33 && nc[0] == 0x02) {
         return UnblindValue(txout.nValue, txout.nNonce, txout.vchRangeproof, value_out, blind_out);
     }
-    if (nc.size() == 33 && nc[0] == 0x03) {
+    if (nc.size() == 33 && (nc[0] == 0x03 || nc[0] == 0x04)) {
         CTxDestination dest;
         // Note: ExtractDestination returns false for bare P2PK even though it
         // fills in a valid PubKeyDestination (P2PK has no address form); only
@@ -106,9 +110,15 @@ bool UnblindWalletOutput(const CWallet& wallet, const CTxOut& txout, CAmount& va
             }
         }
         if (!key.IsValid()) {
-            wallet.WalletLogPrintf("unblind path-B failed: no privkey script=%s locked=%d\n",
+            wallet.WalletLogPrintf("unblind path-B/C failed: no privkey script=%s locked=%d\n",
                                    HexStr(txout.scriptPubKey), wallet.IsLocked());
             return false;
+        }
+        if (nc[0] == 0x04) {
+            // Path C: the HKDF rewind nonce binds the output scriptPubKey into
+            // its info domain, so it must be forwarded explicitly.
+            return UnblindValueWithKeyV2(key, txout.nValue, txout.nNonce, txout.vchRangeproof,
+                                         txout.scriptPubKey, value_out, blind_out);
         }
         return UnblindValueWithKey(key, txout.nValue, txout.nNonce, txout.vchRangeproof, value_out, blind_out);
     }
@@ -211,6 +221,13 @@ bool UnblindConfidentialOutput(const CWallet& wallet, const CTxOut& txout,
     }
     if (!have_key) {
         return false;
+    }
+    const auto& nc = txout.nNonce.vchCommitment;
+    if (nc.size() == 33 && nc[0] == 0x04) {
+        // Path C: HKDF rewind nonce binds the output scriptPubKey into its
+        // info domain; forward it explicitly.
+        return UnblindValueWithKeyV2(key, txout.nValue, txout.nNonce, txout.vchRangeproof,
+                                     txout.scriptPubKey, value, blind);
     }
     return UnblindValueWithKey(key, txout.nValue, txout.nNonce, txout.vchRangeproof, value, blind);
 }

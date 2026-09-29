@@ -581,6 +581,99 @@ CAmount recovered = -1;
     BOOST_CHECK(blind_out == out_blinds[0]);
 }
 
+// Path C is the default wallet send path: with use_path_c=true every keyed
+// non-fee output (payment to rcpux1..., change) is blinded with the 0x04 || X
+// nonce commitment and the HKDF rewind nonce (doc/ct-path-c.md). Key-less
+// outputs stay explicit plaintext; fee outputs stay exempt; the amount is
+// recoverable via UnblindValueWithKeyV2 (scriptPubKey in the HKDF info domain)
+// and must not be readable through the Path B decoder.
+BOOST_AUTO_TEST_CASE(blind_tx_path_c_recipient_key)
+{
+    CKey recv_key;
+    recv_key.MakeNewKey(true);
+    BOOST_REQUIRE(recv_key.IsValid());
+    const CPubKey recv_pub = recv_key.GetPubKey();
+
+    CKey change_key;
+    change_key.MakeNewKey(true);
+    BOOST_REQUIRE(change_key.IsValid());
+    const CPubKey change_pub = change_key.GetPubKey();
+
+    CMutableTransaction tx;
+    tx.vout.push_back(MakeExplicitOut(123456789));
+    tx.vout.push_back(MakeExplicitOut(50000000));
+    tx.vout.push_back(MakeExplicitOut(70000000));
+
+    std::vector<uint256> in_blinds(1);
+    std::vector<uint256> out_blinds, out_nonces;
+    std::vector<std::optional<CPubKey>> recipient_keys = {recv_pub, change_pub, std::nullopt};
+    std::vector<bool> keep_explicit = {false, false, true};
+    BOOST_REQUIRE(BlindTransaction(in_blinds, tx, out_blinds, out_nonces, recipient_keys, &keep_explicit,
+                                   /*use_path_c=*/true));
+    BOOST_REQUIRE_EQUAL(out_blinds.size(), 3U);
+
+    // Outputs 0/1 (keyed): Path C shape -- 33-byte nonce commitment with the
+    // 0x04 prefix, X-only ephemeral. Never legacy-shaped, never Path B.
+    for (size_t i = 0; i < 2; ++i) {
+        BOOST_CHECK(!tx.vout[i].IsFee());
+        BOOST_CHECK(tx.vout[i].nValue.IsCommitment());
+        BOOST_CHECK_EQUAL(tx.vout[i].nNonce.vchCommitment.size(), 33U);
+        BOOST_CHECK_EQUAL(tx.vout[i].nNonce.vchCommitment[0], 0x04);
+        BOOST_CHECK(IsPathCNonceCommit(tx.vout[i].nNonce));
+        BOOST_CHECK(!IsLegacyNonceCommit(tx.vout[i].nNonce));
+
+        // A key-less observer cannot decode the nonce or rewind the amount.
+        CAmount amt = -1;
+        uint256 b;
+        BOOST_CHECK(!UnblindValue(tx.vout[i].nValue, tx.vout[i].nNonce,
+                                  tx.vout[i].vchRangeproof, amt, b));
+        // The Path B decoder must not rewind a Path C output either.
+        const CKey& own_key = (i == 0 ? recv_key : change_key);
+        const CAmount expected = (i == 0 ? 123456789 : 50000000);
+        CAmount b_recovered = -1;
+        uint256 b_blind;
+        BOOST_CHECK(!UnblindValueWithKey(own_key, tx.vout[i].nValue, tx.vout[i].nNonce,
+                                         tx.vout[i].vchRangeproof, b_recovered, b_blind));
+        BOOST_CHECK_EQUAL(b_recovered, -1);
+
+        // The Path C decoder recovers the exact amount + blind, with the
+        // scriptPubKey bound into the HKDF info domain.
+        CAmount c_recovered = -1;
+        uint256 c_blind;
+        BOOST_REQUIRE(UnblindValueWithKeyV2(own_key, tx.vout[i].nValue, tx.vout[i].nNonce,
+                                            tx.vout[i].vchRangeproof, tx.vout[i].scriptPubKey,
+                                            c_recovered, c_blind));
+        BOOST_CHECK_EQUAL(c_recovered, expected);
+        BOOST_CHECK(c_blind == out_blinds[i]);
+
+        // Wrong key (B2) must not unblind, and must not clobber the amount.
+        CKey wrong_key;
+        wrong_key.MakeNewKey(true);
+        CAmount wrong_recovered = -1;
+        uint256 wrong_blind;
+        BOOST_CHECK(!UnblindValueWithKeyV2(wrong_key, tx.vout[i].nValue, tx.vout[i].nNonce,
+                                           tx.vout[i].vchRangeproof, tx.vout[i].scriptPubKey,
+                                           wrong_recovered, wrong_blind));
+        BOOST_CHECK_EQUAL(wrong_recovered, -1);
+        // A wrong scriptPubKey must not unblind either (it is bound in info).
+        CAmount spk_recovered = -1;
+        uint256 spk_blind;
+        CScript other_spk = CScript() << OP_TRUE << OP_1;
+        BOOST_CHECK(!UnblindValueWithKeyV2(own_key, tx.vout[i].nValue, tx.vout[i].nNonce,
+                                           tx.vout[i].vchRangeproof, other_spk,
+                                           spk_recovered, spk_blind));
+        BOOST_CHECK_EQUAL(spk_recovered, -1);
+    }
+
+    // Output 2 (key-less, marked explicit): plaintext value, no nonce, no
+    // range proof, zero blinding factor.
+    BOOST_CHECK(tx.vout[2].nValue.IsExplicit());
+    BOOST_CHECK_EQUAL(tx.vout[2].nValue.GetAmount(), 70000000);
+    BOOST_CHECK(tx.vout[2].nNonce.vchCommitment.empty());
+    BOOST_CHECK(tx.vout[2].vchRangeproof.empty());
+    BOOST_CHECK(out_blinds[2] == uint256());
+}
+
 // Appendix A of doc/ct-path-c.md: replay vector B1 through the repository's
 // own ComputeECDHNonce (declared in blind.h). ss must be byte-identical in
 // both directions (sender ephem x recipient_pub, receiver priv x ephem_pub),

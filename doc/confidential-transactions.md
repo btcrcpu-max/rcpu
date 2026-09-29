@@ -27,6 +27,7 @@ Key source references:
 |--------|-------------------------|-----------------|
 | Path A (`0x02`) | yes | any node that rewinds |
 | Path B (`0x03`) | no | sender + recipient spend key |
+| Path C (`0x04`) | no | sender + recipient spend key (default) |
 | Explicit `rcpu1` | yes | everyone |
 | Fee / coinbase | yes | everyone (by design) |
 
@@ -83,15 +84,21 @@ This means:
 - Block explorers should display the commitment hash, not a numeric amount.
 - The actual amount is only visible to the wallet that owns the output.
 
-## Sending: Path A vs Path B vs explicit
+## Sending: Path A vs Path B/C vs explicit
 
 Since v1.0.21 the wallet supports two blinding paths. Since **v1.1.5**
 the default send path is fail-closed and no longer writes Path A.
+Since this release the default for keyed outputs is **Path C**.
 
-- **Path B (confidential)**: ECDH with the recipient spend pubkey.
-  Ephemeral key written as a `0x03`-prefixed compressed pubkey.
+- **Path C (confidential, default)**: ECDH with the recipient spend pubkey.
+  Ephemeral X coordinate written as a `0x04`-prefixed nonce commitment;
+  the rewind nonce is derived with HKDF-SHA256 (see `doc/ct-path-c.md`).
   Only the recipient can unblind. Used for `rcpux1...`.
-  A missing key on a Path-B-required output **fails closed**.
+  A missing key on a Path-C-required output **fails closed**.
+- **Path B (confidential, historical)**: ECDH with the recipient spend pubkey;
+  the ephemeral key is written as a `0x03`-prefixed compressed pubkey
+  (CopyX32 nonce). Existing Path B UTXOs are still scanned and spendable;
+  new sends no longer emit Path B.
 - **Explicit plaintext**: bare `rcpu1...` / unresolved pubkey.
   Amount is written in the clear (no `0x02` nonce). This is not
   confidential.
@@ -99,7 +106,7 @@ the default send path is fail-closed and no longer writes Path A.
   Anyone can rewind the amount. Reachable only with `-ctlegacy=1`.
 
 Wallet rule: if `recipient_keys` is non-empty, every non-fee output
-must have a pubkey; change outputs use the wallet's own pubkey (Path B).
+must have a pubkey; change outputs use the wallet's own pubkey (Path C).
 
 ## Confidential addresses (`rcpux1...`)
 
@@ -116,9 +123,10 @@ must have a pubkey; change outputs use the wallet's own pubkey (Path B).
 
 With the default (v1.1.5+):
 
-- `rcpux1...` → Path B
+- `rcpux1...` → Path C (`0x04 || X`, HKDF rewind nonce)
 - bare `rcpu1...` → explicit plaintext output
 - Path A is **not** the automatic fallback
+- change outputs use the wallet's own pubkey (Path C)
 
 The Path A *consensus* ban (`nBanPathAHeight`) is **inactive on
 mainnet** (`INT_MAX`, deferred in v1.1.1). The previously advertised
