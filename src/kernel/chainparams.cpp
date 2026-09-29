@@ -583,8 +583,8 @@ public:
         consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT;
         consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].min_activation_height = 0; // No activation delay
 
-        consensus.nMinimumChainWork = uint256S("000000000000000000000000000000000000000000000000000000048aa8ea37");  // height 5072 (2026-09-17 synced node)
-        consensus.defaultAssumeValid = uint256S("8efac7f149d8f2d0b5819b5188d8ecb0d606a2b443a5d0d5d275e78736a12aec");  // height 4922 (2026-09-17)
+        consensus.nMinimumChainWork = uint256S("000000000000000000000000000000000000000000000000000000084efb7f04");  // height 10000 (2026-09-29 synced node)
+        consensus.defaultAssumeValid = uint256S("d829fb9b1473f6adf98501c613046c42360786b9d5b826ebbb58ad86cd1ba83b");  // height 9992 (2026-09-29)
 
         // The half life for the ASERT DAA. For every (nASERTHalfLife) seconds behind schedule the blockchain gets,
         // difficulty is cut in half. Doubled if blocks are ahead of schedule.
@@ -670,6 +670,7 @@ bech32_hrp = "rcpu";
                 {   38, uint256S("9e31ffa280ff28abfa31fb446faba6f738ab841e7a7f0c0211beea3a70adf93a")},
                 { 3600, uint256S("927dc58c3e57842ddd2ff16a00b463922d929a4a32bf93ff7311213c35da8d3c")},
                 { 4922, uint256S("8efac7f149d8f2d0b5819b5188d8ecb0d606a2b443a5d0d5d275e78736a12aec")},
+                {10000, uint256S("61820a2373b2fe7a9ad138bab944323edae38ea9620683f6809b910a0d4cb73a")},
             }
         };
 
