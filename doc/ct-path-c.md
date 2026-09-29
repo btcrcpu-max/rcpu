@@ -67,50 +67,39 @@ ECDH definition (frozen):
   Path C is never mixed with Path A in the same non-fee output set.
 - Default sending forbids Path A (no "looks confidential" fallback).
 
-## Viewing key (opt-in)
+## Viewing key (opt-in, per-output PRK)
 
-view_seed = HKDF-SHA256(
-  ikm  = ss,
-  salt = "rcpu-view-v1",
-  info = scriptPubKey
-)
+RFC 5869 split of the sender HKDF (scheme 1):
 
-- view_seed rewinds amount and optional memo only
-- cannot sign
-- not embedded in rcpux1
-- RPC: getviewingkey / importviewingkey, confirmation required
-- default: do not export
+    ss        = CopyX32(ECDH(ephemeral, recipient))
+    view_seed = HKDF-Extract(salt = "rcpu-pathc-v1", ikm = ss)
+              = HMAC-SHA256(key = "rcpu-pathc-v1", msg = ss)
+    nonce     = HKDF-Expand(PRK = view_seed,
+                            info = scriptPubKey || 0x01 || le64(64),
+                            L = 32)
+
+Sender `DerivePathCNonce(ss, spk)` is Extract then Expand.
+Viewer `DeriveRewindNonceFromViewSeed(view_seed, spk)` is Expand only.
+The two nonces MUST be byte-identical.
+
+Deleted salts: `rcpu-view-v1`, `rcpu-rewind-v1`. Do not reintroduce them.
+
+- view_seed is the HKDF PRK of this output's `ss`. It is NOT bound to
+  scriptPubKey; the script binding lives in Expand `info`.
+- `DeriveViewSeed`'s `script_pub_key` argument is ignored (API stability).
+- view_seed rewinds amount only, cannot sign, not embedded in `rcpux1`.
+- RPC: `getviewingkey` / `importviewingkey`, confirmation required.
+- Default: do not export.
 - Authorization is per-wallet or per-output; never ship a view key alongside the
   receiving address.
-
-### Rewind consistency (frozen)
-
-A view key holder must be able to rewind the same outputs a spend key can.
-The sender derives the nonce as:
-
-    nonce = HKDF-SHA256(ikm = ss, salt = "rcpu-pathc-v1",
-                        info = scriptPubKey || 0x01 || le64(64))[0:32]
-
-A view-key rewind MUST produce the identical nonce via:
-
-    nonce = HKDF-SHA256(ikm = view_seed, salt = "rcpu-rewind-v1",
-                        info = scriptPubKey || 0x01 || le64(64))[0:32]
-
-Constraints:
-- `view_seed` derivation must be a one-to-one function of the same `ss` and
-  `scriptPubKey`, so the two HKDF calls above yield byte-identical nonces.
-- These are NOT two independent HKDFs: they share the same IKM source (`ss`)
-  and the same `info`; only the salt differs and is bound to the role
-  ("rcpu-pathc-v1" sender / "rcpu-rewind-v1" viewer).
-- If the two derivations ever diverge, an exchange holding only `view_seed`
-  cannot rewind: that is a spec bug, not a wallet bug.
-- The final binding between `ss`, `view_seed`, and the rewind nonce must be
-  fixed by test vectors before `BlindOutputToRecipientV2` is written.
+- This is a per-output seed (fresh ephemeral ⇒ fresh ss). It is not a
+  wallet-wide viewing private key. Account-level scan keys are out of scope.
 
 ## Wallet rules
 
-- destination has spend pubkey (rcpux1) -> Path C
-- change -> Path C
+- default send path unchanged in this PR: rcpux1 -> Path B
+- BlindOutputToRecipientV2 is opt-in / tests only until a later PR
+- change -> Path C (still on Path B until the default switch)
 - bare rcpu1, no pubkey -> explicit plaintext, never Path A
 - recipient_keys non-empty but a non-fee output lacks a key -> fail closed
 - unblind dispatch by first byte; unknown prefix -> skip, not amount 0
@@ -122,21 +111,22 @@ Constraints:
 
 | # | decision | recommendation | status |
 |---|---|---|---|
-| 1 | HKDF IKM is the raw 32-byte x (no `SHA256(x||y)` pre-hash) | YES — pre-hash is a new path, not Path C v1 | PENDING |
+| 1 | HKDF IKM is the raw 32-byte x (no `SHA256(x||y)` pre-hash) | FROZEN — pre-hash is a new path, not Path C v1 | LOCKED |
 | 2 | info binding | FROZEN = raw scriptPubKey bytes of that output (P2TR: 34 bytes = `51 20 \|\| x-only`). Not x-only alone, not CTxOut. | LOCKED |
-| 3 | Y parity: sender may use any Y, receiver tries even-Y then odd-Y (both attempts in vectors) | YES — never encode parity into the nonce field | PENDING |
-| 4 | View key rewinds the SAME nonce as the sender: `nonce = HKDF(view_seed, salt="rcpu-rewind-v1", info = spk \|\| 0x01 \|\| le64(64))` must equal the sender's `HKDF(ss, salt="rcpu-pathc-v1", ...)`; view_seed derivation is one-to-one with (ss, spk); never two unrelated HKDF calls | FROZEN — same nonce by construction, spend key not required | LOCKED |
-| 5 | One ephemeral per output; `-ctlegacy=1` reverts the whole tx to Path A, never mixes C/A in one non-fee set | YES — per-output key, whole-tx legacy switch | PENDING |
+| 3 | Y parity: sender may use any Y, receiver tries even-Y then odd-Y (both attempts in vectors) | FROZEN — never encode parity into the nonce field | LOCKED |
+| 4 | View key rewinds the SAME nonce as the sender: Extract("rcpu-pathc-v1", ss) → view_seed; Expand(view_seed, spk\|\|0x01\|\|le64(64)) → nonce == DerivePathCNonce(ss, spk). view_seed not bound to spk; binding in Expand info. | FROZEN scheme 1 — same nonce by construction, spend key not required | LOCKED |
+| 5 | One ephemeral per output; `-ctlegacy=1` reverts the whole tx to Path A, never mixes C/A in one non-fee set | FROZEN — per-output key, whole-tx legacy switch | LOCKED |
 
-The five decisions above must be flipped to LOCKED before `BlindOutputToRecipientV2`
-is written. Changing IKM, info binding, or the rewind derivation after release
-would create a new path (future Path D).
+All five decisions are LOCKED. `BlindOutputToRecipientV2` is implemented in PR #65.
+Changing IKM, info binding, or the rewind derivation after release would create
+a new path (future Path D).
 
 ## Implementation gate
 
-- No fixed hex vectors, no merge into `src/blind.cpp`.
-- All vectors are generated from this repository's own `secp256k1_ecdh`
-  implementation; never hand-computed.
+- Fixed hex vectors in Appendix A and Appendix C (generated from the
+  repository's own `secp256k1_ecdh` + `CopyX32` + HKDF). Never hand-computed.
+- Vectors must pass CI `blind_tests` + `wallet_confidential.py` before
+  the default send path is switched to Path C.
 
 ## Out of scope
 
@@ -193,3 +183,30 @@ Negative:
 Regeneration: a small standalone C program calling the repository's
 secp256k1_ecdh + CopyX32 reproduces these values deterministically; the
 generator itself is not part of this PR (test vectors live in src/test).
+
+## Appendix C — Path C Extract/Expand vector
+
+Purpose: any future change to `DerivePathCNonce`, `DeriveViewSeed`, or
+`DeriveRewindNonceFromViewSeed` must keep these byte-identical.
+
+Reuse B1 keys and `scriptPubKey` (P2WPKH-shaped).
+`ss` is the B1 shared secret (CopyX32, unchanged).
+
+| field | encoding | value |
+|---|---|---|
+| ss | 32B hex | 8ff9563819af439784eff54bd65e65614b14c7fe66b6b2f6010a72ec681f38f0 |
+| scriptPubKey (spkA) | raw hex | 00144242424242424242424242424242424242424242 |
+| info | raw hex | 00144242424242424242424242424242424242424242014000000000000000 |
+| sender nonce | 32B hex | 0dc418dc644de8e38a83aee9740f2d39a1c6792b81dcab208ccccb25de08c47c |
+| view_seed | 32B hex | 23f71d02deed10b0a9562200e8ef49951f2e5a2d775eb92d9fe0bda764fda1fe |
+
+Assertions (checked by `blind_tests.cpp` and independently in Python):
+1. `DeriveViewSeed(ss, any_spk)` == view_seed — `spk` ignored in Extract
+2. `DerivePathCNonce(ss, spkA)` == sender nonce
+3. `DeriveRewindNonceFromViewSeed(view_seed, spkA)` == sender nonce
+4. Different `spk` → different nonce, same `view_seed`
+5. `ComputeECDHNonce` with B1 keys still equals `ss` (Appendix A invariant)
+
+`info` note: `0x01` is the HKDF block counter; `le64(64)` is the big-endian
+request for 64 output bits (32 bytes), encoded little-endian as
+`40 00 00 00 00 00 00 00`. The salt throughout is UTF-8 `"rcpu-pathc-v1"`.
