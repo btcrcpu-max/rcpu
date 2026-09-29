@@ -15,6 +15,7 @@
 #include <uint256.h>
 #include <util/strencodings.h>
 
+#include <algorithm>
 #include <optional>
 #include <vector>
 
@@ -613,16 +614,21 @@ BOOST_AUTO_TEST_CASE(path_b_vector_b1_compute_ecdh_nonce)
     BOOST_CHECK(ephemeral_priv.GetPubKey() == ephemeral_pub);
 
     // 1) Sender side: ss = ComputeECDHNonce(ephemeral_priv, recipient_pub).
+    // The frozen ss is the raw big-endian X coordinate: CopyX32 copies the
+    // shared-point X verbatim into the uint256 buffer, so compare byte-exact
+    // (a uint256S comparison would read the buffer in reverse byte order).
     uint256 ss_sender;
     BOOST_REQUIRE(ComputeECDHNonce(ephemeral_priv, recipient_pub, ss_sender));
-    BOOST_CHECK(ss_sender == uint256S("8ff9563819af439784eff54bd65e65614b14c7fe66b6b2f6010a72ec681f38f0"));
+    const auto ss_expected = ParseHex("8ff9563819af439784eff54bd65e65614b14c7fe66b6b2f6010a72ec681f38f0");
+    BOOST_REQUIRE_EQUAL(ss_expected.size(), 32U);
+    BOOST_CHECK(std::equal(ss_sender.begin(), ss_sender.end(), ss_expected.begin()));
 
     // 2) Receiver side: ss = ComputeECDHNonce(recipient_priv, ephemeral_pub),
     // must be the very same 32 bytes (ECDH symmetry).
     uint256 ss_receiver;
     BOOST_REQUIRE(ComputeECDHNonce(recipient_priv, ephemeral_pub, ss_receiver));
     BOOST_CHECK(ss_receiver == ss_sender);
-    BOOST_CHECK(ss_receiver == uint256S("8ff9563819af439784eff54bd65e65614b14c7fe66b6b2f6010a72ec681f38f0"));
+    BOOST_CHECK(std::equal(ss_receiver.begin(), ss_receiver.end(), ss_expected.begin()));
 
     // 6) The on-chain nonce commitment must be the frozen ephemeral pubkey:
     // 33 bytes, 0x03 prefix, and never legacy-shaped.
