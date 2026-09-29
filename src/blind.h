@@ -6,9 +6,11 @@
 #define BITCOIN_BLIND_H
 
 #include <consensus/amount.h>
+#include <crypto/hkdf_sha256_32.h>
 #include <primitives/confidential.h>
 #include <primitives/transaction.h>
 #include <pubkey.h>
+#include <script/script.h>
 #include <uint256.h>
 
 #include <optional>
@@ -118,5 +120,67 @@ bool BlindOutputToRecipient(CConfidentialValue& conf_value, CConfidentialNonce& 
 bool UnblindValueWithKey(const CKey& blinding_key, const CConfidentialValue& conf_value,
                          const CConfidentialNonce& nonce_commit, const std::vector<unsigned char>& rangeproof,
                          CAmount& amount_out, uint256& blind_out);
+
+/* -------------------------------------------------------------------------
+ * Path C (HKDF nonce, 0x04 prefix). Wallet-layer only, off by default:
+ * BlindTransaction and the default send path are NOT changed by this patch.
+ * The binding domain is frozen in doc/ct-path-c.md:
+ *   nonce_commit = 0x04 || X(ephemeral)                       (33 bytes, X-only)
+ *   ss           = CopyX32(ECDH(ephemeral_priv, recipient_pub))      (Path B ss)
+ *   nonce        = HKDF-SHA256(ikm = ss, salt = "rcpu-pathc-v1",
+ *                              info = scriptPubKey || 0x01 || le64(64))[0:32]
+ *   view_seed    = Extract("rcpu-pathc-v1", ss)               (== HKDF PRK)
+ *   rewind nonce = Expand(view_seed, scriptPubKey || 0x01 || le64(64))
+ *                == sender nonce, by construction
+ * ---------------------------------------------------------------------- */
+
+/** True iff the nonce commitment is Path C shaped: exactly 33 bytes with the
+ *  0x04 prefix (X-only ephemeral, not a compressed pubkey). 0x04 must never
+ *  be treated as a legacy (0x02) nonce nor as a Path B (0x02/0x03) pubkey. */
+bool IsPathCNonceCommit(const CConfidentialNonce& nc);
+
+/** Recover the compressed ephemeral public key of a Path C nonce commitment:
+ *  try 02||X first (even Y), then 03||X (odd Y); the first parse that yields a
+ *  valid compressed pubkey wins. Returns false for non-Path-C commitments. */
+bool ReconstructPathCEphemeral(const CConfidentialNonce& nc, CPubKey& ephemeral_out);
+
+/** Derive the Path C range-proof rewind nonce for the sender / spend key
+ *  holder: HKDF-SHA256(ikm = ss, salt = "rcpu-pathc-v1",
+ *  info = scriptPubKey || 0x01 || le64(64))[0:32]. ss must be the raw
+ *  32-byte shared secret from ComputeECDHNonce (CopyX32, big-endian X). */
+bool DerivePathCNonce(const uint256& ss, const CScript& script_pub_key, uint256& nonce_out);
+
+/** View seed for Path C (opt-in): view_seed = the HKDF Extract output, i.e.
+ *  HMAC-SHA256(key = "rcpu-pathc-v1", msg = ss). The view seed is NOT bound
+ *  to scriptPubKey (the scriptPubKey binding lives in the rewind Expand's
+ *  info domain); it rewinds amount, never signs. */
+bool DeriveViewSeed(const uint256& ss, const CScript& script_pub_key, uint256& view_out);
+
+/** Rewind nonce for a view-seed holder: Expand(view_seed,
+ *  scriptPubKey || 0x01 || le64(64))[0:32]. By construction this equals
+ *  DerivePathCNonce(ss, script_pub_key) for the same sr/ss pair. */
+bool DeriveRewindNonceFromViewSeed(const uint256& view_seed, const CScript& script_pub_key, uint256& nonce_out);
+
+/**
+ * Blind a single output to a specific recipient using Path C (0x04 || X
+ * nonce commitment, HKDF-derived rewind nonce with scriptPubKey in the info
+ * domain). Wallet-layer only; the default send path is unchanged. Remote
+ * recipients spend-key-hold rewind via UnblindValueWithKeyV2.
+ */
+bool BlindOutputToRecipientV2(CConfidentialValue& conf_value, CConfidentialNonce& nonce_commit,
+                              std::vector<unsigned char>& rangeproof, uint256& blind,
+                              CAmount amount, const CPubKey& recipient_pubkey,
+                              const CScript& script_pub_key);
+
+/**
+ * Unblind a confidential output with the recipient's private key, dispatching
+ * on the nonce commitment's first byte: 0x03 -> Path B (CopyX32, existing
+ * behavior, script_pub_key ignored), 0x04 -> Path C (HKDF, script_pub_key in
+ * the info domain). Any other prefix fails closed -- never rewinds garbage,
+ * never treats 0x04 as Path A. Original UnblindValueWithKey is unchanged.
+ */
+bool UnblindValueWithKeyV2(const CKey& blinding_key, const CConfidentialValue& conf_value,
+                           const CConfidentialNonce& nonce_commit, const std::vector<unsigned char>& rangeproof,
+                           const CScript& script_pub_key, CAmount& amount_out, uint256& blind_out);
 
 #endif // BITCOIN_BLIND_H

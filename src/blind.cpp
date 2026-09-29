@@ -4,6 +4,9 @@
 
 #include <blind.h>
 
+#include <crypto/common.h>
+#include <crypto/hkdf_sha256_32.h>
+#include <crypto/hmac_sha256.h>
 #include <key.h>
 #include <pubkey.h>
 #include <random.h>
@@ -419,4 +422,208 @@ bool UnblindValueWithKey(const CKey& blinding_key, const CConfidentialValue& con
     }
     amount_out = static_cast<CAmount>(value);
     return true;
+}
+
+// -------------------------------------------------------------------------
+// Path C (0x04 || X nonce, HKDF-derived rewind nonce). Wallet-layer only,
+// off by default: the default send path and BlindTransaction are untouched.
+// Binding domain frozen in doc/ct-path-c.md.
+// -------------------------------------------------------------------------
+
+bool IsPathCNonceCommit(const CConfidentialNonce& nc)
+{
+    return nc.vchCommitment.size() == 33 && nc.vchCommitment[0] == 0x04;
+}
+
+bool ReconstructPathCEphemeral(const CConfidentialNonce& nc, CPubKey& ephemeral_out)
+{
+    if (!IsPathCNonceCommit(nc)) {
+        return false;
+    }
+    // The commitment carries the ephemeral X coordinate only (0x04 || X).
+    // Try 02||X (even Y) first, then 03||X (odd Y); the first parse that
+    // yields a valid compressed pubkey wins.
+    unsigned char ser[33];
+    std::memcpy(ser + 1, &nc.vchCommitment[1], 32);
+    for (unsigned char prefix : {static_cast<unsigned char>(0x02), static_cast<unsigned char>(0x03)}) {
+        ser[0] = prefix;
+        secp256k1_context* ctx = GetBlindContext();
+        secp256k1_pubkey sp;
+        if (secp256k1_ec_pubkey_parse(ctx, &sp, ser, sizeof(ser)) != 1) {
+            continue;
+        }
+        ephemeral_out = CPubKey(ser, ser + sizeof(ser));
+        if (ephemeral_out.IsValid() && ephemeral_out.size() == 33) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Path C HKDF info: scriptPubKey || 0x01 || le64(64).
+static bool BuildPathCInfo(const CScript& script_pub_key, std::string& info_out)
+{
+    if (script_pub_key.size() > 128 - 1 - 8) {
+        // info must fit the HKDF Expand32 single-block limit (128 bytes).
+        return false;
+    }
+    std::string info;
+    info.reserve(script_pub_key.size() + 1 + 8);
+    info.append(reinterpret_cast<const char*>(script_pub_key.data()), script_pub_key.size());
+    info.push_back(0x01);
+    unsigned char le64buf[8];
+    WriteLE64(le64buf, 64);
+    info.append(reinterpret_cast<const char*>(le64buf), sizeof(le64buf));
+    info_out = std::move(info);
+    return true;
+}
+
+bool DerivePathCNonce(const uint256& ss, const CScript& script_pub_key, uint256& nonce_out)
+{
+    std::string info;
+    if (!BuildPathCInfo(script_pub_key, info)) {
+        return false;
+    }
+    CHKDF_HMAC_SHA256_L32 hkdf(ss.begin(), 32, "rcpu-pathc-v1");
+    hkdf.Expand32(info, nonce_out.begin());
+    return true;
+}
+
+bool DeriveViewSeed(const uint256& ss, const CScript& script_pub_key, uint256& view_out)
+{
+    // View seed = the HKDF Extract output of the sender derivation:
+    //   view_seed = HMAC-SHA256(key = "rcpu-pathc-v1", msg = ss)
+    // which is exactly the PRK of DerivePathCNonce. scriptPubKey is NOT bound
+    // here; the scriptPubKey binding lives in the rewind Expand's info domain
+    // (DeriveRewindNonceFromViewSeed), which is what makes sender and viewer
+    // byte-identical by construction.
+    (void)script_pub_key;
+    static const unsigned char salt[] = "rcpu-pathc-v1";
+    CHMAC_SHA256 hmac(salt, sizeof(salt) - 1);
+    hmac.Write(ss.begin(), 32).Finalize(view_out.begin());
+    return true;
+}
+
+bool DeriveRewindNonceFromViewSeed(const uint256& view_seed, const CScript& script_pub_key, uint256& nonce_out)
+{
+    std::string info;
+    if (!BuildPathCInfo(script_pub_key, info)) {
+        return false;
+    }
+    // Expand(view_seed, info): HMAC-SHA256(key = view_seed, msg = info || 0x01),
+    // identical to CHKDF_HMAC_SHA256_L32::Expand32 so the result is byte-equal
+    // to DerivePathCNonce's nonce when view_seed comes from the same ss.
+    static const unsigned char one[1] = {0x01};
+    CHMAC_SHA256 hmac(view_seed.begin(), 32);
+    hmac.Write(reinterpret_cast<const unsigned char*>(info.data()), info.size());
+    hmac.Write(one, sizeof(one)).Finalize(nonce_out.begin());
+    return true;
+}
+
+bool BlindOutputToRecipientV2(CConfidentialValue& conf_value, CConfidentialNonce& nonce_commit,
+                              std::vector<unsigned char>& rangeproof, uint256& blind,
+                              CAmount amount, const CPubKey& recipient_pubkey,
+                              const CScript& script_pub_key)
+{
+    if (amount < 0 || !MoneyRange(amount) || !recipient_pubkey.IsValid()) {
+        return false;
+    }
+    secp256k1_context* ctx = GetBlindContext();
+
+    // Ephemeral keypair. The nonce commitment carries the ephemeral X
+    // coordinate only (0x04 || X); unlike Path B there is no odd-Y forcing,
+    // since 0x04 can never be confused with the legacy 0x02 prefix. The
+    // recipient reconstructs the full compressed key by trying 02||X, 03||X.
+    CKey ephemeral;
+    CPubKey ephemeral_pub;
+    do {
+        ephemeral.MakeNewKey(true);
+        ephemeral_pub = ephemeral.GetPubKey();
+    } while (ephemeral_pub.size() != 33);
+    nonce_commit.vchCommitment.resize(33);
+    nonce_commit.vchCommitment[0] = 0x04;
+    std::memcpy(&nonce_commit.vchCommitment[1], ephemeral_pub.data() + 1, 32);
+
+    uint256 ss;
+    if (!ComputeECDHNonce(ephemeral, recipient_pubkey, ss)) {
+        return false;
+    }
+    uint256 nonce;
+    if (!DerivePathCNonce(ss, script_pub_key, nonce)) {
+        return false;
+    }
+
+    Rand32(blind);
+
+    secp256k1_pedersen_commitment commit;
+    if (secp256k1_pedersen_commit(ctx, &commit, blind.begin(), static_cast<uint64_t>(amount), secp256k1_generator_h) != 1) {
+        return false;
+    }
+    unsigned char ser[33];
+    secp256k1_pedersen_commitment_serialize(ctx, ser, &commit);
+    conf_value.vchCommitment.assign(ser, ser + 33);
+
+    unsigned char proof[5134];
+    size_t plen = sizeof(proof);
+    if (secp256k1_rangeproof_sign(ctx, proof, &plen, 0, &commit, blind.begin(), nonce.begin(),
+                                  0, 0, static_cast<uint64_t>(amount), nullptr, 0, nullptr, 0,
+                                  secp256k1_generator_h) != 1) {
+        return false;
+    }
+    rangeproof.assign(proof, proof + plen);
+    return true;
+}
+
+bool UnblindValueWithKeyV2(const CKey& blinding_key, const CConfidentialValue& conf_value,
+                           const CConfidentialNonce& nonce_commit, const std::vector<unsigned char>& rangeproof,
+                           const CScript& script_pub_key, CAmount& amount_out, uint256& blind_out)
+{
+    if (!conf_value.IsCommitment() || nonce_commit.vchCommitment.size() != 33 || rangeproof.empty()) {
+        return false;
+    }
+    // Dispatch on the nonce commitment's first byte:
+    //   0x02 -> Path A (legacy plaintext nonce / -ctlegacy): not a key
+    //           unblind; delegate to the original UnblindValue.
+    //   0x03 -> Path B (compressed ephemeral pubkey, CopyX32): original
+    //           UnblindValueWithKey; script_pub_key is not in the domain.
+    //   0x04 -> Path C (X-only ephemeral, HKDF): script_pub_key IS in the
+    //           domain; unblind via ReconstructPathCEphemeral + HKDF.
+    //   any other prefix -> fail closed, never rewind garbage.
+    switch (nonce_commit.vchCommitment[0]) {
+    case 0x02:
+        return UnblindValue(conf_value, nonce_commit, rangeproof, amount_out, blind_out);
+    case 0x03:
+        return UnblindValueWithKey(blinding_key, conf_value, nonce_commit, rangeproof, amount_out, blind_out);
+    case 0x04: {
+        CPubKey ephemeral_pub;
+        if (!ReconstructPathCEphemeral(nonce_commit, ephemeral_pub)) {
+            return false;
+        }
+        uint256 ss;
+        if (!ComputeECDHNonce(blinding_key, ephemeral_pub, ss)) {
+            return false;
+        }
+        uint256 nonce;
+        if (!DerivePathCNonce(ss, script_pub_key, nonce)) {
+            return false;
+        }
+
+        secp256k1_context* ctx = GetBlindContext();
+        secp256k1_pedersen_commitment commit;
+        if (secp256k1_pedersen_commitment_parse(ctx, &commit, conf_value.vchCommitment.data()) != 1) {
+            return false;
+        }
+        uint64_t value = 0;
+        uint64_t min_value = 0, max_value = 0;
+        if (secp256k1_rangeproof_rewind(ctx, blind_out.begin(), &value, nullptr, nullptr, nonce.begin(),
+                                        &min_value, &max_value, &commit, rangeproof.data(), rangeproof.size(),
+                                        nullptr, 0, secp256k1_generator_h) != 1) {
+            return false;
+        }
+        amount_out = static_cast<CAmount>(value);
+        return true;
+    }
+    default:
+        return false;
+    }
 }
