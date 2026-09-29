@@ -103,7 +103,8 @@ std::optional<CAmount> GetOutputAmount(const CTxOut& txout);
 bool BlindTransaction(const std::vector<uint256>& input_blinds, CMutableTransaction& tx,
                       std::vector<uint256>& output_blinds, std::vector<uint256>& output_nonces,
                       const std::vector<std::optional<CPubKey>>& recipient_keys = {},
-                      const std::vector<bool>* explicit_outputs = nullptr);
+                      const std::vector<bool>* explicit_outputs = nullptr,
+                      bool use_path_c = false);
 
 /**
  * Blind an output to a specific recipient using ECDH. The nonce commitment

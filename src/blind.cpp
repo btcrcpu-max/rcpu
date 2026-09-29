@@ -188,7 +188,8 @@ std::optional<CAmount> GetOutputAmount(const CTxOut& txout)
 bool BlindTransaction(const std::vector<uint256>& input_blinds, CMutableTransaction& tx,
                       std::vector<uint256>& output_blinds, std::vector<uint256>& output_nonces,
                       const std::vector<std::optional<CPubKey>>& recipient_keys,
-                      const std::vector<bool>* explicit_outputs)
+                      const std::vector<bool>* explicit_outputs,
+                      bool use_path_c)
 {
     secp256k1_context* ctx = GetBlindContext();
     const size_t n = tx.vout.size();
@@ -273,35 +274,60 @@ bool BlindTransaction(const std::vector<uint256>& input_blinds, CMutableTransact
             // plaintext, refuse to build the legacy plaintext-nonce path A.
             // This route is only reachable when the caller opted into path A
             // via -ctlegacy (empty recipient_keys) or an explicit path-A
-            // output, both of which bypass this check.
+// output, both of which bypass this check.
             return false;
         }
         uint256 nonce;
         if (path_b) {
-            // Path B (recipient ECDH): the nonce commitment carries the
+            // Path B/C (recipient ECDH): the nonce commitment carries the
             // ephemeral public key; the recipient derives the nonce from
-            // their own private key (UnblindValueWithKey) — no out-of-band
+            // their own private key (UnblindValueWithKey / V2) — no out-of-band
             // nonce required. Non-fee outputs without an engaged key fail
             // closed: an external output must not silently fall back to the
             // plaintext-nonce path A.
             CKey ephemeral;
             CPubKey ephemeral_pub;
-            // Force an odd-Y compressed pubkey (0x03 prefix): a 0x02 prefix
-            // would be misdetected as a legacy plaintext-nonce commitment by
-            // IsLegacyNonceCommit, letting a third party feed the pubkey X
-            // bytes into GetNonce() and attempt a garbage rewind. With a
-            // 0x03 prefix the commitment is never legacy-shaped.
             do {
                 ephemeral.MakeNewKey(true);
                 ephemeral_pub = ephemeral.GetPubKey();
-            } while (ephemeral_pub.size() != 33 || ephemeral_pub.data()[0] == 0x02);
-            tx.vout[i].nNonce.vchCommitment.assign(ephemeral_pub.begin(), ephemeral_pub.end());
-
-            if (!ComputeECDHNonce(ephemeral, *recipient_keys[i], nonce)) {
-                return false;
+            } while (ephemeral_pub.size() != 33);
+            if (!use_path_c) {
+                // Path B (CopyX32): force an odd-Y compressed pubkey (0x03
+                // prefix) — a 0x02 prefix would be misdetected as a legacy
+                // plaintext-nonce commitment by IsLegacyNonceCommit, letting a
+                // third party feed the pubkey X bytes into GetNonce() and
+                // attempt a garbage rewind. With a 0x03 prefix the commitment
+                // is never legacy-shaped.
+                while (ephemeral_pub.data()[0] == 0x02) {
+                    ephemeral.MakeNewKey(true);
+                    ephemeral_pub = ephemeral.GetPubKey();
+                }
+                tx.vout[i].nNonce.vchCommitment.assign(ephemeral_pub.begin(), ephemeral_pub.end());
+                if (!ComputeECDHNonce(ephemeral, *recipient_keys[i], nonce)) {
+                    return false;
+                }
+            } else {
+                // Path C (HKDF, 0x04 || X): the nonce commitment carries the
+                // ephemeral X coordinate only; the rewind nonce is derived via
+                // HKDF-SHA256(ikm = ss, salt = "rcpu-pathc-v1", info =
+                // scriptPubKey || 0x01 || le64(64)) with ss from the same
+                // CopyX32 ECDH as Path B (doc/ct-path-c.md). 0x04 is never
+                // legacy-shaped and never a compressed pubkey prefix, so no
+                // odd-Y forcing is needed. The recipient reconstructs the full
+                // key by trying 02||X then 03||X.
+                tx.vout[i].nNonce.vchCommitment.resize(33);
+                tx.vout[i].nNonce.vchCommitment[0] = 0x04;
+                std::memcpy(&tx.vout[i].nNonce.vchCommitment[1], ephemeral_pub.data() + 1, 32);
+                uint256 ss;
+                if (!ComputeECDHNonce(ephemeral, *recipient_keys[i], ss)) {
+                    return false;
+                }
+                if (!DerivePathCNonce(ss, tx.vout[i].scriptPubKey, nonce)) {
+                    return false;
+                }
             }
             output_nonces[i] = uint256(); // ECDH-derived; not a stored nonce
-} else {
+        } else {
             // Path A fallback (plaintext nonce): reachable only when the
             // caller opted into the legacy behaviour via -ctlegacy=1 (empty
             // recipient_keys). The mainnet default send path never reaches
