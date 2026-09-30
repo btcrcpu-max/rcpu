@@ -1428,11 +1428,11 @@ std::vector<uint256> output_blinds, output_nonces;
         // (change, own scripts, imported keys) is blinded via recipient-ECDH
         // path C (0x04 || X nonce, HKDF rewind nonce); a payee whose public
         // key cannot be resolved (e.g. a foreign P2WPKH/P2PKH address this
-        // wallet does not own) is emitted as a plaintext (non-CT,
-        // explicit-value) output inside BlindTransaction. The legacy
-        // plaintext-nonce path A (0x02 prefix) is no longer used on the
-        // default send path: it remains reachable only via -ctlegacy=1.
-        // 1.0.18 restores plain address-to-address transfers: sending must
+        // wallet does not own) falls through to Path A (0x02 commitment).
+        // Resolved pubkey (rcpux1 / own change) → Path C (0x04).
+        // Unresolved pubkey (bare rcpu1) → Path A (0x02 commitment).
+        // -ctlegacy=1: empty recipient_keys, whole tx Path A.
+        // 1.0.18 restores address-to-address transfers: sending must
         // never fail just because the recipient's public key is unknown.
 std::vector<std::optional<CPubKey>> recipient_keys;
         std::vector<bool> explicit_outputs;
@@ -1445,9 +1445,8 @@ std::vector<std::optional<CPubKey>> recipient_keys;
             // path C with the HKDF rewind nonce). Only outputs that
             // were explicitly created from a ConfidentialKeyHash recipient use
             // the recipient-ECDH path; every other output (legacy rcpu1...
-            // addresses, foreign scripts) stays plaintext (explicit value) and
-            // is never blinded via the plaintext-nonce path A. No UI/RPC ever
-            // asks the user for a recipient public key.
+            // addresses, foreign scripts) falls through to Path A. No UI/RPC
+            // ever asks the user for a recipient public key.
             // Outputs are matched to recipients by construction order rather
             // than by scriptPubKey: vout is pushed in vecSend order with the
             // change output (if any) inserted at *change_pos, so slot and
@@ -1460,11 +1459,10 @@ std::vector<std::optional<CPubKey>> recipient_keys;
                 // PR-B: the change output caps the change key resolved above
                 // so the wallet's own change blinds via the recipient path
                 // (nonce 0x04, path C) and the sender's record keeps the
-                // rcpux1 address. Fee / empty-script outputs are appended only
-                // after BlindTransaction and can never reach this vector. The
-                // change slot is never matched against vecSend: with no
-                // resolved change key it stays plaintext instead of consuming
-                // another vecSend entry's blinding key.
+                // rcpux1 address. The change slot is never matched against
+                // vecSend: with no resolved change key it goes Path A (0x02)
+                // instead of plaintext. Fee / empty-script outputs are appended
+                // after BlindTransaction and can never reach this vector.
                 if (change_pos && *change_pos == vi) {
                     if (change_key_dest) {
                         pubkey = change_key;
@@ -1492,57 +1490,14 @@ std::vector<std::optional<CPubKey>> recipient_keys;
                         }
                     }
                 }
-                if (!pubkey.has_value()) {
-                    // Plain rcpu1... (or any script without a resolved public
-                    // key): emit as a plaintext (explicit-value) output inside
-                    // BlindTransaction instead of falling back to path A.
-                    explicit_outputs[vi] = true;
-                }
+                // No pubkey → nullopt → Path A (0x02 commitment) in blind.cpp
                 recipient_keys.push_back(pubkey);
             }
         }
         // RCPU hardening (P1-2) wallet-side: on mainnet, from height
         // nBanPathAHeight onward, refuse to create the
         // plaintext-nonce path-A fallback. With the 1.1.5 send-path change
-        // the default -ctlegacy=0 path can no longer produce a path-A output:
-// a plain rcpu1... output is emitted as explicit plaintext (v3
-        // interior or a full legacy-v2 transaction) and path-C carries the
-        // recipient ECDH nonce, so this check only fires for -ctlegacy=1
-        // (empty recipient_keys) or change-without-key (nullopt) routes that
-        // would still blind via path A -- the consensus layer rejects such
-        // outputs at these heights, and a wallet-side fallback would only
-        // build an unrelayable (or block-rejected) transaction.
-        // RCPU send-path version decision (1.1.5). With -ctlegacy=1 the
-        // legacy behaviour is preserved: recipient_keys stays empty and
-        // BlindTransaction falls back to path A (v3). With the default
-        // -ctlegacy=0 two degenerate shapes must be handled before blinding:
-        //   1. confidential input but no resolvable recipient-ECDH output:
-        //      the input blind would have nowhere to land and the Pedersen
-        //      tally can never balance; refuse with a precise error (blind.cpp
-        //      also fails closed on this shape).
-        //   2. no CT input and no recipient-ECDH output (all rcpu1...
-        //      plaintext): blinding would produce an all-explicit v3
-        //      transaction that IsStandardTx rejects (reason
-        //      "all-explicit-v3") and append a v3 fee output; emit a legacy v2
-        //      transaction instead.
-        bool has_ct_input = false;
-        for (const uint256& b : input_blinds) {
-            if (!b.IsNull()) { has_ct_input = true; break; }
-        }
-        bool has_recipient_output = false;
-        for (const std::optional<CPubKey>& k : recipient_keys) {
-            if (k.has_value()) { has_recipient_output = true; break; }
-        }
-        const bool ctlegacy_mode = gArgs.GetBoolArg("-ctlegacy", false);
-        if (!ctlegacy_mode && has_ct_input && !has_recipient_output) {
-            return util::Error{_("Confidential input present but no confidential (rcpux1...) output resolvable; refusing to send")};
-        }
-        const bool plaintext_fallback = !ctlegacy_mode && !has_ct_input && !has_recipient_output;
-        if (plaintext_fallback) {
-            txNew.nVersion = nLegacyVersion;
-        } else {
-            txNew.nVersion = CT_VERSION;
-        }
+        txNew.nVersion = CT_VERSION;
         if (txNew.nVersion == CT_VERSION) {
             if (Params().GetChainType() == ChainType::RCPUMAIN &&
                 wallet.GetLastBlockHeight() >= Params().GetConsensus().nBanPathAHeight) {
