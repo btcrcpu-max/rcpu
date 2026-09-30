@@ -477,11 +477,10 @@ BOOST_AUTO_TEST_CASE(blind_tx_path_b_recipient_key)
 
 // Path-B hardening (mainnet default send path): once a key list is engaged,
 // a non-fee output whose recipient public key cannot be resolved (nullopt)
-// and which was not explicitly marked to stay plaintext must fail the whole
-// transaction (fail closed) instead of silently downgrading to the
-// plaintext-nonce path A. An output explicitly marked plaintext is emitted
-// unblinded (explicit value, no nonce, no range proof). A length mismatch
-// still aborts the transaction.
+// and which was not explicitly marked to stay plaintext falls through to
+// Path A (0x02 commitment) instead of failing closed. An output explicitly
+// marked plaintext is emitted unblinded (explicit value, no nonce, no range
+// proof). A length mismatch still aborts the transaction.
 BOOST_AUTO_TEST_CASE(blind_tx_path_b_missing_key_fails_closed)
 {
     CMutableTransaction tx;
@@ -491,18 +490,32 @@ BOOST_AUTO_TEST_CASE(blind_tx_path_b_missing_key_fails_closed)
     std::vector<uint256> out_blinds, out_nonces;
 
     // Engaged key list but this output has no key and no explicit marker:
-    // the transaction must be rejected, never degraded to path A.
+    // falls through to Path A (0x02 commitment) instead of failing closed.
     std::vector<std::optional<CPubKey>> keys_with_nullopt = {std::nullopt};
-    BOOST_CHECK(!BlindTransaction(in_blinds, tx, out_blinds, out_nonces, keys_with_nullopt));
+    BOOST_REQUIRE(BlindTransaction(in_blinds, tx, out_blinds, out_nonces, keys_with_nullopt));
+    BOOST_CHECK(tx.vout[0].nValue.IsCommitment());
+    BOOST_CHECK(!tx.vout[0].nValue.IsExplicit());
+    BOOST_CHECK_EQUAL(tx.vout[0].nNonce.vchCommitment.size(), 33U);
+    BOOST_CHECK_EQUAL(tx.vout[0].nNonce.vchCommitment[0], 0x02);
+    BOOST_CHECK(IsLegacyNonceCommit(tx.vout[0].nNonce));
+
+    CAmount recovered = -1;
+    uint256 blind_out;
+    BOOST_REQUIRE(UnblindValue(tx.vout[0].nValue, tx.vout[0].nNonce,
+                               tx.vout[0].vchRangeproof, recovered, blind_out));
+    BOOST_CHECK_EQUAL(recovered, 123456789);
+    BOOST_CHECK(blind_out == out_blinds[0]);
 
     // The same output explicitly marked to stay plaintext is emitted
     // unblinded: explicit value, empty nonce, empty range proof.
+    CMutableTransaction tx_plain;
+    tx_plain.vout.push_back(MakeExplicitOut(123456789));
     std::vector<bool> keep_explicit = {true};
-    BOOST_REQUIRE(BlindTransaction(in_blinds, tx, out_blinds, out_nonces, keys_with_nullopt, &keep_explicit));
-    BOOST_CHECK(tx.vout[0].nValue.IsExplicit());
-    BOOST_CHECK_EQUAL(tx.vout[0].nValue.GetAmount(), 123456789);
-    BOOST_CHECK(tx.vout[0].nNonce.vchCommitment.empty());
-    BOOST_CHECK(tx.vout[0].vchRangeproof.empty());
+    BOOST_REQUIRE(BlindTransaction(in_blinds, tx_plain, out_blinds, out_nonces, keys_with_nullopt, &keep_explicit));
+    BOOST_CHECK(tx_plain.vout[0].nValue.IsExplicit());
+    BOOST_CHECK_EQUAL(tx_plain.vout[0].nValue.GetAmount(), 123456789);
+    BOOST_CHECK(tx_plain.vout[0].nNonce.vchCommitment.empty());
+    BOOST_CHECK(tx_plain.vout[0].vchRangeproof.empty());
 
     // Key-list length does not line up with the outputs: rejected.
     CMutableTransaction tx2;
