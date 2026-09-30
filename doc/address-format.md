@@ -49,14 +49,18 @@ Status on the RCPU mainnet:
 
 ## Wallet Behavior
 
-- `getnewaddress` returns Bech32 (`rcpu1...`) by default.
-- `m_default_address_type` defaults to `OutputType::BECH32`.
+- `getnewaddress` returns **Confidential (`rcpux1`)** by default.
+- `m_default_address_type` defaults to `OutputType::CONFIDENTIAL`.
+- The **GUI receive dialog** only offers `Bech32 (rcpu1)` and `Confidential (rcpux1)`;
+  `LEGACY`, `P2SH_SEGWIT`, and `BECH32M` are no longer presented as receive options.
+- Old UTXOs at `1...` / `3...` / `rcpu1p...` remain spendable, but the wallet will
+  not generate new addresses of those types.
 - `getnewaddress` and `getrawchangeaddress` **reject** `OutputType::LEGACY` on
   mainnet. The wallet cannot produce Base58 addresses on RCPUMAIN.
 - `validateaddress` behavior follows the code above; refer to
   `src/key_io.cpp` and `src/wallet/rpc/addresses.cpp`.
-- Users and exchanges should default to `rcpu1...`, and use `rcpux1...` for
-  confidential receives.
+- **Users should only give out `rcpux1` for receiving.** `rcpu1` (bare Bech32)
+  sends through the Path-A commitment shell, which is not true confidentiality.
 
 ## Recommendation for Integrations
 
