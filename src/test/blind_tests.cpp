@@ -1099,7 +1099,7 @@ BOOST_AUTO_TEST_CASE(blind_tx_mixed_path_c_and_path_a)
 
     std::vector<uint256> in_blinds(1);
     std::vector<uint256> out_blinds, out_nonces;
-    std::vector<std::optional<TCPubKey>> recipient_keys = {recv_pub, std::nullopt};
+    std::vector<std::optional<CPubKey>> recipient_keys = {recv_pub, std::nullopt};
     // Neither output is marked explicit: keyed → Path C, key-less → Path A.
     BOOST_REQUIRE(BlindTransaction(in_blinds, tx, out_blinds, out_nonces,
                                    recipient_keys, /*explicit_outputs=*/nullptr,
