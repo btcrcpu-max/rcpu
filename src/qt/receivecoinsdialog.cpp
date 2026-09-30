@@ -93,22 +93,11 @@ void ReceiveCoinsDialog::setModel(WalletModel *_model)
             ui->addressType->setItemData(index, tooltip, Qt::ToolTipRole);
             if (model->wallet().getDefaultAddressType() == type) ui->addressType->setCurrentIndex(index);
         };
-        add_address_type(OutputType::LEGACY, tr("Base58 (Legacy)"), tr("Not recommended due to higher fees and less protection against typos."));
-        add_address_type(OutputType::P2SH_SEGWIT, tr("Base58 (P2SH-SegWit)"), tr("Generates an address compatible with older wallets."));
-        add_address_type(OutputType::BECH32, tr("Bech32 (SegWit)"), tr("Generates a native segwit address (BIP-173). Some old wallets don't support it."));
-        if (model->wallet().taprootEnabled()) {
-            add_address_type(OutputType::BECH32M, tr("Bech32m (Taproot)"), tr("Bech32m (BIP-350) is an upgrade to Bech32, wallet support is still limited."));
-        }
-        // RCPU CT: confidential (rcpux1) receive addresses. Disabled with a hint
-        // when this wallet has no confidential descriptor (e.g. wallets created
-        // before confidential address support that cannot be backfilled).
-        {
-            const auto confidential_index = ui->addressType->count();
-            add_address_type(OutputType::CONFIDENTIAL, tr("Confidential (rcpux1)"), tr("Generates a confidential address (RCPU CT) that blinds the amount of received payments."));
-            if (!model->wallet().confidentialEnabled()) {
-                ui->addressType->setItemData(confidential_index, false, Qt::UserRole - 1);
-                ui->addressType->setItemData(confidential_index, tr("This wallet has no confidential descriptor; use a Bech32 (rcpu1) receive address."), Qt::ToolTipRole);
-            }
+        add_address_type(OutputType::BECH32, tr("Bech32 (rcpu1)"), tr("Ordinary address. Amount uses Path A shell, not true confidentiality."));
+        if (model->wallet().confidentialEnabled()) {
+            add_address_type(OutputType::CONFIDENTIAL, tr("Confidential (rcpux1)"), tr("Recommended. Amount hidden (Path C)."));
+        } else {
+            // Old wallets without confidential descriptor: only BECH32 is available
         }
 
         // Set the button to be enabled or disabled based on whether the wallet can give out new addresses.
