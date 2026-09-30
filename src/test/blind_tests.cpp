@@ -1084,4 +1084,92 @@ BOOST_AUTO_TEST_CASE(path_c_unblind_v2_dispatch_preserves_legacy)
     }
 }
 
+// Mixed Path C + Path A in the same tx: one keyed output (rcpux1) gets 0x04,
+// one key-less output (bare rcpu1) falls through to Path A (0x02 commitment).
+BOOST_AUTO_TEST_CASE(blind_tx_mixed_path_c_and_path_a)
+{
+    CKey recv_key;
+    recv_key.MakeNewKey(true);
+    BOOST_REQUIRE(recv_key.IsValid());
+    const CPubKey recv_pub = recv_key.GetPubKey();
+
+    CMutableTransaction tx;
+    tx.vout.push_back(MakeExplicitOut(123456789));
+    tx.vout.push_back(MakeExplicitOut(50000000));
+
+    std::vector<uint256> in_blinds(1);
+    std::vector<uint256> out_blinds, out_nonces;
+    std::vector<std::optional<TCPubKey>> recipient_keys = {recv_pub, std::nullopt};
+    // Neither output is marked explicit: keyed → Path C, key-less → Path A.
+    BOOST_REQUIRE(BlindTransaction(in_blinds, tx, out_blinds, out_nonces,
+                                   recipient_keys, /*explicit_outputs=*/nullptr,
+                                   /*use_path_c=*/true));
+    BOOST_REQUIRE_EQUAL(out_blinds.size(), 2U);
+
+    // Output 0 (keyed): Path C shape, 0x04 prefix.
+    BOOST_CHECK(tx.vout[0].nValue.IsCommitment());
+    BOOST_CHECK(!tx.vout[0].nValue.IsExplicit());
+    BOOST_CHECK_EQUAL(tx.vout[0].nNonce.vchCommitment.size(), 33U);
+    BOOST_CHECK_EQUAL(tx.vout[0].nNonce.vchCommitment[0], 0x04);
+    BOOST_CHECK(IsPathCNonceCommit(tx.vout[0].nNonce));
+    BOOST_CHECK(!IsLegacyNonceCommit(tx.vout[0].nNonce));
+
+    // Recipient's own key recovers the amount via V2.
+    CAmount recovered0 = -1;
+    uint256 blind0;
+    BOOST_REQUIRE(UnblindValueWithKeyV2(recv_key, tx.vout[0].nValue, tx.vout[0].nNonce,
+                                          tx.vout[0].vchRangeproof, tx.vout[0].scriptPubKey,
+                                          recovered0, blind0));
+    BOOST_CHECK_EQUAL(recovered0, 123456789);
+    BOOST_CHECK(blind0 == out_blinds[0]);
+
+    // Output 1 (key-less): Path A shape, 0x02 prefix, commitment (not explicit).
+    BOOST_CHECK(tx.vout[1].nValue.IsCommitment());
+    BOOST_CHECK(!tx.vout[1].nValue.IsExplicit());
+    BOOST_CHECK_EQUAL(tx.vout[1].nNonce.vchCommitment.size(), 33U);
+    BOOST_CHECK_EQUAL(tx.vout[1].nNonce.vchCommitment[0], 0x02);
+    BOOST_CHECK(IsLegacyNonceCommit(tx.vout[1].nNonce));
+
+    // Path A rewind works (nonce is public).
+    CAmount recovered1 = -1;
+    uint256 blind1;
+    BOOST_REQUIRE(UnblindValue(tx.vout[1].nValue, tx.vout[1].nNonce,
+                               tx.vout[1].vchRangeproof, recovered1, blind1));
+    BOOST_CHECK_EQUAL(recovered1, 50000000);
+    BOOST_CHECK(blind1 == out_blinds[1]);
+}
+
+// All outputs key-less (bare rcpu1 or -ctlegacy=1): every output gets Path A
+// (0x02 || nonce, commitment, rangeproof). No explicit outputs.
+BOOST_AUTO_TEST_CASE(blind_tx_all_path_a_when_no_keys)
+{
+    CMutableTransaction tx;
+    tx.vout.push_back(MakeExplicitOut(800000));
+    tx.vout.push_back(MakeExplicitOut(200000));
+
+    std::vector<uint256> in_blinds(1);
+    std::vector<uint256> out_blinds, out_nonces;
+    // Empty recipient_keys = -ctlegacy=1 behaviour: whole tx Path A.
+    BOOST_REQUIRE(BlindTransaction(in_blinds, tx, out_blinds, out_nonces,
+                                   /*recipient_keys=*/{},
+                                   /*explicit_outputs=*/nullptr,
+                                   /*use_path_c=*/true));
+    BOOST_REQUIRE_EQUAL(out_blinds.size(), 2U);
+
+    for (size_t i = 0; i < tx.vout.size(); ++i) {
+        BOOST_CHECK(tx.vout[i].nValue.IsCommitment());
+        BOOST_CHECK(!tx.vout[i].nValue.IsExplicit());
+        BOOST_CHECK_EQUAL(tx.vout[i].nNonce.vchCommitment.size(), 33U);
+        BOOST_CHECK_EQUAL(tx.vout[i].nNonce.vchCommitment[0], 0x02);
+        BOOST_CHECK(IsLegacyNonceCommit(tx.vout[i].nNonce));
+
+        CAmount recovered = -1;
+        uint256 blind_out;
+        BOOST_REQUIRE(UnblindValue(tx.vout[i].nValue, tx.vout[i].nNonce,
+                                   tx.vout[i].vchRangeproof, recovered, blind_out));
+        BOOST_CHECK_EQUAL(recovered, (i == 0 ? 800000 : 200000));
+        BOOST_CHECK(blind_out == out_blinds[i]);
+    }
+}
+
 BOOST_AUTO_TEST_SUITE_END()

@@ -268,23 +268,12 @@ bool BlindTransaction(const std::vector<uint256>& input_blinds, CMutableTransact
         }
 
         const bool path_b = !recipient_keys.empty() && recipient_keys[i].has_value();
-        if (!path_b && !recipient_keys.empty()) {
-            // Fail closed: when a per-output recipient key list is engaged but
-            // this output carries no key and was not explicitly marked to stay
-            // plaintext, refuse to build the legacy plaintext-nonce path A.
-            // This route is only reachable when the caller opted into path A
-            // via -ctlegacy (empty recipient_keys) or an explicit path-A
-// output, both of which bypass this check.
-            return false;
-        }
         uint256 nonce;
         if (path_b) {
             // Path B/C (recipient ECDH): the nonce commitment carries the
             // ephemeral public key; the recipient derives the nonce from
             // their own private key (UnblindValueWithKey / V2) — no out-of-band
-            // nonce required. Non-fee outputs without an engaged key fail
-            // closed: an external output must not silently fall back to the
-            // plaintext-nonce path A.
+            // nonce required. Outputs without a key fall through to Path A.
             CKey ephemeral;
             CPubKey ephemeral_pub;
             do {
@@ -328,13 +317,10 @@ bool BlindTransaction(const std::vector<uint256>& input_blinds, CMutableTransact
             }
             output_nonces[i] = uint256(); // ECDH-derived; not a stored nonce
         } else {
-            // Path A fallback (plaintext nonce): reachable only when the
-            // caller opted into the legacy behaviour via -ctlegacy=1 (empty
-            // recipient_keys). The mainnet default send path never reaches
-            // this branch: outputs without a resolved public key are either
-            // emitted as plaintext (explicit value) or fail closed above.
-            // The path-A spending ban (nBanPathAHeight) stays inactive on
-            // mainnet while it remains INT_MAX.
+            // Path A (0x02 || nonce): bare rcpu1 / unresolved pubkey, or
+            // -ctlegacy=1 (empty recipient_keys). Amount is committed, not
+            // explicit. Anyone who rewinds 0x02 can read it. nBanPathAHeight
+            // stays INT_MAX on mainnet.
             Rand32(output_nonces[i]);
             SetNonce(tx.vout[i].nNonce, output_nonces[i]);
             nonce = output_nonces[i];
