@@ -419,6 +419,9 @@ CoinsResult AvailableCoins(const CWallet& wallet,
             if (!output.nValue.IsExplicit() && output_real_value <= 0) {
                 continue;
             }
+            if (params.skip_unconfirmed_ct && nDepth == 0 && !output.nValue.IsExplicit()) {
+                continue;
+            }
             if (output_real_value < params.min_amount || output_real_value > params.max_amount)
                 continue;
 
@@ -1225,7 +1228,9 @@ CTxOut txout(recipient.nAmount, GetScriptForDestination(recipient.dest));
     // allowed (coins automatically selected by the wallet)
     CoinsResult available_coins;
     if (coin_control.m_allow_other_inputs) {
-        available_coins = AvailableCoins(wallet, &coin_control, coin_selection_params.m_effective_feerate);
+        CoinFilterParams coins_filter;
+        coins_filter.skip_unconfirmed_ct = true;
+        available_coins = AvailableCoins(wallet, &coin_control, coin_selection_params.m_effective_feerate, coins_filter);
     }
 
     // Choose coins to use
@@ -1233,7 +1238,37 @@ CTxOut txout(recipient.nAmount, GetScriptForDestination(recipient.dest));
     if (!select_coins_res) {
         // 'SelectCoins' either returns a specific error message or, if empty, means a general "Insufficient funds".
         const bilingual_str& err = util::ErrorString(select_coins_res);
-        return util::Error{err.empty() ?_("Insufficient funds") : err};
+        if (err.empty()) {
+            // Same set as AvailableCoins when skip_unconfirmed_ct is set:
+            // depth == 0 and the tx is in the mempool. Do not widen to
+            // conflicted / not-in-mempool depth-0 rows; those were already
+            // excluded from auto-selection.
+            // TODO(follow-up): replace this hand scan with
+            // AvailableCoins(default) minus AvailableCoins(skip_unconfirmed_ct).
+            // Also align only_safe semantics with CachedTxIsTrusted.
+            CAmount unconfirmed_ct_value{0};
+            for (const auto& [txid, wtx] : wallet.mapWallet) {
+                const int nDepth = wallet.GetTxDepthInMainChain(wtx);
+                if (nDepth != 0 || !wtx.InMempool()) continue;
+                std::set<uint256> trusted_parents;
+                if (!CachedTxIsTrusted(wallet, wtx, trusted_parents)) continue;
+                if (wallet.IsTxImmatureCoinBase(wtx)) continue;
+                for (unsigned int i = 0; i < wtx.tx->vout.size(); ++i) {
+                    const CTxOut& output = wtx.tx->vout[i];
+                    if (output.nValue.IsExplicit()) continue;
+                    const COutPoint outpoint(Txid::FromUint256(txid), i);
+                    if (wallet.IsSpent(outpoint) || wallet.IsLockedCoin(outpoint)) continue;
+                    const isminetype mine = wallet.IsMine(output);
+                    if (mine == ISMINE_NO) continue;
+                    const CAmount real_value = OutputGetCredit(wallet, output, isminefilter(mine));
+                    if (real_value > 0) unconfirmed_ct_value += real_value;
+                }
+            }
+            if (unconfirmed_ct_value >= selection_target) {
+                return util::Error{_("Insufficient funds: the requested amount is only available in unconfirmed confidential outputs; wait for confirmation and try again")};
+            }
+        }
+        return util::Error{err.empty() ? _("Insufficient funds") : err};
     }
     const SelectionResult& result = *select_coins_res;
     TRACE5(coin_selection, selected_coins,
