@@ -617,9 +617,9 @@ consensus.fPowRandomX = true;
         // RCPU hardening (P1-2): soft-fork ban of legacy path-A (plaintext-nonce)
         // CT nonce encoding. Only outputs in blocks at or above this height are
         // rejected; already-mined path-A UTXOs remain spendable.
-        // Computed at 2026-10-01 from live tip (10710) + 2016 ≈ 7 days notice.
+        // Computed at 2026-10-01 from live tip (10732) + 2016 ≈ 7 days notice.
         // Recompute on release day if tip has moved: H = TIP + 2016.
-        consensus.nBanPathAHeight = 12726;
+        consensus.nBanPathAHeight = 12748;
         // RCPU (P1-1): canonical hash domain is byte-identical to the live
         // raw-memory domain (static_asserts in primitives/block.h), so no
         // consensus change occurs at this height; it is the versioning guard
