@@ -149,7 +149,9 @@ static UniValue FinishTransaction(const std::shared_ptr<CWallet> pwallet, const 
         CTransactionRef tx(MakeTransactionRef(std::move(mtx)));
         result.pushKV("txid", tx->GetHash().GetHex());
         if (add_to_wallet && !psbt_opt_in) {
-            pwallet->CommitTransaction(tx, {}, /*orderForm=*/{});
+            if (auto err = pwallet->CommitTransaction(tx, {}, /*orderForm=*/{}); err) {
+                throw JSONRPCError(RPC_WALLET_ERROR, "Broadcast failed: " + err->original);
+            }
         } else {
             result.pushKV("hex", hex);
         }
@@ -214,7 +216,9 @@ const CTransactionRef& tx = res->tx;
     for (const auto& [vout_idx, amount] : res->vout_amount) {
         map_value[std::string("vout_amount_") + std::to_string(vout_idx)] = std::to_string(amount);
     }
-    wallet.CommitTransaction(tx, std::move(map_value), /*orderForm=*/{});
+    if (auto err = wallet.CommitTransaction(tx, std::move(map_value), /*orderForm=*/{}); err) {
+        throw JSONRPCError(RPC_WALLET_ERROR, "Broadcast failed: " + err->original);
+    }
     if (verbose) {
         UniValue entry(UniValue::VOBJ);
         entry.pushKV("txid", tx->GetHash().GetHex());
@@ -700,7 +704,9 @@ static UniValue SilentSend(const std::shared_ptr<CWallet>& pwallet, const std::s
         throw JSONRPCError(RPC_WALLET_INSUFFICIENT_FUNDS, util::ErrorString(res).original);
     }
     const CTransactionRef& tx = res->tx;
-    pwallet->CommitTransaction(tx, std::move(mapValue), /*orderForm=*/{});
+    if (auto err = pwallet->CommitTransaction(tx, std::move(mapValue), /*orderForm=*/{}); err) {
+        throw JSONRPCError(RPC_WALLET_ERROR, "Broadcast failed: " + err->original);
+    }
     return tx->GetHash().GetHex();
 }
 

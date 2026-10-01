@@ -17,6 +17,7 @@
 #include <common/args.h> // for GetBoolArg
 #include <interfaces/handler.h>
 #include <interfaces/node.h>
+#include <util/result.h>
 #include <key_io.h>
 #include <node/interface_ui.h>
 #include <psbt.h>
@@ -254,7 +255,13 @@ void WalletModel::sendCoins(WalletModelTransaction& transaction)
         }
 
         auto& newTx = transaction.getWtx();
-        wallet().commitTransaction(newTx, /*value_map=*/{}, std::move(vOrderForm));
+        auto commit_res = wallet().commitTransaction(newTx, /*value_map=*/{}, std::move(vOrderForm));
+        if (!commit_res) {
+            Q_EMIT message(tr("Send Coins"),
+                           QString::fromStdString(util::ErrorString(commit_res).original),
+                           CClientUIInterface::MSG_ERROR);
+            return;
+        }
 
         DataStream ssTx;
         ssTx << TX_WITH_WITNESS(*newTx);

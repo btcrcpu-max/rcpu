@@ -2319,7 +2319,7 @@ bool any_tr{false};
     return m_default_address_type;
 }
 
-void CWallet::CommitTransaction(CTransactionRef tx, mapValue_t mapValue, std::vector<std::pair<std::string, std::string>> orderForm)
+std::optional<bilingual_str> CWallet::CommitTransaction(CTransactionRef tx, mapValue_t mapValue, std::vector<std::pair<std::string, std::string>> orderForm)
 {
     LOCK(cs_wallet);
     WalletLogPrintf("CommitTransaction:\n%s", tx->ToString()); // NOLINT(bitcoin-unterminated-logprintf)
@@ -2350,14 +2350,18 @@ void CWallet::CommitTransaction(CTransactionRef tx, mapValue_t mapValue, std::ve
 
     if (!fBroadcastTransactions) {
         // Don't submit tx to the mempool
-        return;
+        return std::nullopt;
     }
 
     std::string err_string;
     if (!SubmitTxMemoryPoolAndRelay(*wtx, err_string, true)) {
         WalletLogPrintf("CommitTransaction(): Transaction cannot be broadcast immediately, %s\n", err_string);
-        // TODO: if we expect the failure to be long term or permanent, instead delete wtx from the wallet and return failure.
+        // Surface the failure to the caller so that RPC paths must not report
+        // a txid for a transaction the node rejected. The wallet record is
+        // kept (resend logic may retry), so this is a non-fatal error.
+        return bilingual_str{Untranslated(err_string.empty() ? "Transaction broadcast failed" : err_string)};
     }
+    return std::nullopt;
 }
 
 DBErrors CWallet::LoadWallet()

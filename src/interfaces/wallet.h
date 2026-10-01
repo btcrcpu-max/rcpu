@@ -150,7 +150,7 @@ public:
         std::map<unsigned int, std::string>* vout_addr = nullptr) = 0;
 
     //! Commit transaction.
-    virtual void commitTransaction(CTransactionRef tx,
+    virtual util::Result<void> commitTransaction(CTransactionRef tx,
         WalletValueMap value_map,
         WalletOrderForm order_form) = 0;
 
