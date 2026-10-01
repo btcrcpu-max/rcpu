@@ -80,6 +80,11 @@ struct CoinFilterParams {
     bool include_immature_coinbase{false};
     // By default, skip locked UTXOs
     bool skip_locked{true};
+    // By default, include unconfirmed confidential (CT) outputs in the result.
+    // Set to true to skip them; used for auto-selection because a CT child
+    // spending an unconfirmed parent cannot pass the v3 policy until the
+    // parent confirms, so such inputs would never broadcast.
+    bool skip_unconfirmed_ct{false};
 };
 
 /**

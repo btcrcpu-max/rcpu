@@ -563,7 +563,10 @@ public:
             BOOST_CHECK(res);
             tx = res->tx;
         }
-        wallet->CommitTransaction(tx, {}, {});
+auto err = wallet->CommitTransaction(tx, {}, {});
+        const bool commit_ok = !err.has_value();
+        const std::string commit_msg = commit_ok ? std::string{} : err->original;
+        BOOST_CHECK_MESSAGE(commit_ok, commit_msg);
         CMutableTransaction blocktx;
         {
             LOCK(wallet->cs_wallet);

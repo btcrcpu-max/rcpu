@@ -377,7 +377,10 @@ Result CommitTransaction(CWallet& wallet, const uint256& txid, CMutableTransacti
     mapValue_t mapValue = oldWtx.mapValue;
     mapValue["replaces_txid"] = oldWtx.GetHash().ToString();
 
-    wallet.CommitTransaction(tx, std::move(mapValue), oldWtx.vOrderForm);
+    if (auto err = wallet.CommitTransaction(tx, std::move(mapValue), oldWtx.vOrderForm); err) {
+        errors.push_back(*err);
+        return Result::MISC_ERROR;
+    }
 
     // mark the original tx as bumped
     bumped_txid = tx->GetHash();

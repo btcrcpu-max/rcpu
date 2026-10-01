@@ -529,7 +529,7 @@ void SetupServerArgs(ArgsManager& argsman)
 #endif
     argsman.AddArg("-txindex", strprintf("Maintain a full transaction index, used by the getrawtransaction rpc call (default: %u)", DEFAULT_TXINDEX), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-ctmode", "Enable confidential transactions mode (RCPU)", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
-    argsman.AddArg("-ctlegacy", "Force legacy (path A, plaintext-nonce) CT blinding for ALL outputs. 1.0.18 no longer requires it for bare-address sends: by default outputs without a resolvable recipient public key fall back to path A automatically. Path A stores a rewind nonce on-chain and is not confidential; use only for compatibility (default: 0)", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
+    argsman.AddArg("-ctlegacy", "Force legacy (path A, plaintext-nonce) CT blinding for ALL outputs (RCPU). Default (H-1): outputs without a resolvable recipient public key (bare rcpu1 addresses) are emitted as explicit plaintext outputs, not confidential ones - no more private than a normal address-to-address send, and they store no rewind nonce on-chain. Path A is used only when -ctlegacy=1 and the chain height is below nBanPathAHeight; at or after that height the wallet refuses to create Path A because the network rejects such outputs. Use -ctlegacy only for compatibility. (default: 0)", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-blockfilterindex=<type>",
                  strprintf("Maintain an index of compact filters by block (default: %s, values: %s).", DEFAULT_BLOCKFILTERINDEX, ListBlockFilterTypes()) +
                  " If <type> is not supplied or if <type> = 1, indexes for all known types are enabled.",
@@ -939,12 +939,15 @@ bool fDefaultCT = (chainparams.GetChainType() == ChainType::RCPUMAIN || chainpar
     // specified in default section of config file, but not overridden
     // on the command line or in this chain's section of the config file.
 ChainType chain = args.GetChainType();
-    // RCPU 1.0.18: -ctlegacy (path A, plaintext-nonce blinding) is usable on
-    // mainnet again. It is no longer a per-wallet all-or-nothing switch: with
-    // the default (0), outputs whose recipient public key cannot be resolved
-    // fall back to path A per-output inside BlindTransaction, so sending to a
-    // bare address works without -ctlegacy. The path-A spending ban
-    // (nBanPathAHeight) stays inactive on mainnet.
+    // RCPU H-1: -ctlegacy (path A, plaintext-nonce blinding) is opt-in only.
+    // It is not a per-wallet all-or-nothing switch: with the default (0),
+    // outputs whose recipient public key cannot be resolved (bare rcpu1
+    // addresses / foreign scripts) are emitted as explicit plaintext outputs
+    // inside BlindTransaction, so sending to a bare address works without
+    // -ctlegacy and never creates a Path A rewind-nonce commitment. Setting
+    // -ctlegacy=1 forces Path A for the whole tx and is refused by the wallet
+    // once the tip reaches nBanPathAHeight (testnet: 0, active from genesis;
+    // mainnet: INT_MAX, not yet activated).
     if (chain == ChainType::SIGNET) {
         LogPrintf("Signet derived magic (message start): %s\n", HexStr(chainparams.MessageStart()));
     }

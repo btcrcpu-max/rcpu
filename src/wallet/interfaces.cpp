@@ -315,12 +315,15 @@ util::Result<CTransactionRef> createTransaction(const std::vector<CRecipient>& r
 
         return txr.tx;
     }
-    void commitTransaction(CTransactionRef tx,
+    util::Result<void> commitTransaction(CTransactionRef tx,
         WalletValueMap value_map,
         WalletOrderForm order_form) override
     {
         LOCK(m_wallet->cs_wallet);
-        m_wallet->CommitTransaction(std::move(tx), std::move(value_map), std::move(order_form));
+        if (auto err = m_wallet->CommitTransaction(std::move(tx), std::move(value_map), std::move(order_form)); err) {
+            return util::Error{*err};
+        }
+        return {};
     }
     bool transactionCanBeAbandoned(const uint256& txid) override { return m_wallet->TransactionCanBeAbandoned(txid); }
     bool abandonTransaction(const uint256& txid) override
