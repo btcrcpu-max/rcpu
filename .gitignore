@@ -46,9 +46,11 @@ src/Makefile
 src/Makefile.in
 src/config/*.h
 src/config/stamp-*
-src/.deps/
-src/*/.deps/
-src/*/*/.deps/
+**/.deps/
+
+# Patch leftovers (rejected hunks and backups)
+*.orig
+*.rej
 src/.libs/
 src/*/.libs/
 src/*/*/.libs/
