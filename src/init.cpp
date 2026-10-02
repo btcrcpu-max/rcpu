@@ -947,7 +947,7 @@ ChainType chain = args.GetChainType();
     // -ctlegacy and never creates a Path A rewind-nonce commitment. Setting
     // -ctlegacy=1 forces Path A for the whole tx and is refused by the wallet
     // once the tip reaches nBanPathAHeight (testnet: 0, active from genesis;
-    // mainnet: INT_MAX, not yet activated).
+    // mainnet: 12748, active since v1.1.10).
     if (chain == ChainType::SIGNET) {
         LogPrintf("Signet derived magic (message start): %s\n", HexStr(chainparams.MessageStart()));
     }
