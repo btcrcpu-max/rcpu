@@ -3,11 +3,10 @@
 # Usage: bash check-patha-buffer.sh
 # Requires rcpu-cli against a synced mainnet node.
 #
-# v1.1.1 NOTE: Path-A ban is currently DEFERRED (INT_MAX).
-# When re-scheduled, set H to the new target height and update MIN_BUF if needed.
+# NOTE: Path-A ban activated at H=12748 (based on tip + 2016 buffer, v1.1.10).
 set -euo pipefail
 
-H=INT_MAX
+H=12748
 MIN_BUF=2016
 
 TIP=$(rcpu-cli getblockcount)
@@ -18,6 +17,9 @@ if [ "$H" = "INT_MAX" ]; then
   echo "OK: ban is deferred, no buffer check needed."
   exit 0
 fi
+
+# NOTE: As of v1.1.10, H=12748 is fixed. The script continues to run the
+# buffer check so it can be re-used for future consensus changes.
 
 BUF=$((H - TIP))
 

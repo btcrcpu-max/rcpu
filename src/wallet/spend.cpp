@@ -1553,8 +1553,8 @@ std::vector<std::optional<CPubKey>> recipient_keys;
         // output can be created anymore (bare addresses are emitted explicit
         // since H-1), so the gate only restricts the legacy flag. testnet has
         // nBanPathAHeight=0 (Path A banned from genesis); mainnet keeps
-        // nBanPathAHeight=INT_MAX until the soft fork is activated by a
-        // future release, so -ctlegacy stays usable below that height.
+        // nBanPathAHeight=12748 since v1.1.10. The soft fork was activated at
+        // that height; -ctlegacy is now rejected at and above 12748.
         txNew.nVersion = CT_VERSION;
         if (txNew.nVersion == CT_VERSION) {
             if (gArgs.GetBoolArg("-ctlegacy", false) &&

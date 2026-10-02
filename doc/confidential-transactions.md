@@ -128,9 +128,9 @@ With the default (v1.1.5+):
 - Path A is **not** the automatic fallback
 - change outputs use the wallet's own pubkey (Path C)
 
-The Path A *consensus* ban (`nBanPathAHeight`) is **inactive on
-mainnet** (`INT_MAX`, deferred in v1.1.1). The previously advertised
-height **9,193** was withdrawn before activation. Testnet bans Path A
-from height 0. See `doc/consensus-params.md`.
+The Path A *consensus* ban (`nBanPathAHeight`) is **active on
+mainnet at height 12748** (v1.1.10). The previously advertised
+heights **9,193** and earlier drafts were withdrawn before activation.
+Testnet bans Path A from height 0. See `doc/consensus-params.md`.
 
 Path A is not confidential — use it only for compatibility.

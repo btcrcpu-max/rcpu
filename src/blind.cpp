@@ -320,7 +320,7 @@ bool BlindTransaction(const std::vector<uint256>& input_blinds, CMutableTransact
             // Path A (0x02 || nonce): bare rcpu1 / unresolved pubkey, or
             // -ctlegacy=1 (empty recipient_keys). Amount is committed, not
             // explicit. Anyone who rewinds 0x02 can read it. nBanPathAHeight
-            // stays INT_MAX on mainnet.
+            // = 12748 on mainnet (v1.1.10); banned from genesis on testnet.
             Rand32(output_nonces[i]);
             SetNonce(tx.vout[i].nNonce, output_nonces[i]);
             nonce = output_nonces[i];
