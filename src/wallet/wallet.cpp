@@ -2282,9 +2282,11 @@ bool any_tr{false};
     }
 
     const bool has_conf_spkman(GetScriptPubKeyMan(OutputType::CONFIDENTIAL, /*internal=*/true));
-    if (has_conf_spkman && any_conf) {
-        // RCPU: confidential recipients get confidential change so the
-        // blinding chain (Path-B) stays consistent for every output we own.
+    if (has_conf_spkman) {
+        // RCPU: always use confidential change when the wallet supports it.
+        // This guarantees a CT output exists to balance any CT inputs selected
+        // by Coin Selection, preventing "Confidential transaction blinding failed"
+        // when the recipient is a bare rcpu1 address (no view key available).
         return OutputType::CONFIDENTIAL;
     }
     const bool has_bech32m_spkman(GetScriptPubKeyMan(OutputType::BECH32M, /*internal=*/true));
