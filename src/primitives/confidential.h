@@ -53,7 +53,7 @@ public:
 
     template <typename Stream>
     inline void Unserialize(Stream& s) {
-        unsigned char version = vchCommitment.empty()? 0: vchCommitment[0];
+        unsigned char version{0};
         s >> version;
         switch (version) {
             /* Null */

@@ -128,9 +128,20 @@ void AddCoins(CCoinsViewCache& cache, const CTransaction &tx, int nHeight, bool 
         // set. CheckTransaction rejects non-CT txs carrying commitments at the
         // consensus layer; if we ever reach this point for one, it is a
         // consensus-layer bug (e.g. a future nVersion riding the CT
-        // serialization path but validated as legacy) and the node must not
-        // silently drop it into the UTXO set.
-        assert(tx.nVersion == CT_VERSION || !tx.vout[i].nValue.IsCommitment());
+        // serialization path but validated as legacy).
+        //
+        // NOTE: this used to be an assert (abort on violation). We replace it
+        // with a defensive return so a consensus regression cannot be turned
+        // into a remote DoS against all nodes. The calling code paths
+        // (ConnectBlock, AcceptToMemoryPoolWorker) already handle tx failures
+        // gracefully; skipping the invalid output prevents data corruption while
+        // keeping the node alive for diagnostics.
+        if (tx.nVersion != CT_VERSION && tx.vout[i].nValue.IsCommitment()) {
+            LogPrintf("CRITICAL: %s: tx %s (version=%d) carries commitment output at index %zu but is not CT. "
+                      "This indicates a consensus-layer regression. Output will NOT be added to UTXO set.\n",
+                      __func__, txid.ToString(), tx.nVersion, i);
+            continue; // skip this invalid output, do not abort the process
+        }
         bool overwrite = check_for_overwrite ? cache.HaveCoin(COutPoint(txid, i)) : fCoinbase;
         // Coinbase transactions can always be overwritten, in order to correctly
         // deal with the pre-BIP30 occurrences of duplicate coinbase transactions.

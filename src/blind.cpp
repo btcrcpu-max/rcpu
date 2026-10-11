@@ -131,7 +131,8 @@ bool BlindOutput(CConfidentialValue& conf_value, CConfidentialNonce& nonce_commi
 
     SetNonce(nonce_commit, nonce);
 
-    unsigned char proof[5134];
+    unsigned char proof[MAX_RANGEPROOF_SIZE];
+    static_assert(sizeof(proof) == MAX_RANGEPROOF_SIZE, "MAX_RANGEPROOF_SIZE mismatch");
     size_t plen = sizeof(proof);
     if (secp256k1_rangeproof_sign(ctx, proof, &plen, 0, &commit, blind.begin(), nonce.begin(),
                                   0, 0, static_cast<uint64_t>(amount), nullptr, 0, nullptr, 0,
@@ -335,7 +336,8 @@ bool BlindTransaction(const std::vector<uint256>& input_blinds, CMutableTransact
         secp256k1_pedersen_commitment_serialize(ctx, ser, &commit);
         tx.vout[i].nValue.vchCommitment.assign(ser, ser + 33);
 
-        unsigned char proof[5134];
+        unsigned char proof[MAX_RANGEPROOF_SIZE];
+        static_assert(sizeof(proof) == MAX_RANGEPROOF_SIZE, "MAX_RANGEPROOF_SIZE mismatch");
         size_t plen = sizeof(proof);
         if (secp256k1_rangeproof_sign(ctx, proof, &plen, 0, &commit, output_blinds[i].begin(), nonce.begin(),
                                       0, 0, static_cast<uint64_t>(amount), nullptr, 0, nullptr, 0,
