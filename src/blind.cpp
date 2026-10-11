@@ -4,6 +4,7 @@
 
 #include <blind.h>
 
+#include <consensus/consensus.h>
 #include <crypto/common.h>
 #include <crypto/hkdf_sha256_32.h>
 #include <crypto/hmac_sha256.h>
