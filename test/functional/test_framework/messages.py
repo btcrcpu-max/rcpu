@@ -77,11 +77,11 @@ DEFAULT_MEMPOOL_EXPIRY_HOURS = 336  # hours
 MAGIC_BYTES = {
     "mainnet": b"\xf9\xbe\xb4\xd9",   # mainnet
     "testnet3": b"\x0b\x11\x09\x07",  # testnet3
-    "regtest": b"\xfa\xbf\xb5\xda",   # regtest
+    "regtest": b"\x52\x43\x50\x55",   # regtest (RCPU P2P magic)
     "signet": b"\x0a\x03\xcf\x40",    # signet
     # !RCPU
     "btctestnet3": b"\x0b\x11\x09\x07",  # testnet3
-    "btcregtest": b"\xfa\xbf\xb5\xda",   # regtest
+    "btcregtest": b"\x52\x43\x50\x55",   # regtest (RCPU P2P magic)
     "btcsignet": b"\x0a\x03\xcf\x40",    # signet
     "rcputestnet": b"\x0c\x12\x0a\x08",  # rcpu testnet
     "rcpuregtest": b"\xfb\xc0\xb6\xdb",   # rcpu regtest
