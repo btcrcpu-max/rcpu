@@ -11,6 +11,8 @@
 #include <consensus/amount.h>
 
 #include <QObject>
+#include <map>
+#include <string>
 
 class SendCoinsRecipient;
 
@@ -38,6 +40,16 @@ public:
     CAmount getTotalTransactionAmount() const;
 
     void reassignAmounts(int nChangePosRet, interfaces::Wallet& wallet); // needed for the subtract-fee-from-amount feature
+
+    // RCPU CT: vout index -> encoded address (rcpux1...) as originally entered
+    // by the user. Persisted so the GUI can show the confidential address
+    // instead of the on-chain plaintext rcpu1 one.
+    std::map<unsigned int, std::string> vout_addr;
+    std::map<unsigned int, CAmount> vout_amount;
+    const std::map<unsigned int, std::string>& getVoutAddr() const;
+    void setVoutAddr(const std::map<unsigned int, std::string>& addr);
+    const std::map<unsigned int, CAmount>& getVoutAmount() const;
+    void setVoutAmount(const std::map<unsigned int, CAmount>& amt);
 
 private:
     QList<SendCoinsRecipient> recipients;

@@ -147,7 +147,8 @@ public:
         bool sign,
         int& change_pos,
         CAmount& fee,
-        std::map<unsigned int, std::string>* vout_addr = nullptr) = 0;
+        std::map<unsigned int, std::string>* vout_addr = nullptr,
+        std::map<unsigned int, CAmount>* vout_amount = nullptr) = 0;
 
     //! Commit transaction.
     virtual util::Result<void> commitTransaction(CTransactionRef tx,

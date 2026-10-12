@@ -302,7 +302,8 @@ util::Result<CTransactionRef> createTransaction(const std::vector<CRecipient>& r
         bool sign,
         int& change_pos,
         CAmount& fee,
-        std::map<unsigned int, std::string>* vout_addr) override
+        std::map<unsigned int, std::string>* vout_addr,
+        std::map<unsigned int, CAmount>* vout_amount) override
     {
         LOCK(m_wallet->cs_wallet);
         auto res = CreateTransaction(*m_wallet, recipients, change_pos == -1 ? std::nullopt : std::make_optional(change_pos),
@@ -312,6 +313,7 @@ util::Result<CTransactionRef> createTransaction(const std::vector<CRecipient>& r
         fee = txr.fee;
         change_pos = txr.change_pos ? *txr.change_pos : -1;
         if (vout_addr) *vout_addr = txr.vout_addr;
+        if (vout_amount) *vout_amount = txr.vout_amount;
 
         return txr.tx;
     }
