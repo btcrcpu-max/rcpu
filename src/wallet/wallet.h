@@ -1058,6 +1058,9 @@ public:
     //! private keys are disabled / locked.
     void EnsureConfidentialScriptPubKeyMans() EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
 
+    //! RCPU CT: flag to trigger full rescan after confidential SPK managers are backfilled
+    bool m_needs_confidential_rescan GUARDED_BY(cs_wallet) = false;
+
     //! Return the DescriptorScriptPubKeyMan for a WalletDescriptor if it is already in the wallet
     DescriptorScriptPubKeyMan* GetDescriptorScriptPubKeyMan(const WalletDescriptor& desc) const;
 
