@@ -3248,6 +3248,17 @@ std::shared_ptr<CWallet> CWallet::Create(WalletContext& context, const std::stri
         walletInstance->WalletLogPrintf("m_address_book.size() = %u\n",  walletInstance->m_address_book.size());
     }
 
+    // RCPU CT: trigger full rescan if confidential SPK managers were just added
+    if (walletInstance->m_needs_confidential_rescan) {
+        LOCK(walletInstance->cs_wallet);
+        WalletRescanReserver reserver(*walletInstance);
+        if (reserver.reserve()) {
+            walletInstance->WalletLogPrintf("RCPU CT: full rescan triggered for historical confidential outputs\n");
+            walletInstance->RescanFromTime(0, reserver, /*update=*/true);
+            walletInstance->m_needs_confidential_rescan = false;
+        }
+    }
+
     return walletInstance;
 }
 
@@ -3532,9 +3543,22 @@ bool CWallet::Unlock(const CKeyingMaterial& vMasterKeyIn)
         try {
             EnsureConfidentialScriptPubKeyMans();
         } catch (const std::exception& e) {
-            WalletLogPrintf("Failed to add confidential SPK managers after unlock: %s\n", e.what());
+        WalletLogPrintf("Failed to add confidential SPK managers after unlock: %s\n", e.what());
         }
     }
+
+    // RCPU CT: schedule delayed rescan for historical confidential outputs
+    if (m_needs_confidential_rescan) {
+        m_needs_confidential_rescan = false;
+        WalletLogPrintf("RCPU CT: scheduling delayed full rescan after unlock\n");
+        WalletRescanReserver reserver(*this);
+        if (reserver.reserve()) {
+            RescanFromTime(0, reserver, /*update=*/true);
+        } else {
+            m_needs_confidential_rescan = true; // retry next unlock
+        }
+    }
+
     return true;
 }
 
@@ -3853,7 +3877,11 @@ void CWallet::EnsureConfidentialScriptPubKeyMans()
 
     // Ensure information is committed to disk
     if (!batch.TxnCommit()) throw std::runtime_error("Error: cannot commit db transaction for confidential descriptors setup");
-    WalletLogPrintf("added confidential SPK managers\n");
+
+    // RCPU: mark for full rescan to discover historical CT outputs
+    m_needs_confidential_rescan = true;
+    MaybeUpdateBirthTime(0);
+    WalletLogPrintf("RCPU CT: confidential SPK managers added, full rescan scheduled\n");
 }
 
 void CWallet::AddActiveScriptPubKeyMan(uint256 id, OutputType type, bool internal)
