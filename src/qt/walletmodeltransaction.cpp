@@ -73,3 +73,23 @@ CAmount WalletModelTransaction::getTotalTransactionAmount() const
     }
     return totalTransactionAmount;
 }
+
+const std::map<unsigned int, std::string>& WalletModelTransaction::getVoutAddr() const
+{
+    return vout_addr;
+}
+
+void WalletModelTransaction::setVoutAddr(const std::map<unsigned int, std::string>& addr)
+{
+    vout_addr = addr;
+}
+
+const std::map<unsigned int, CAmount>& WalletModelTransaction::getVoutAmount() const
+{
+    return vout_amount;
+}
+
+void WalletModelTransaction::setVoutAmount(const std::map<unsigned int, CAmount>& amt)
+{
+    vout_amount = amt;
+}

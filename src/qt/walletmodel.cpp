@@ -209,8 +209,12 @@ WalletModel::SendCoinsReturn WalletModel::prepareTransaction(WalletModelTransact
         int nChangePosRet = -1;
 
         auto& newTx = transaction.getWtx();
-        const auto& res = m_wallet->createTransaction(vecSend, coinControl, /*sign=*/!wallet().privateKeysDisabled(), nChangePosRet, nFeeRequired);
+        std::map<unsigned int, std::string> vout_addr;
+        std::map<unsigned int, CAmount> vout_amount;
+        const auto& res = m_wallet->createTransaction(vecSend, coinControl, /*sign=*/!wallet().privateKeysDisabled(), nChangePosRet, nFeeRequired, &vout_addr, &vout_amount);
         newTx = res ? *res : nullptr;
+        transaction.setVoutAddr(vout_addr);
+        transaction.setVoutAmount(vout_amount);
         transaction.setTransactionFee(nFeeRequired);
 if (fSubtractFeeFromAmount && newTx)
             transaction.reassignAmounts(nChangePosRet, *m_wallet);
@@ -255,7 +259,14 @@ void WalletModel::sendCoins(WalletModelTransaction& transaction)
         }
 
         auto& newTx = transaction.getWtx();
-        auto commit_res = wallet().commitTransaction(newTx, /*value_map=*/{}, std::move(vOrderForm));
+        interfaces::WalletValueMap value_map;
+        for (const auto& [vout_idx, addr] : transaction.getVoutAddr()) {
+            value_map[std::string("vout_addr_") + std::to_string(vout_idx)] = addr;
+        }
+        for (const auto& [vout_idx, amount] : transaction.getVoutAmount()) {
+            value_map[std::string("vout_amount_") + std::to_string(vout_idx)] = std::to_string(amount);
+        }
+        auto commit_res = wallet().commitTransaction(newTx, value_map, std::move(vOrderForm));
         if (!commit_res) {
             Q_EMIT message(tr("Send Coins"),
                            QString::fromStdString(util::ErrorString(commit_res).original),
