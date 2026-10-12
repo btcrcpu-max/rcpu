@@ -2282,7 +2282,7 @@ bool any_tr{false};
     }
 
     const bool has_conf_spkman(GetScriptPubKeyMan(OutputType::CONFIDENTIAL, /*internal=*/true));
-    if (has_conf_spkman && any_conf) {
+    if (has_conf_spkman) {
         // RCPU: confidential recipients get confidential change so the
         // blinding chain (Path-B) stays consistent for every output we own.
         return OutputType::CONFIDENTIAL;
