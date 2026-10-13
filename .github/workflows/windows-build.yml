@@ -1,0 +1,88 @@
+name: Windows Build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          update: true
+          install: >-
+            mingw-w64-x86_64-toolchain
+            mingw-w64-x86_64-autotools
+            mingw-w64-x86_64-libtool
+            mingw-w64-x86_64-boost
+            mingw-w64-x86_64-libevent
+            mingw-w64-x86_64-qt5
+            mingw-w64-x86_64-qrencode
+            mingw-w64-x86_64-miniupnpc
+            mingw-w64-x86_64-protobuf
+            mingw-w64-x86_64-sqlite3
+            mingw-w64-x86_64-db
+            mingw-w64-x86_64-cmake
+            git
+            make
+            patch
+
+      - name: Build RandomX dependency
+        run: |
+          curl -L -o /tmp/randomx-src.tar.gz https://github.com/tevador/RandomX/archive/refs/tags/v1.2.1.tar.gz
+          tar -xf /tmp/randomx-src.tar.gz -C /tmp
+          cd /tmp/RandomX-1.2.1
+          patch -p1 < ${{ github.workspace }}/depends/patches/randomx/custom_configuration.patch
+          mkdir build && cd build
+          cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DCMAKE_INSTALL_PREFIX=/mingw64
+          make -j$(nproc)
+          make install
+
+      - name: Build Windows GUI
+        run: |
+          ./autogen.sh
+          CPPFLAGS="-I/mingw64/include" LDFLAGS="-L/mingw64/lib" \
+            ./configure --with-gui=qt5 --prefix=/opt/rcpu \
+            --with-boost=/mingw64 \
+            --with-boost-libdir=/mingw64/lib
+          make -j$(nproc)
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: rcpu-windows
+          path: |
+            src/qt/rcpu-qt.exe
+            src/rcpud.exe
+            src/rcpu-cli.exe
+            src/rcpu-tx.exe
+
+      - name: Package release
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          mkdir -p rcpu-${{ github.ref_name }}-win64
+          cp src/qt/rcpu-qt.exe src/rcpud.exe src/rcpu-cli.exe src/rcpu-tx.exe rcpu-${{ github.ref_name }}-win64/
+          zip -r rcpu-${{ github.ref_name }}-win64.zip rcpu-${{ github.ref_name }}-win64
+
+      - name: Upload release asset
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: ./rcpu-${{ github.ref_name }}-win64.zip
+          asset_name: rcpu-${{ github.ref_name }}-win64.zip
+          asset_content_type: application/zip
