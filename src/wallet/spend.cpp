@@ -414,7 +414,18 @@ CoinsResult AvailableCoins(const CWallet& wallet,
             }
 
             // RCPU CT: get real value (unblind for our confidential outputs)
-            CAmount output_real_value = output.nValue.IsExplicit() ? output.nValue.GetAmount() : OutputGetCredit(wallet, output, isminefilter(mine));
+            CAmount output_real_value;
+            if (output.nValue.IsExplicit()) {
+                output_real_value = output.nValue.GetAmount();
+            } else {
+                // Try cached pre-unblind amount first (see N-02 in CommitTransaction).
+                const auto it = wtx.mapValue.find(strprintf("ct_unblind_%u", i));
+                if (it != wtx.mapValue.end()) {
+                    output_real_value = LocaleIndependentAtoi<int64_t>(it->second);
+                } else {
+                    output_real_value = OutputGetCredit(wallet, output, isminefilter(mine));
+                }
+            }
             // RCPU CT: skip outputs that cannot be unblinded (value unknown)
             if (!output.nValue.IsExplicit() && output_real_value <= 0) {
                 continue;

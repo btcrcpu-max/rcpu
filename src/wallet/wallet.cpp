@@ -2343,6 +2343,19 @@ std::optional<bilingual_str> CWallet::CommitTransaction(CTransactionRef tx, mapV
         throw std::runtime_error(std::string(__func__) + ": Wallet db error, transaction commit failed");
     }
 
+    // RCPU CT (N-02): pre-unblind our confidential outputs while the wallet is
+    // still unlocked, and cache the real amounts in mapValue.  This allows
+    // AvailableCoins to show the change output even after the wallet re-locks.
+    for (size_t i = 0; i < tx->vout.size(); ++i) {
+        const CTxOut& txout = tx->vout[i];
+        if (txout.nValue.IsExplicit()) continue;
+        CAmount value;
+        uint256 blind;
+        if (UnblindWalletOutput(*this, txout, value, blind)) {
+            wtx->mapValue[strprintf("ct_unblind_%u", i)] = ToString(value);
+        }
+    }
+
     // Notify that old coins are spent
     for (const CTxIn& txin : tx->vin) {
         CWalletTx &coin = mapWallet.at(txin.prevout.hash);
