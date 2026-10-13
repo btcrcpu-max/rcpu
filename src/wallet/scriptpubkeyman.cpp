@@ -2496,9 +2496,6 @@ bool DescriptorScriptPubKeyMan::GetPrivKey(const CScript& script, CKeyID& keyid,
     if (it == m_map_script_pub_keys.end()) {
         return false;
     }
-    if (!HavePrivateKeys()) {
-        return false;
-    }
     std::unique_ptr<FlatSigningProvider> prov = GetSigningProvider(it->second, /*include_private=*/true);
     if (!prov) {
         return false;
