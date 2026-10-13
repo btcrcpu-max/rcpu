@@ -171,6 +171,13 @@ void AskPassphraseDialog::accept()
                     m_passphrase_out->assign(oldpass);
                 }
                 QDialog::accept(); // Success
+
+                // After a successful unlock, rescan recent blocks so any
+                // confidential outputs received while the wallet was locked
+                // are unblinded and their amounts become visible.
+                if (model) {
+                    model->triggerUnblindRescan();
+                }
             }
         } catch (const std::runtime_error& e) {
             QMessageBox::critical(this, tr("Wallet unlock failed"), e.what());

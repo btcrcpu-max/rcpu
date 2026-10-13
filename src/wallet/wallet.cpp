@@ -2249,7 +2249,7 @@ SigningResult CWallet::SignMessage(const std::string& message, const PKHash& pkh
     return SigningResult::PRIVATE_KEY_NOT_AVAILABLE;
 }
 
-OutputType CWallet::TransactionChangeType(const std::optional<OutputType>& change_type, const std::vector<CRecipient>& vecSend, bool has_conf_utxo) const
+OutputType CWallet::TransactionChangeType(const std::optional<OutputType>& change_type, const std::vector<CRecipient>& vecSend) const
 {
     // If -changetype is specified, always use that change type.
     if (change_type) {
@@ -2282,14 +2282,11 @@ bool any_tr{false};
     }
 
     const bool has_conf_spkman(GetScriptPubKeyMan(OutputType::CONFIDENTIAL, /*internal=*/true));
-    if (has_conf_spkman && has_conf_utxo) {
-        // RCPU: confidential recipients get confidential change so the
-        // blinding chain (Path-B) stays consistent for every output we own.
-        // Gated on the wallet actually holding a spendable confidential UTXO
-        // (has_conf_utxo, computed by the caller): a wallet whose UTXO set is
-        // entirely explicit (plaintext rcpu1) has no blinded input to balance
-        // a blinded change output against, so it falls through to the default
-        // change type instead (wallet_confidential.py sections 6/7b/7c/7d).
+    if (has_conf_spkman) {
+        // RCPU: always use confidential change when the wallet supports it.
+        // This guarantees a CT output exists to balance any CT inputs selected
+        // by Coin Selection, preventing "Confidential transaction blinding failed"
+        // when the recipient is a bare rcpu1 address (no view key available).
         return OutputType::CONFIDENTIAL;
     }
     const bool has_bech32m_spkman(GetScriptPubKeyMan(OutputType::BECH32M, /*internal=*/true));
@@ -2344,6 +2341,19 @@ std::optional<bilingual_str> CWallet::CommitTransaction(CTransactionRef tx, mapV
     // wtx can only be null if the db write failed.
     if (!wtx) {
         throw std::runtime_error(std::string(__func__) + ": Wallet db error, transaction commit failed");
+    }
+
+    // RCPU CT (N-02): pre-unblind our confidential outputs while the wallet is
+    // still unlocked, and cache the real amounts in mapValue.  This allows
+    // AvailableCoins to show the change output even after the wallet re-locks.
+    for (size_t i = 0; i < tx->vout.size(); ++i) {
+        const CTxOut& txout = tx->vout[i];
+        if (txout.nValue.IsExplicit()) continue;
+        CAmount value;
+        uint256 blind;
+        if (UnblindWalletOutput(*this, txout, value, blind)) {
+            wtx->mapValue[strprintf("ct_unblind_%u", i)] = ToString(value);
+        }
     }
 
     // Notify that old coins are spent

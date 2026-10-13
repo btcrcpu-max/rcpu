@@ -104,6 +104,11 @@ public:
     bool setWalletEncrypted(const SecureString& passphrase);
     // Passphrase only needed when unlocking
     bool setWalletLocked(bool locked, const SecureString &passPhrase=SecureString());
+
+    //! Rescan the most recent blocks to unblind confidential outputs
+    //! received while the wallet was locked. Returns false if a rescan is
+    //! already running. Safe to call right after a successful unlock.
+    bool triggerUnblindRescan(int num_blocks = 2000);
     bool changePassphrase(const SecureString &oldPass, const SecureString &newPass);
 
     // RAII object for unlocking wallet, returned by requestUnlock()

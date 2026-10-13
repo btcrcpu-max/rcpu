@@ -2475,7 +2475,7 @@ std::unique_ptr<FlatSigningProvider> DescriptorScriptPubKeyMan::GetSigningProvid
         m_map_signing_providers[index] = *out_keys;
     }
 
-    if (HavePrivateKeys() && include_private) {
+    if (include_private) {
         FlatSigningProvider master_provider;
         master_provider.keys = GetKeys();
         m_wallet_descriptor.descriptor->ExpandPrivate(index, master_provider, *out_keys);
@@ -2494,9 +2494,6 @@ bool DescriptorScriptPubKeyMan::GetPrivKey(const CScript& script, CKeyID& keyid,
     LOCK(cs_desc_man);
     auto it = m_map_script_pub_keys.find(script);
     if (it == m_map_script_pub_keys.end()) {
-        return false;
-    }
-    if (!HavePrivateKeys()) {
         return false;
     }
     std::unique_ptr<FlatSigningProvider> prov = GetSigningProvider(it->second, /*include_private=*/true);

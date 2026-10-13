@@ -27,6 +27,7 @@
 
 #include <stdint.h>
 #include <functional>
+#include <thread>
 
 #include <QDebug>
 #include <QMessageBox>
@@ -365,6 +366,21 @@ bool WalletModel::setWalletLocked(bool locked, const SecureString &passPhrase)
         // Unlock
         return m_wallet->unlock(passPhrase);
     }
+}
+
+bool WalletModel::triggerUnblindRescan(int num_blocks)
+{
+    if (!m_wallet) return false;
+    // Run the rescan on a detached thread so the GUI stays responsive.
+    // ScanForWalletTransactions emits ShowProgress internally, which is
+    // already wired up to the GUI progress bar via handleShowProgress.
+    // The interfaces::Wallet object is owned by this WalletModel and
+    // outlives any reasonable rescan duration.
+    interfaces::Wallet* wallet = m_wallet.get();
+    std::thread([wallet, num_blocks] {
+        wallet->rescanRecentBlocks(num_blocks);
+    }).detach();
+    return true;
 }
 
 bool WalletModel::changePassphrase(const SecureString &oldPass, const SecureString &newPass)
