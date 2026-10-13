@@ -84,6 +84,11 @@ public:
     //! Abort a rescan.
     virtual void abortRescan() = 0;
 
+    //! Rescan the most recent `num_blocks` blocks (used to unblind confidential
+    //! transactions after wallet unlock). Returns false if a rescan is already
+    //! running or if the scan failed. Blocks until the scan finishes.
+    virtual bool rescanRecentBlocks(int num_blocks) = 0;
+
     //! Back up wallet.
     virtual bool backupWallet(const std::string& filename) = 0;
 

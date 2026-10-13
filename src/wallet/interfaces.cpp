@@ -172,6 +172,33 @@ public:
         return m_wallet->ChangeWalletPassphrase(old_wallet_passphrase, new_wallet_passphrase);
     }
     void abortRescan() override { m_wallet->AbortRescan(); }
+    bool rescanRecentBlocks(int num_blocks) override
+    {
+        if (num_blocks <= 0) return true;
+        auto pwallet = m_wallet;
+        pwallet->BlockUntilSyncedToCurrentChain();
+
+        wallet::WalletRescanReserver reserver(*pwallet);
+        if (!reserver.reserve(/*with_passphrase=*/true)) {
+            return false;
+        }
+
+        uint256 start_block;
+        int start_height;
+        {
+            LOCK(pwallet->m_relock_mutex);
+            LOCK(pwallet->cs_wallet);
+            if (pwallet->IsLocked()) return false;
+            const int tip_height = pwallet->GetLastBlockHeight();
+            start_height = std::max(0, tip_height - num_blocks + 1);
+            if (!pwallet->chain().findAncestorByHeight(pwallet->GetLastBlockHash(), start_height, FoundBlock().hash(start_block))) {
+                return false;
+            }
+        }
+
+        auto result = pwallet->ScanForWalletTransactions(start_block, start_height, /*max_height=*/std::nullopt, reserver, /*fUpdate=*/true, /*save_progress=*/false);
+        return result.status == wallet::CWallet::ScanResult::SUCCESS;
+    }
     bool backupWallet(const std::string& filename) override { return m_wallet->BackupWallet(filename); }
     std::string getWalletName() override { return m_wallet->GetName(); }
     util::Result<CTxDestination> getNewDestination(const OutputType type, const std::string& label) override
