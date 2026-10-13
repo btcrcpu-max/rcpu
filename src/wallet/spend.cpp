@@ -1030,7 +1030,28 @@ static util::Result<CreatedTransactionResult> CreateTransactionInternal(
     coin_selection_params.m_long_term_feerate = wallet.m_consolidate_feerate;
 
     CAmount recipients_sum = 0;
-    const OutputType change_type = wallet.TransactionChangeType(coin_control.m_change_type ? *coin_control.m_change_type : wallet.m_default_change_type, vecSend);
+    // RCPU CT: does the wallet hold any spendable confidential (blinded)
+    // UTXO? The check is deliberately wallet-wide (mapWallet) and not based
+    // on the coins selected for this particular transaction: a wallet that
+    // holds Path-C change must keep its confidential change output even when
+    // the selection happens to be all-explicit (wallet_confidential.py
+    // section 6), while a wallet whose UTXO set is entirely explicit
+    // (plaintext rcpu1) must fall back to the default change type instead of
+    // forcing a blinded change output (section 7c).
+    const bool has_conf_utxo{[&]() {
+        for (const auto& [txid, wtx] : wallet.mapWallet) {
+            for (unsigned int i = 0; i < wtx.tx->vout.size(); ++i) {
+                const CTxOut& output = wtx.tx->vout[i];
+                if (output.nValue.IsExplicit()) continue;
+                const COutPoint outpoint(Txid::FromUint256(txid), i);
+                if (wallet.IsSpent(outpoint) || wallet.IsLockedCoin(outpoint)) continue;
+                if (wallet.IsMine(output) == ISMINE_NO) continue;
+                return true;
+            }
+        }
+        return false;
+    }()};
+    const OutputType change_type = wallet.TransactionChangeType(coin_control.m_change_type ? *coin_control.m_change_type : wallet.m_default_change_type, vecSend, has_conf_utxo);
     ReserveDestination reservedest(&wallet, change_type);
     unsigned int outputs_to_subtract_fee_from = 0; // The number of outputs which we are subtracting the fee from
     for (const auto& recipient : vecSend) {
@@ -1555,21 +1576,7 @@ std::vector<std::optional<CPubKey>> recipient_keys;
         // nBanPathAHeight=0 (Path A banned from genesis); mainnet keeps
         // nBanPathAHeight=12748 since v1.1.10. The soft fork was activated at
         // that height; -ctlegacy is now rejected at and above 12748.
-        //
-        // If there are no confidential inputs, skip the CT path entirely so
-        // the tx stays in the default (non-CT) version. This prevents
-        // BlindTransaction from failing when the wallet has a confidential
-        // SPK manager but every selected coin is an explicit (plaintext) UTXO.
-        bool any_conf_input = false;
-        for (const auto& coin : selected_coins) {
-            if (!coin->txout.nValue.IsExplicit()) {
-                any_conf_input = true;
-                break;
-            }
-        }
-        if (any_conf_input) {
-            txNew.nVersion = CT_VERSION;
-        }
+        txNew.nVersion = CT_VERSION;
         if (txNew.nVersion == CT_VERSION) {
             if (gArgs.GetBoolArg("-ctlegacy", false) &&
                 wallet.GetLastBlockHeight() >= Params().GetConsensus().nBanPathAHeight) {

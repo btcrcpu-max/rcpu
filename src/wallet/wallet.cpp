@@ -2249,7 +2249,7 @@ SigningResult CWallet::SignMessage(const std::string& message, const PKHash& pkh
     return SigningResult::PRIVATE_KEY_NOT_AVAILABLE;
 }
 
-OutputType CWallet::TransactionChangeType(const std::optional<OutputType>& change_type, const std::vector<CRecipient>& vecSend) const
+OutputType CWallet::TransactionChangeType(const std::optional<OutputType>& change_type, const std::vector<CRecipient>& vecSend, bool has_conf_utxo) const
 {
     // If -changetype is specified, always use that change type.
     if (change_type) {
@@ -2282,9 +2282,14 @@ bool any_tr{false};
     }
 
     const bool has_conf_spkman(GetScriptPubKeyMan(OutputType::CONFIDENTIAL, /*internal=*/true));
-    if (has_conf_spkman) {
+    if (has_conf_spkman && has_conf_utxo) {
         // RCPU: confidential recipients get confidential change so the
         // blinding chain (Path-B) stays consistent for every output we own.
+        // Gated on the wallet actually holding a spendable confidential UTXO
+        // (has_conf_utxo, computed by the caller): a wallet whose UTXO set is
+        // entirely explicit (plaintext rcpu1) has no blinded input to balance
+        // a blinded change output against, so it falls through to the default
+        // change type instead (wallet_confidential.py sections 6/7b/7c/7d).
         return OutputType::CONFIDENTIAL;
     }
     const bool has_bech32m_spkman(GetScriptPubKeyMan(OutputType::BECH32M, /*internal=*/true));
