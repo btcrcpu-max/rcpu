@@ -1555,7 +1555,21 @@ std::vector<std::optional<CPubKey>> recipient_keys;
         // nBanPathAHeight=0 (Path A banned from genesis); mainnet keeps
         // nBanPathAHeight=12748 since v1.1.10. The soft fork was activated at
         // that height; -ctlegacy is now rejected at and above 12748.
-        txNew.nVersion = CT_VERSION;
+        //
+        // If there are no confidential inputs, skip the CT path entirely so
+        // the tx stays in the default (non-CT) version. This prevents
+        // BlindTransaction from failing when the wallet has a confidential
+        // SPK manager but every selected coin is an explicit (plaintext) UTXO.
+        bool any_conf_input = false;
+        for (const auto& coin : selected_coins) {
+            if (!coin->txout.nValue.IsExplicit()) {
+                any_conf_input = true;
+                break;
+            }
+        }
+        if (any_conf_input) {
+            txNew.nVersion = CT_VERSION;
+        }
         if (txNew.nVersion == CT_VERSION) {
             if (gArgs.GetBoolArg("-ctlegacy", false) &&
                 wallet.GetLastBlockHeight() >= Params().GetConsensus().nBanPathAHeight) {
