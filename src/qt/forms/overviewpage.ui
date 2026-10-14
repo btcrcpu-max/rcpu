@@ -333,6 +333,16 @@
               </property>
              </widget>
             </item>
+            <item row="1" column="3">
+             <widget class="QPushButton" name="unlockButton">
+              <property name="toolTip">
+               <string>Unlock the wallet to unblind confidential transactions</string>
+              </property>
+              <property name="text">
+               <string>Unlock Wallet</string>
+              </property>
+             </widget>
+            </item>
             <item row="2" column="0">
              <widget class="QLabel" name="labelPendingText">
               <property name="text">
