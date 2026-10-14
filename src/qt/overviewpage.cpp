@@ -16,6 +16,8 @@
 #include <qt/transactiontablemodel.h>
 #include <qt/walletmodel.h>
 
+#include <qt/askpassphrasedialog.h>
+
 #include <QAbstractItemDelegate>
 #include <QApplication>
 #include <QDateTime>
@@ -286,7 +288,11 @@ void OverviewPage::setWalletModel(WalletModel *model)
         connect(model, &WalletModel::notifyWatchonlyChanged, [this](bool showWatchOnly) {
             updateWatchOnlyLabels(showWatchOnly && !walletModel->wallet().privateKeysDisabled());
         });
+
+        connect(model, &WalletModel::encryptionStatusChanged, this, &OverviewPage::updateUnlockButton);
     }
+
+    updateUnlockButton();
 
     // update the display unit, to not use the default ("BTC")
     updateDisplayUnit();
@@ -350,4 +356,33 @@ void OverviewPage::setMonospacedFont(const QFont& f)
     ui->labelWatchPending->setFont(f);
     ui->labelWatchImmature->setFont(f);
     ui->labelWatchTotal->setFont(f);
+}
+
+void OverviewPage::on_unlockButton_clicked()
+{
+    if (!walletModel) return;
+
+    AskPassphraseDialog dlg(AskPassphraseDialog::Unlock, this);
+    dlg.setModel(walletModel);
+    dlg.exec();
+    // AskPassphraseDialog already triggers triggerUnblindRescan() on success.
+}
+
+void OverviewPage::updateUnlockButton()
+{
+    if (!walletModel) {
+        ui->unlockButton->setVisible(false);
+        return;
+    }
+
+    const WalletModel::EncryptionStatus status = walletModel->getEncryptionStatus();
+    if (status == WalletModel::Unencrypted || status == WalletModel::NoKeys) {
+        ui->unlockButton->setVisible(false);
+        return;
+    }
+
+    ui->unlockButton->setVisible(true);
+    const bool locked = (status == WalletModel::Locked);
+    ui->unlockButton->setEnabled(locked);
+    ui->unlockButton->setText(locked ? tr("Unlock Wallet") : tr("Unlocked"));
 }
