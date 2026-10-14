@@ -1994,6 +1994,18 @@ The migration process will create a backup of the wallet before migrating. This 
         <source>Privacy mode activated for the Overview tab. To unmask the values, uncheck Settings-&gt;Mask values.</source>
         <translation type="unfinished">“概况”标签页已启用隐私模式。要明文显示数值，请在设置中取消勾选“不明文显示数值”。</translation>
     </message>
+    <message>
+        <source>Unlock Wallet</source>
+        <translation>解锁钱包</translation>
+    </message>
+    <message>
+        <source>Unlocked</source>
+        <translation>已解锁</translation>
+    </message>
+    <message>
+        <source>Unlock the wallet to unblind confidential transactions</source>
+        <translation>解锁钱包，以解盲机密交易</translation>
+    </message>
 </context>
 <context>
     <name>PSBTOperationsDialog</name>
