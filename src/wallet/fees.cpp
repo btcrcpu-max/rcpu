@@ -12,10 +12,11 @@
 namespace wallet {
 CAmount GetRequiredFee(const CWallet& wallet, unsigned int nTxBytes)
 {
-    // RCPU CT safety cap: prevent corrupted fee estimates from draining wallet
-    static const CAmount MAX_SANE_WALLET_FEE = 10000000; // 0.1 RCPU/kB max
-    if (wallet.m_min_fee.GetFeePerK() > MAX_SANE_WALLET_FEE) {
-        return CFeeRate(MAX_SANE_WALLET_FEE).GetFee(nTxBytes);
+    // RCPU CT safety cap: prevent corrupted fee estimates from draining wallet.
+    // The cap rate is configurable via -ctmaxfeerate (wallet.m_max_ct_fee_rate).
+    const CAmount max_sane_fee = wallet.m_max_ct_fee_rate.GetFeePerK();
+    if (wallet.m_min_fee.GetFeePerK() > max_sane_fee) {
+        return wallet.m_max_ct_fee_rate.GetFee(nTxBytes);
     }
     return GetRequiredFeeRate(wallet).GetFee(nTxBytes);
 }
@@ -23,11 +24,17 @@ CAmount GetRequiredFee(const CWallet& wallet, unsigned int nTxBytes)
 
 CAmount GetMinimumFee(const CWallet& wallet, unsigned int nTxBytes, const CCoinControl& coin_control, FeeCalculation* feeCalc)
 {
+    // RCPU CT safety cap: hard limit to protect against fee estimation bugs.
+    // The cap rate is configurable via -ctmaxfeerate (wallet.m_max_ct_fee_rate).
+    if (coin_control.fOverrideFeeRate && coin_control.m_feerate) {
+        // Explicit user-chosen fee rate: respect it as-is (belt that the user
+        // controls the rate; the absolute -maxtxfee check still applies later).
+        if (feeCalc) feeCalc->reason = FeeReason::PAYTXFEE;
+        return coin_control.m_feerate->GetFee(nTxBytes);
+    }
     CAmount fee = GetMinimumFeeRate(wallet, coin_control, feeCalc).GetFee(nTxBytes);
-    // RCPU CT safety cap: hard limit to protect against fee estimation bugs
-    static const CAmount MAX_SANE_WALLET_FEE = 10000000; // 0.1 RCPU/kB max
-    if (fee > CFeeRate(MAX_SANE_WALLET_FEE).GetFee(nTxBytes)) {
-        fee = CFeeRate(MAX_SANE_WALLET_FEE).GetFee(nTxBytes);
+    if (fee > wallet.m_max_ct_fee_rate.GetFee(nTxBytes)) {
+        fee = wallet.m_max_ct_fee_rate.GetFee(nTxBytes);
     }
     return fee;
 }
@@ -35,10 +42,9 @@ CAmount GetMinimumFee(const CWallet& wallet, unsigned int nTxBytes, const CCoinC
 CFeeRate GetRequiredFeeRate(const CWallet& wallet)
 {
     CFeeRate rate = std::max(wallet.m_min_fee, wallet.chain().relayMinFee());
-    // RCPU CT safety cap
-    static const CAmount MAX_SANE_FEE_RATE = 10000000; // 0.1 RCPU/kB
-    if (rate.GetFeePerK() > MAX_SANE_FEE_RATE) {
-        rate = CFeeRate(MAX_SANE_FEE_RATE);
+    // RCPU CT safety cap, configurable via -ctmaxfeerate
+    if (rate.GetFeePerK() > wallet.m_max_ct_fee_rate.GetFeePerK()) {
+        rate = wallet.m_max_ct_fee_rate;
     }
     return rate;
 }
@@ -95,10 +101,10 @@ CFeeRate GetMinimumFeeRate(const CWallet& wallet, const CCoinControl& coin_contr
         feerate_needed = required_feerate;
         if (feeCalc) feeCalc->reason = FeeReason::REQUIRED;
     }
-    // RCPU CT safety cap: final guard against any pathological fee rate
-    static const CAmount MAX_SANE_FEE_RATE = 10000000; // 0.1 RCPU/kB
-    if (feerate_needed.GetFeePerK() > MAX_SANE_FEE_RATE) {
-        feerate_needed = CFeeRate(MAX_SANE_FEE_RATE);
+    // RCPU CT safety cap: final guard against any pathological fee rate.
+    // The cap rate is configurable via -ctmaxfeerate (wallet.m_max_ct_fee_rate).
+    if (feerate_needed.GetFeePerK() > wallet.m_max_ct_fee_rate.GetFeePerK()) {
+        feerate_needed = wallet.m_max_ct_fee_rate;
         if (feeCalc) feeCalc->reason = FeeReason::FALLBACK;
     }
     return feerate_needed;

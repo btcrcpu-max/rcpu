@@ -36,6 +36,7 @@ class SendallTest(BitcoinTestFramework):
         getcontext().prec=10
         self.num_nodes = 1
         self.setup_clean_chain = True
+        self.extra_args = [["-maxtxfee=0.1"]]
 
     def assert_balance_swept_completely(self, tx, balance):
         output_sum = sum([o["value"] for o in tx["decoded"]["vout"]])

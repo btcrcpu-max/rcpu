@@ -3209,6 +3209,17 @@ std::shared_ptr<CWallet> CWallet::Create(WalletContext& context, const std::stri
         walletInstance->m_default_max_tx_fee = max_fee.value();
     }
 
+    // !RCPU
+    if (args.IsArgSet("-ctmaxfeerate")) {
+        std::optional<CAmount> ct_max_feerate = ParseMoney(args.GetArg("-ctmaxfeerate", ""));
+        if (!ct_max_feerate || ct_max_feerate.value() <= 0) {
+            error = AmountErrMsg("ctmaxfeerate", args.GetArg("-ctmaxfeerate", ""));
+            return nullptr;
+        }
+        walletInstance->m_max_ct_fee_rate = CFeeRate{ct_max_feerate.value()};
+    }
+    // !RCPU END
+
     if (args.IsArgSet("-consolidatefeerate")) {
         if (std::optional<CAmount> consolidate_feerate = ParseMoney(args.GetArg("-consolidatefeerate", ""))) {
             walletInstance->m_consolidate_feerate = CFeeRate(*consolidate_feerate);
