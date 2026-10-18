@@ -67,6 +67,10 @@ void WalletInit::AddWalletOptions(ArgsManager& argsman) const
     argsman.AddArg("-maxapsfee=<n>", strprintf("Spend up to this amount in additional (absolute) fees (in %s) if it allows the use of partial spend avoidance (default: %s)", CURRENCY_UNIT, FormatMoney(DEFAULT_MAX_AVOIDPARTIALSPEND_FEE)), ArgsManager::ALLOW_ANY, OptionsCategory::WALLET);
     argsman.AddArg("-maxtxfee=<amt>", strprintf("Maximum total fees (in %s) to use in a single wallet transaction; setting this too low may abort large transactions (default: %s)",
         CURRENCY_UNIT, FormatMoney(DEFAULT_TRANSACTION_MAXFEE)), ArgsManager::ALLOW_ANY, OptionsCategory::DEBUG_TEST);
+    // !RCPU
+    argsman.AddArg("-ctmaxfeerate=<amt>", strprintf("RCPU confidential-transaction fee rate safety cap (in %s/kvB) beyond which a wallet transaction fee rate is clamped, to protect against corrupted fee estimates (default: %s)",
+        CURRENCY_UNIT, FormatMoney(CFeeRate{DEFAULT_MAX_CT_FEE_RATE}.GetFeePerK())), ArgsManager::ALLOW_ANY, OptionsCategory::WALLET);
+    // !RCPU END
     argsman.AddArg("-mintxfee=<amt>", strprintf("Fee rates (in %s/kvB) smaller than this are considered zero fee for transaction creation (default: %s)",
                                                             CURRENCY_UNIT, FormatMoney(DEFAULT_TRANSACTION_MINFEE)), ArgsManager::ALLOW_ANY, OptionsCategory::WALLET);
     argsman.AddArg("-paytxfee=<amt>", strprintf("Fee rate (in %s/kvB) to add to transactions you send (default: %s)",

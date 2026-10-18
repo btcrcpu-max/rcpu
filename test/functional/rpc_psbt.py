@@ -59,7 +59,7 @@ class PSBTTest(BitcoinTestFramework):
         self.num_nodes = 3
         self.extra_args = [
             ["-walletrbf=1", "-addresstype=bech32", "-changetype=bech32"], #TODO: Remove address type restrictions once taproot has psbt extensions
-            ["-walletrbf=0", "-changetype=legacy"],
+            ["-walletrbf=0", "-changetype=legacy", "-maxtxfee=0.1"],
             []
         ]
         # whitelist peers to speed up tx relay / mempool sync

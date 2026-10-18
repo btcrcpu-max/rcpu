@@ -843,8 +843,15 @@ void SendCoinsDialog::updateCoinControlState()
 {
     if (ui->radioCustomFee->isChecked()) {
         m_coin_control->m_feerate = CFeeRate(ui->customFee->value());
+        // !RCPU
+        // An explicit custom fee rate chosen in the GUI is a deliberate user
+        // decision: respect it and skip the automatic rate checks (including
+        // the CT safety cap). The absolute -maxtxfee check still applies.
+        m_coin_control->fOverrideFeeRate = true;
+        // !RCPU END
     } else {
         m_coin_control->m_feerate.reset();
+        m_coin_control->fOverrideFeeRate = false;
     }
     // Avoid using global defaults when sending money from the GUI
     // Either custom fee will be used or if not selected, the confirmation target from dropdown box

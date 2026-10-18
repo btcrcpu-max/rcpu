@@ -140,7 +140,17 @@ static const bool DEFAULT_WALLETBROADCAST = true;
 static const bool DEFAULT_DISABLE_WALLET = false;
 static const bool DEFAULT_WALLETCROSSCHAIN = false;
 //! -maxtxfee default
-constexpr CAmount DEFAULT_TRANSACTION_MAXFEE{COIN / 10};
+// !RCPU
+//! RCPU CT transactions are much larger than plain Bitcoin ones (each confidential
+//! output adds a ~675-byte Bulletproofs range proof plus ECDH nonce and value prefix),
+//! so the upstream 0.1 COIN default is far too tight and aborts legitimate sends.
+//! Raise the default to 1 RCPU; it can still be lowered or raised via -maxtxfee.
+constexpr CAmount DEFAULT_TRANSACTION_MAXFEE{COIN};
+// !RCPU END
+//! RCPU CT wallet fee-rate safety cap (in satoshis per kB) applied on top of the
+//! -maxtxfee absolute limit, to protect against corrupted fee estimates. Override
+//! with -ctmaxfeerate.
+constexpr CAmount DEFAULT_MAX_CT_FEE_RATE{COIN / 10};
 //! Discourage users to set fees higher than this amount (in satoshis) per kB
 constexpr CAmount HIGH_TX_FEE_PER_KB{COIN / 100};
 //! -maxtxfee will warn if called with a higher fee than this amount (in satoshis)
@@ -738,6 +748,12 @@ public:
     std::optional<OutputType> m_default_change_type{};
     /** Absolute maximum transaction fee (in satoshis) used by default for the wallet */
     CAmount m_default_max_tx_fee{DEFAULT_TRANSACTION_MAXFEE};
+    // !RCPU
+    /** RCPU CT safety cap on the wallet fee *rate* (in satoshis per kB), used as a
+     *  backstop against corrupted fee estimates. Override with -ctmaxfeerate.
+     *  Unlike m_default_max_tx_fee (absolute fee), this caps the per-kB rate. */
+    CFeeRate m_max_ct_fee_rate{DEFAULT_MAX_CT_FEE_RATE};
+    // !RCPU END
 
     /** Number of pre-generated keys/scripts by each spkm (part of the look-ahead process, used to detect payments) */
     int64_t m_keypool_size{DEFAULT_KEYPOOL_SIZE};
