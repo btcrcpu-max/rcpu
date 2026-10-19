@@ -365,7 +365,11 @@ static_assert(std::is_nothrow_destructible_v<CScriptCheck>);
 /** Functions for validating blocks and updating the block tree */
 
 /** Context-independent validity checks */
-bool CheckBlock(const CBlock& block, BlockValidationState& state, const Consensus::Params& consensusParams, bool fCheckPOW = true, bool fCheckMerkleRoot = true);
+// !RCPU (dual-algo): nHeight is the candidate block's own height, used for the
+// height-aware qhash/RandomX dispatch inside CheckBlock. -1 (unknown) keeps the
+// permissive pre-activation-compatible behaviour (see CheckBlock in
+// validation.cpp); contextual callers pass the real height.
+bool CheckBlock(const CBlock& block, BlockValidationState& state, const Consensus::Params& consensusParams, bool fCheckPOW = true, bool fCheckMerkleRoot = true, int nHeight = -1);
 
 /** RCPU: reject coinbase transactions that create confidential (committed) outputs.
  *

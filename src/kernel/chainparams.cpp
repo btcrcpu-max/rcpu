@@ -613,6 +613,11 @@ public:
 
 consensus.fPowRandomX = true;
         consensus.nRandomXEpochDuration = 7 * 24 * 60 * 60;     // one week
+        // !RCPU (dual-algo): free competition (RandomX + qPoW) from height 21000.
+        // Each algorithm independently targets a 10-minute spacing; with both
+        // active the combined cadence stays close to the current 5 minutes.
+        consensus.nDualAlgoActivationHeight = 21000;
+        consensus.nDualAlgoTargetSpacing = 10 * 60;
         consensus.nCTActivationHeight = 0;  // RCPU: Confidential Transactions active from genesis
         // RCPU hardening (P1-2): soft-fork ban of legacy path-A (plaintext-nonce)
         // CT nonce encoding. Only outputs in blocks at or above this height are
@@ -746,6 +751,10 @@ public:
 
 consensus.fPowRandomX = true;
         consensus.nRandomXEpochDuration = 7 * 24 * 60 * 60;     // one week
+        // !RCPU (dual-algo): testnet mirrors mainnet activation height so the
+        // dual-algo rules are exercised on a public network first.
+        consensus.nDualAlgoActivationHeight = 21000;
+        consensus.nDualAlgoTargetSpacing = 10 * 60;
         consensus.nCTActivationHeight = 0;  // Testnet: CT always active
         // RCPU hardening (P1-2): ban path-A plaintext nonces early on testnet
         // so the soft-fork rule is exercised well before mainnet deployment.
@@ -863,6 +872,11 @@ public:
 
         consensus.fPowRandomX = true;
         consensus.nRandomXEpochDuration = 24 * 60 * 60;     // one day
+        // !RCPU (dual-algo): regtest activates dual-algo early (height 150) so
+        // unit and functional tests exercise both algorithms. Difficulty is
+        // constant (fPowNoRetargeting) and trivially minable.
+        consensus.nDualAlgoActivationHeight = 150;
+        consensus.nDualAlgoTargetSpacing = 10 * 60;
         genesis = CreateRcpuGenesisBlock(1296688602, 1, 0x207fffff, 1, 50 * COIN);
         genesis.hashRandomX = uint256S("0x177a9deba97f0dae00a6bf55e03671ec6bce7051d6a5054db49237598b803f93");
         consensus.hashGenesisBlock = GetHashOfRcpuGenesisBlock(genesis);

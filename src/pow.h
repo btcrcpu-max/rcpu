@@ -73,6 +73,17 @@ void StopRandomXThreads();
 bool CheckProofOfWorkRandomX(const CBlockHeader& block, const Consensus::Params& params, POWVerifyMode mode = POW_VERIFY_FULL, uint256 *outHash = nullptr, uint32_t prevBlockTime = 0);
 
 /**
+ * RCPU dual-algo: verify a qPoW ("qhash") block. The block must carry the
+ * qhash of the canonical 112-byte header (hashRandomX nulled) in its
+ * hashRandomX field and that hash must satisfy the block's nBits target.
+ * Semantics mirror CheckProofOfWorkRandomX: in POW_VERIFY_MINING mode the
+ * computed hash is returned via outHash even when it misses the target, so
+ * pool software can validate shares. qhash has no epochs and no separate
+ * commitment, so every mode computes the full (fast) hash.
+ */
+bool CheckProofOfWorkQHash(const CBlockHeader& block, const Consensus::Params& params, POWVerifyMode mode = POW_VERIFY_FULL, uint256 *outHash = nullptr);
+
+/**
  * Serialize the canonical 112-byte RandomX hash-domain input for a header
  * (P1-1): fields in canonical order with hashRandomX nulled. Byte-identical
  * to the legacy raw-memory layout pinned by the static_asserts in

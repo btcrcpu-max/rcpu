@@ -15,6 +15,7 @@
 
 // !RCPU
 #include <common/args.h>
+#include <crypto/qhash.h>
 #include <crypto/sha256.h>
 #include <limits>
 #include <randomx.h>
@@ -416,9 +417,92 @@ arith_uint256 CalculateASERT(const arith_uint256 &refTarget,
 // !BITCOINCASH END
 
 
+// !RCPU
+// ---------------------------------------------------------------------------
+// Dual-algo (RandomX + qPoW) difficulty, active from nDualAlgoActivationHeight.
+//
+// Each algorithm runs its own ASERT instance anchored at the activation
+// height: the anchor target is the last pre-activation target made twice as
+// hard (both algorithms must produce one block per nDualAlgoTargetSpacing so
+// the combined cadence matches the pre-fork rhythm), and the schedule only
+// counts blocks of the SAME algorithm. The result is that each algorithm's
+// difficulty converges to a point where it emits one block per
+// nDualAlgoTargetSpacing regardless of what the other algorithm does — free
+// competition with independent difficulty, long-run share ~50:50.
+// ---------------------------------------------------------------------------
+static uint32_t GetDualAlgoWorkRequired(const CBlockIndex* pindexLast,
+                                        const CBlockHeader* pblock,
+                                        const Consensus::Params& params,
+                                        bool fQhash) noexcept
+{
+    assert(pindexLast != nullptr);
+    const int nActHeight = params.nDualAlgoActivationHeight;
+    const arith_uint256 powLimit = UintToArith256(params.powLimit);
+
+    // Activation anchor: the last pre-activation block. Unreachable when
+    // missing because the caller only dispatches here for next height >= act.
+    const CBlockIndex* pindexAnchor = pindexLast->GetAncestor(nActHeight - 1);
+    if (!pindexAnchor) {
+        return powLimit.GetCompact();
+    }
+
+    // Both algorithms start at twice the pre-activation difficulty.
+    arith_uint256 refTarget;
+    refTarget.SetCompact(pindexAnchor->nBits);
+    refTarget >>= 1;
+    if (refTarget == 0) refTarget = arith_uint256(1);
+    if (refTarget > powLimit) refTarget = powLimit;
+
+    if (params.fPowNoRetargeting) {
+        return refTarget.GetCompact();
+    }
+
+    // Special difficulty rule for testnet (mirrors the single-algo ASERT path).
+    if (params.fPowAllowMinDifficultyBlocks && pblock &&
+        (pblock->GetBlockTime() >
+         pindexLast->GetBlockTime() + 2 * params.nPowTargetSpacing)) {
+        return powLimit.GetCompact();
+    }
+
+    // Count qPoW blocks in [nActHeight, pindexLast->nHeight]. The backward
+    // walk is O(chain height - activation height) and runs under cs_main once
+    // per new header — cheap relative to the RandomX/qhash work of validation.
+    int64_t nQhashCount = 0;
+    for (const CBlockIndex* p = pindexLast; p != nullptr && p->nHeight >= nActHeight; p = p->pprev) {
+        if (p->nVersion & BLOCK_VERSION_QHASH) ++nQhashCount;
+    }
+    const int64_t nTotal = pindexLast->nHeight - (nActHeight - 1);
+    // Schedule index k: the next block of this algorithm is the (k+1)-th since
+    // the anchor; CalculateASERT derives the ideal time as spacing*(k+1).
+    const int64_t nHeightDiff = fQhash ? nQhashCount : (nTotal - nQhashCount);
+
+    const int64_t nTimeDiff = pindexLast->GetBlockTime() - pindexAnchor->GetBlockTime();
+
+    const arith_uint256 nextTarget = CalculateASERT(refTarget,
+                                                    params.nDualAlgoTargetSpacing,
+                                                    nTimeDiff,
+                                                    nHeightDiff,
+                                                    powLimit,
+                                                    params.nASERTHalfLife);
+    return nextTarget.GetCompact();
+}
+// !RCPU END
+
 unsigned int GetNextWorkRequired(const CBlockIndex* pindexLast, const CBlockHeader *pblock, const Consensus::Params& params)
 {
     assert(pindexLast != nullptr);
+
+    // !RCPU (dual-algo)
+    // From the activation height the algorithm is chosen by the header's
+    // BLOCK_VERSION_QHASH bit and each algorithm uses its own ASERT instance.
+    // Below the activation height this branch is dead code and the legacy
+    // logic below is bit-for-bit unchanged.
+    if (pindexLast->nHeight + 1 >= params.nDualAlgoActivationHeight) {
+        const bool fQhash = pblock != nullptr && (pblock->nVersion & BLOCK_VERSION_QHASH);
+        return GetDualAlgoWorkRequired(pindexLast, pblock, params, fQhash);
+    }
+    // !RCPU END
+
     unsigned int nProofOfWorkLimit = UintToArith256(params.powLimit).GetCompact();
 
     // !RCPU
@@ -928,6 +1012,69 @@ char rx_hash[RANDOMX_HASH_SIZE];
 
     if (outHash != NULL) {
         *outHash = hashRandomX;
+    }
+
+    return true;
+}
+
+/**
+ * RCPU dual-algo: verify a qPoW ("qhash") block.
+ *
+ * Input domain: the same canonical 112-byte header serialization used for
+ * RandomX (SerializeRandomXHeader, hashRandomX nulled). The 32-byte seed is
+ * sha256d(canonical header) and the result is the deterministic fixed-point
+ * 16-qubit simulation in crypto/qhash.cpp. The result is stored in the block
+ * header's hashRandomX field (reused for both algorithms; the nVersion
+ * BLOCK_VERSION_QHASH bit selects the verifier).
+ */
+bool CheckProofOfWorkQHash(const CBlockHeader& block, const Consensus::Params& params, POWVerifyMode verifyMode, uint256 *outHash)
+{
+    // Genesis block: skip verification (mirrors the RandomX path).
+    if (block.hashPrevBlock.IsNull()) {
+        if (outHash) *outHash = block.hashRandomX;
+        return true;
+    }
+
+    bool fNegative;
+    bool fOverflow;
+    arith_uint256 bnTarget;
+
+    bnTarget.SetCompact(block.nBits, &fNegative, &fOverflow);
+
+    // Check range
+    if (fNegative || bnTarget == 0 || fOverflow || bnTarget > UintToArith256(params.powLimit)) {
+        LogPrintf("Error: high-hash, proof of work failed: block=%s, nBits=0x%08x (target out of range)\n",
+                  block.GetHash().GetHex(), block.nBits);
+        return false;
+    }
+
+    const DataStream input = SerializeRandomXHeader(block);
+    unsigned char hash1[32], seed[32];
+    CSHA256().Write((const unsigned char*)input.data(), input.size()).Finalize(hash1);
+    CSHA256().Write(hash1, 32).Finalize(seed);
+    const uint256 qhash = QHashFromSeed(seed);
+
+    // Mining mode: always expose the computed hash (pool share validation),
+    // mirroring CheckProofOfWorkRandomX semantics.
+    if (outHash != nullptr) {
+        *outHash = qhash;
+    }
+
+    if (verifyMode != POW_VERIFY_MINING) {
+        if (block.hashRandomX.IsNull()) {
+            LogPrintf("Error: proof of work failed: qhash block=%s has null hashRandomX field\n",
+                      block.GetHash().GetHex());
+            return false;
+        }
+        if (qhash != block.hashRandomX) {
+            LogPrintf("Error: Possible spam. qhash value in block [%s] != computed [%s]\n",
+                      block.hashRandomX.GetHex(), qhash.GetHex());
+            return false;
+        }
+    }
+
+    if (UintToArith256(qhash) > bnTarget) {
+        return false;
     }
 
     return true;

@@ -134,8 +134,17 @@ bool BlockTreeDB::LoadBlockIndexGuts(const Consensus::Params& consensusParams, s
                 // !RCPU
                 pindexNew->hashRandomX    = diskindex.hashRandomX;
 
-                if (!CheckProofOfWorkRandomX(pindexNew->GetBlockHeader(), consensusParams, POW_VERIFY_COMMITMENT_ONLY)) {
-                    return error("%s: CheckProofOfWork failed: %s", __func__, pindexNew->ToString());
+                // !RCPU (dual-algo): dispatch on the algorithm bit. For qhash
+                // blocks the hashRandomX field carries the qhash commitment,
+                // not a RandomX hash, so the RandomX verifier must not see it.
+                {
+                    const CBlockHeader hdr{pindexNew->GetBlockHeader()};
+                    const bool pow_ok = (hdr.nVersion & BLOCK_VERSION_QHASH)
+                        ? CheckProofOfWorkQHash(hdr, consensusParams, POW_VERIFY_COMMITMENT_ONLY)
+                        : CheckProofOfWorkRandomX(hdr, consensusParams, POW_VERIFY_COMMITMENT_ONLY);
+                    if (!pow_ok) {
+                        return error("%s: CheckProofOfWork failed: %s", __func__, pindexNew->ToString());
+                    }
                 }
                 // !RCPU END
 
@@ -1047,10 +1056,17 @@ bool BlockManager::ReadBlockFromDisk(CBlock& block, const FlatFilePos& pos) cons
     }
 
     // Check the header
-    // !RCPU
-    if (!CheckProofOfWorkRandomX(block.GetBlockHeader(), GetConsensus(), POW_VERIFY_COMMITMENT_ONLY)) {
+    // !RCPU (dual-algo): dispatch on the algorithm bit. For qhash blocks the
+    // hashRandomX field carries the qhash commitment, not a RandomX hash.
+    {
+        const CBlockHeader hdr{block.GetBlockHeader()};
+        const bool pow_ok = (hdr.nVersion & BLOCK_VERSION_QHASH)
+            ? CheckProofOfWorkQHash(hdr, GetConsensus(), POW_VERIFY_COMMITMENT_ONLY)
+            : CheckProofOfWorkRandomX(hdr, GetConsensus(), POW_VERIFY_COMMITMENT_ONLY);
+        if (!pow_ok) {
     // !RCPU END
         return error("ReadBlockFromDisk: Errors in block header at %s", pos.ToString());
+        }
     }
 
     // Signet only: check block solution
