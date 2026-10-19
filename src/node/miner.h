@@ -159,6 +159,11 @@ public:
         CFeeRate blockMinFeeRate{DEFAULT_BLOCK_MIN_TX_FEE};
         // Whether to call TestBlockValidity() at the end of CreateNewBlock().
         bool test_block_validity{true};
+        // !RCPU (dual-algo): build the template as a qhash block (BLOCK_VERSION_QHASH
+        // stamped into nVersion before nBits is computed, so GetNextWorkRequired
+        // selects the qhash ASERT difficulty). Only meaningful after
+        // nDualAlgoActivationHeight.
+        bool m_qhash_template{false};
     };
 
     explicit BlockAssembler(Chainstate& chainstate, const CTxMemPool* mempool);

@@ -132,6 +132,13 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(const CScript& sc
     if (chainparams.MineBlocksOnDemand()) {
         pblock->nVersion = gArgs.GetIntArg("-blockversion", pblock->nVersion);
     }
+    // !RCPU (dual-algo): stamp the qhash bit before nBits is computed so
+    // GetNextWorkRequired selects the qhash ASERT difficulty (and UpdateTime's
+    // testnet min-difficulty recompute stays on the same algorithm).
+    if (m_options.m_qhash_template) {
+        pblock->nVersion |= BLOCK_VERSION_QHASH;
+    }
+    // !RCPU END
 
     pblock->nTime = TicksSinceEpoch<std::chrono::seconds>(NodeClock::now());
     m_lock_time_cutoff = pindexPrev->GetMedianTimePast();

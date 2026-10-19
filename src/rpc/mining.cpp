@@ -159,11 +159,20 @@ static bool GenerateBlock(ChainstateManager& chainman, CBlock& block, uint64_t& 
 
 uint256 rxHash;
     rxHash.SetNull();
-    LogPrintf("RCPU-DBG GenerateBlock: prev=%s nTime=%u prevBlockTime=%u nBits=0x%08x\n",
-              block.hashPrevBlock.GetHex(), block.nTime, prevBlockTime, block.nBits);
+    LogPrintf("RCPU-DBG GenerateBlock: prev=%s nTime=%u prevBlockTime=%u nBits=0x%08x algo=%s\n",
+              block.hashPrevBlock.GetHex(), block.nTime, prevBlockTime, block.nBits,
+              (block.nVersion & BLOCK_VERSION_QHASH) ? "qhash" : "randomx");
+    // !RCPU (dual-algo): dispatch the solve loop on the template algorithm.
+    // qhash is a cheap full rehash per nonce with no epoch, so no
+    // prevBlockTime clamp applies. The pre-activation guard lives at the
+    // template layer (generateBlocks/generateblock/gbt): below
+    // nDualAlgoActivationHeight consensus ignores the qhash bit and would
+    // verify a bit-set header as RandomX, so it must never be solved as qhash.
     while (max_tries > 0 &&
            block.nNonce < std::numeric_limits<uint32_t>::max() &&
-           !CheckProofOfWorkRandomX(block, chainman.GetConsensus(), POW_VERIFY_MINING, &rxHash, prevBlockTime)) {
+           !(block.nVersion & BLOCK_VERSION_QHASH
+                 ? CheckProofOfWorkQHash(block, chainman.GetConsensus(), POW_VERIFY_MINING, &rxHash)
+                 : CheckProofOfWorkRandomX(block, chainman.GetConsensus(), POW_VERIFY_MINING, &rxHash, prevBlockTime))) {
         ++block.nNonce;
         --max_tries;
     }
@@ -190,11 +199,22 @@ uint256 rxHash;
     return true;
 }
 
-static UniValue generateBlocks(ChainstateManager& chainman, const CTxMemPool& mempool, const CScript& coinbase_script, int nGenerate, uint64_t nMaxTries)
+static UniValue generateBlocks(ChainstateManager& chainman, const CTxMemPool& mempool, const CScript& coinbase_script, int nGenerate, uint64_t nMaxTries, bool fQhash)
 {
     UniValue blockHashes(UniValue::VARR);
     while (nGenerate > 0 && !chainman.m_interrupt) {
-        std::unique_ptr<CBlockTemplate> pblocktemplate(BlockAssembler{chainman.ActiveChainstate(), &mempool}.CreateNewBlock(coinbase_script));
+        // !RCPU (dual-algo): refuse qhash templates below nDualAlgoActivationHeight
+        // (consensus ignores the qhash bit pre-activation and would verify the
+        // solved block as RandomX).
+        if (fQhash) {
+            LOCK(cs_main);
+            if (chainman.ActiveChain().Tip()->nHeight + 1 < chainman.GetConsensus().nDualAlgoActivationHeight) {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("qhash mining is not active before height %d", chainman.GetConsensus().nDualAlgoActivationHeight));
+            }
+        }
+        BlockAssembler::Options assembler_options;
+        assembler_options.m_qhash_template = fQhash;
+        std::unique_ptr<CBlockTemplate> pblocktemplate(BlockAssembler{chainman.ActiveChainstate(), &mempool, assembler_options}.CreateNewBlock(coinbase_script));
         if (!pblocktemplate.get())
             throw JSONRPCError(RPC_INTERNAL_ERROR, "Couldn't create new block");
 
@@ -256,6 +276,9 @@ static RPCHelpMan generatetodescriptor()
             {"descriptor", RPCArg::Type::STR, RPCArg::Optional::NO, "The descriptor to send the newly generated RCPU to."},
             // !RCPU END
             {"maxtries", RPCArg::Type::NUM, RPCArg::Default{DEFAULT_MAX_TRIES}, "How many iterations to try."},
+            // !RCPU (dual-algo)
+            {"algo", RPCArg::Type::STR, RPCArg::Default{"randomx"}, "Which proof-of-work algorithm to mine with: \"randomx\" (default) or \"qhash\" (only after dual-algo activation)."},
+            // !RCPU END
         },
         RPCResult{
             RPCResult::Type::ARR, "", "hashes of blocks generated",
@@ -269,6 +292,11 @@ static RPCHelpMan generatetodescriptor()
 {
     const auto num_blocks{self.Arg<int>(0)};
     const auto max_tries{self.Arg<uint64_t>(2)};
+    // !RCPU (dual-algo): optional algo selector.
+    if (!request.params[3].isNull() && request.params[3].get_str() != "randomx" && request.params[3].get_str() != "qhash")
+        throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("Invalid algo \"%s\" (expected \"randomx\" or \"qhash\")", request.params[3].get_str()));
+    const bool fQhash{!request.params[3].isNull() && request.params[3].get_str() == "qhash"};
+    // !RCPU END
 
     CScript coinbase_script;
     std::string error;
@@ -280,7 +308,7 @@ static RPCHelpMan generatetodescriptor()
     const CTxMemPool& mempool = EnsureMemPool(node);
     ChainstateManager& chainman = EnsureChainman(node);
 
-    return generateBlocks(chainman, mempool, coinbase_script, num_blocks, max_tries);
+    return generateBlocks(chainman, mempool, coinbase_script, num_blocks, max_tries, fQhash);
 },
     };
 }
@@ -302,6 +330,9 @@ static RPCHelpMan generatetoaddress()
              {"address", RPCArg::Type::STR, RPCArg::Optional::NO, "The address to send the newly generated RCPU to."},
              // !RCPU END
              {"maxtries", RPCArg::Type::NUM, RPCArg::Default{DEFAULT_MAX_TRIES}, "How many iterations to try."},
+             // !RCPU (dual-algo)
+             {"algo", RPCArg::Type::STR, RPCArg::Default{"randomx"}, "Which proof-of-work algorithm to mine with: \"randomx\" (default) or \"qhash\" (only after dual-algo activation)."},
+             // !RCPU END
          },
          RPCResult{
              RPCResult::Type::ARR, "", "hashes of blocks generated",
@@ -320,6 +351,11 @@ static RPCHelpMan generatetoaddress()
 {
     const int num_blocks{request.params[0].getInt<int>()};
     const uint64_t max_tries{request.params[2].isNull() ? DEFAULT_MAX_TRIES : request.params[2].getInt<int>()};
+    // !RCPU (dual-algo): optional algo selector.
+    if (!request.params[3].isNull() && request.params[3].get_str() != "randomx" && request.params[3].get_str() != "qhash")
+        throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("Invalid algo \"%s\" (expected \"randomx\" or \"qhash\")", request.params[3].get_str()));
+    const bool fQhash{!request.params[3].isNull() && request.params[3].get_str() == "qhash"};
+    // !RCPU END
 
     CTxDestination destination = DecodeDestination(request.params[1].get_str());
     if (!IsValidDestination(destination)) {
@@ -332,7 +368,7 @@ static RPCHelpMan generatetoaddress()
 
     CScript coinbase_script = GetScriptForDestination(destination);
 
-    return generateBlocks(chainman, mempool, coinbase_script, num_blocks, max_tries);
+    return generateBlocks(chainman, mempool, coinbase_script, num_blocks, max_tries, fQhash);
 },
     };
 }
@@ -353,6 +389,9 @@ static RPCHelpMan generateblock()
                 },
             },
             {"submit", RPCArg::Type::BOOL, RPCArg::Default{true}, "Whether to submit the block before the RPC call returns or to return it as hex."},
+            // !RCPU (dual-algo)
+            {"algo", RPCArg::Type::STR, RPCArg::Default{"randomx"}, "Which proof-of-work algorithm to mine with: \"randomx\" (default) or \"qhash\" (only after dual-algo activation)."},
+            // !RCPU END
         },
         RPCResult{
             RPCResult::Type::OBJ, "", "",
@@ -408,13 +447,26 @@ static RPCHelpMan generateblock()
     }
 
     const bool process_new_block{request.params[2].isNull() ? true : request.params[2].get_bool()};
+    // !RCPU (dual-algo): optional algo selector.
+    if (!request.params[3].isNull() && request.params[3].get_str() != "randomx" && request.params[3].get_str() != "qhash")
+        throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("Invalid algo \"%s\" (expected \"randomx\" or \"qhash\")", request.params[3].get_str()));
+    const bool fQhash{!request.params[3].isNull() && request.params[3].get_str() == "qhash"};
+    // !RCPU END
     CBlock block;
 
     ChainstateManager& chainman = EnsureChainman(node);
     {
         LOCK(cs_main);
 
-        std::unique_ptr<CBlockTemplate> blocktemplate(BlockAssembler{chainman.ActiveChainstate(), nullptr}.CreateNewBlock(coinbase_script));
+        // !RCPU (dual-algo): refuse qhash templates below nDualAlgoActivationHeight
+        // (consensus ignores the qhash bit pre-activation and would verify the
+        // solved block as RandomX).
+        if (fQhash && chainman.ActiveChain().Tip()->nHeight + 1 < chainman.GetConsensus().nDualAlgoActivationHeight) {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("qhash mining is not active before height %d", chainman.GetConsensus().nDualAlgoActivationHeight));
+        }
+        BlockAssembler::Options assembler_options;
+        assembler_options.m_qhash_template = fQhash;
+        std::unique_ptr<CBlockTemplate> blocktemplate(BlockAssembler{chainman.ActiveChainstate(), nullptr, assembler_options}.CreateNewBlock(coinbase_script));
         if (!blocktemplate) {
             throw JSONRPCError(RPC_INTERNAL_ERROR, "Couldn't create new block");
         }
@@ -629,6 +681,9 @@ static RPCHelpMan getblocktemplate()
                 }},
                 {"longpollid", RPCArg::Type::STR, RPCArg::Optional::OMITTED, "delay processing request until the result would vary significantly from the \"longpollid\" of a prior template"},
                 {"data", RPCArg::Type::STR_HEX, RPCArg::Optional::OMITTED, "proposed block data to check, encoded in hexadecimal; valid only for mode=\"proposal\""},
+                // !RCPU (dual-algo)
+                {"algo", RPCArg::Type::STR, RPCArg::Optional::OMITTED, "Which proof-of-work algorithm the template should target: \"randomx\" (default) or \"qhash\" (only after dual-algo activation)"},
+                // !RCPU END
             },
             },
         },
@@ -714,6 +769,8 @@ static RPCHelpMan getblocktemplate()
     std::string strMode = "template";
     UniValue lpval = NullUniValue;
     std::set<std::string> setClientRules;
+    // !RCPU (dual-algo): requested template algorithm
+    bool fQhashTemplate = false;
     Chainstate& active_chainstate = chainman.ActiveChainstate();
     CChain& active_chain = active_chainstate.m_chain;
     if (!request.params[0].isNull())
@@ -766,6 +823,20 @@ static RPCHelpMan getblocktemplate()
                 setClientRules.insert(v.get_str());
             }
         }
+
+        // !RCPU (dual-algo): optional "algo" selector in template_request.
+        const UniValue& algoval = oparam.find_value("algo");
+        if (algoval.isStr()) {
+            const std::string& strAlgo = algoval.get_str();
+            if (strAlgo == "qhash") {
+                fQhashTemplate = true;
+            } else if (strAlgo != "randomx") {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("Invalid algo \"%s\" (expected \"randomx\" or \"qhash\")", strAlgo));
+            }
+        } else if (!algoval.isNull()) {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "algo must be a string");
+        }
+        // !RCPU END
     }
 
     if (strMode != "template")
@@ -844,11 +915,23 @@ static RPCHelpMan getblocktemplate()
         throw JSONRPCError(RPC_INVALID_PARAMETER, "getblocktemplate must be called with the segwit rule set (call with {\"rules\": [\"segwit\"]})");
     }
 
+    // !RCPU (dual-algo): qhash templates are only served once dual-algo is
+    // active; below nDualAlgoActivationHeight consensus ignores the qhash bit.
+    if (fQhashTemplate && active_chain.Tip()->nHeight + 1 < consensusParams.nDualAlgoActivationHeight) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("qhash mining is not active before height %d", consensusParams.nDualAlgoActivationHeight));
+    }
+    // !RCPU END
+
     // Update block
     static CBlockIndex* pindexPrev;
     static int64_t time_start;
     static std::unique_ptr<CBlockTemplate> pblocktemplate;
+    // !RCPU (dual-algo): the cached template must match the requested algo,
+    // otherwise an RX request could be served a qhash template (or vice versa)
+    // while tip and mempool are unchanged.
+    static bool fCachedQhashTemplate = false;
     if (pindexPrev != active_chain.Tip() ||
+        fCachedQhashTemplate != fQhashTemplate ||
         (mempool.GetTransactionsUpdated() != nTransactionsUpdatedLast && GetTime() - time_start > 5))
     {
         // Clear pindexPrev so future calls make a new block, despite any failures from here on
@@ -861,11 +944,14 @@ static RPCHelpMan getblocktemplate()
 
         // Create new block
         CScript scriptDummy = CScript() << OP_TRUE;
-        pblocktemplate = BlockAssembler{active_chainstate, &mempool}.CreateNewBlock(scriptDummy);
+        BlockAssembler::Options assembler_options;
+        assembler_options.m_qhash_template = fQhashTemplate;
+        pblocktemplate = BlockAssembler{active_chainstate, &mempool, assembler_options}.CreateNewBlock(scriptDummy);
         if (!pblocktemplate)
             throw JSONRPCError(RPC_OUT_OF_MEMORY, "Out of memory");
 
         // Need to update only after we know CreateNewBlock succeeded
+        fCachedQhashTemplate = fQhashTemplate;
         pindexPrev = pindexPrevNew;
     }
     CHECK_NONFATAL(pindexPrev);
@@ -1019,16 +1105,26 @@ static RPCHelpMan getblocktemplate()
     }
 
 // !RCPU
-    result.pushKV("rx_epoch_duration", consensusParams.nRandomXEpochDuration);
     {
-        const uint32_t nEpoch = GetEpoch(pblock->GetBlockTime(), consensusParams.nRandomXEpochDuration);
-        result.pushKV("rx_epoch", nEpoch);
-        result.pushKV("rx_seed_hash", GetSeedHash(nEpoch).GetHex());
         enum : size_t { RCPU_LEGACY_HEADER_SIZE = 80 };
-        result.pushKV("rx_header_size", RCPU_LEGACY_HEADER_SIZE + RANDOMX_HASH_SIZE);
-        result.pushKV("rx_hash_field", strprintf("hashRandomX at byte offset %zu, %d bytes; zero before hashing and commitment, fill with the RandomX hash before submission", RCPU_LEGACY_HEADER_SIZE, RANDOMX_HASH_SIZE));
-        result.pushKV("rx_commitment_target", hashTarget.GetHex());
-        result.pushKV("rx_pow_rule", "randomx-v1");
+        if (pblock->nVersion & BLOCK_VERSION_QHASH) {
+            // !RCPU (dual-algo): qhash template output
+            result.pushKV("algo", "qhash");
+            result.pushKV("qhash_header_size", RCPU_LEGACY_HEADER_SIZE + RANDOMX_HASH_SIZE);
+            result.pushKV("qhash_hash_field", strprintf("hashRandomX at byte offset %zu, %d bytes; zero before hashing, fill with the qhash output before submission", RCPU_LEGACY_HEADER_SIZE, RANDOMX_HASH_SIZE));
+            result.pushKV("qhash_commitment_target", hashTarget.GetHex());
+            result.pushKV("qhash_pow_rule", "qhash-v1");
+        } else {
+            result.pushKV("algo", "randomx");
+            result.pushKV("rx_epoch_duration", consensusParams.nRandomXEpochDuration);
+            const uint32_t nEpoch = GetEpoch(pblock->GetBlockTime(), consensusParams.nRandomXEpochDuration);
+            result.pushKV("rx_epoch", nEpoch);
+            result.pushKV("rx_seed_hash", GetSeedHash(nEpoch).GetHex());
+            result.pushKV("rx_header_size", RCPU_LEGACY_HEADER_SIZE + RANDOMX_HASH_SIZE);
+            result.pushKV("rx_hash_field", strprintf("hashRandomX at byte offset %zu, %d bytes; zero before hashing and commitment, fill with the RandomX hash before submission", RCPU_LEGACY_HEADER_SIZE, RANDOMX_HASH_SIZE));
+            result.pushKV("rx_commitment_target", hashTarget.GetHex());
+            result.pushKV("rx_pow_rule", "randomx-v1");
+        }
     }
     // !RCPU END
 
@@ -1250,7 +1346,12 @@ static RPCHelpMan computerandomxhash()
     }
 
     uint256 rx_hash;
-    bool hash_ok = CheckProofOfWorkRandomX(header, consensusParams, POW_VERIFY_MINING, &rx_hash, prevBlockTime);
+    // !RCPU (dual-algo): dispatch on the algorithm bit. For qhash headers the
+    // commitment is the qhash output itself (no separate RandomX commitment).
+    const bool fQhashHeader = (header.nVersion & BLOCK_VERSION_QHASH) != 0;
+    bool hash_ok = fQhashHeader
+        ? CheckProofOfWorkQHash(header, consensusParams, POW_VERIFY_MINING, &rx_hash)
+        : CheckProofOfWorkRandomX(header, consensusParams, POW_VERIFY_MINING, &rx_hash, prevBlockTime);
 
     // !RCPU: For mining mode (POW_VERIFY_MINING), the hash is always computed
     // and outHash is set even if the commitment does not meet the target.
@@ -1259,7 +1360,7 @@ static RPCHelpMan computerandomxhash()
     // share difficulty independently.
 
     // Compute commitment using the hash
-    uint256 rx_commitment = GetRandomXCommitment(header, &rx_hash);
+    uint256 rx_commitment = fQhashHeader ? rx_hash : GetRandomXCommitment(header, &rx_hash);
     
     // Compute block hash (double SHA256 of the 80-byte header without hashRandomX)
     uint256 block_hash = header.GetHash();

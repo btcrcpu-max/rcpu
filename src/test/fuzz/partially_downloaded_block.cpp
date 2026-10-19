@@ -31,7 +31,9 @@ void initialize_pdb()
 
 PartiallyDownloadedBlock::CheckBlockFn FuzzedCheckBlock(std::optional<BlockValidationResult> result)
 {
-    return [result](const CBlock&, BlockValidationState& state, const Consensus::Params&, bool, bool) {
+    // !RCPU (dual-algo): the mock must match CheckBlockFn's 6th parameter
+    // (nHeight), added for the height-aware PoW dispatch.
+    return [result](const CBlock&, BlockValidationState& state, const Consensus::Params&, bool, bool, int) {
         if (result) {
             return state.Invalid(*result);
         }

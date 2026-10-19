@@ -136,7 +136,11 @@ public:
     CBlockHeader header;
 
     // Can be overridden for testing
-    using CheckBlockFn = std::function<bool(const CBlock&, BlockValidationState&, const Consensus::Params&, bool, bool)>;
+    // !RCPU (dual-algo): nHeight appended for the height-aware qhash dispatch;
+    // compact-block reconstruction has no block-index access and passes -1
+    // (unknown height → permissive either-algo pre-check, authoritative
+    // dispatch runs later in ProcessNewBlock/AcceptBlockHeader).
+    using CheckBlockFn = std::function<bool(const CBlock&, BlockValidationState&, const Consensus::Params&, bool, bool, int)>;
     CheckBlockFn m_check_block_mock{nullptr};
 
     explicit PartiallyDownloadedBlock(CTxMemPool* poolIn) : pool(poolIn) {}
