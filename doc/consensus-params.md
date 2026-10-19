@@ -28,7 +28,10 @@ They are listed here so other docs have one place to copy from.
 | ASERT activation height | **0** (genesis) | `src/kernel/chainparams.cpp` (`nASERTActivationHeight`) |
 | ASERT anchor block | 0 (genesis) | `src/kernel/chainparams.cpp` (`asertAnchorParams`) |
 | ASERT half-life | **2 days (172,800 s)** | `src/kernel/chainparams.cpp` (`nASERTHalfLife`) |
-| PoW algorithm | RandomX | `src/kernel/chainparams.cpp` (`fPowRandomX`) |
+| PoW algorithm | RandomX (pre-dual-algo); RandomX + qPoW after height 21000 | `src/kernel/chainparams.cpp` (`fPowRandomX`) |
+| Dual-algo activation height | **21,000** (mainnet & testnet); **150** (regtest); `INT_MAX` = never (default) | `src/kernel/chainparams.cpp` (`nDualAlgoActivationHeight`) |
+| Dual-algo target spacing | 600 s (10 min) per algorithm | `src/kernel/chainparams.cpp` (`nDualAlgoTargetSpacing`) |
+| qhash (qPoW) version bit | **bit 30** (`0x40000000`) | `src/primitives/block.h` (`BLOCK_VERSION_QHASH`) |
 | RandomX epoch | 7 days | `src/kernel/chainparams.cpp` (`nRandomXEpochDuration`) |
 | Message start (magic) | `R C P U` (0x52 0x43 0x50 0x55) | `src/kernel/chainparams.cpp` (`pchMessageStart`) |
 | Bech32 HRP | `rcpu` (`rcpu1...`) | `src/kernel/chainparams.cpp` (`bech32_hrp`) |
@@ -41,6 +44,7 @@ They are listed here so other docs have one place to copy from.
 
 ## Notes
 
+- **Dual-algo (v1.2.0)** is a consensus hard fork at height 21,000: blocks may be mined with either RandomX or qPoW (qhash). Each algorithm runs its own ASERT difficulty targeting a 10-minute spacing, anchored at height 20,999 with a reference target of `nBits >> 1` (twice the pre-fork difficulty); the combined chain keeps ~5-minute cadence. Below the activation height the qhash version bit (bit 30) is ignored and behavior is identical to v1.1.19. Blocks at height ≥ 21,000 carrying bit 30 are verified with qhash; all other blocks use RandomX. Above the activation height the legacy single-algo ASERT path is not used.
 - There is no hard max supply in consensus code. After 10 halvings the subsidy does not go to zero; it stays at 1 RCPU per block.
 - README / marketing "~2.10B" means "sum of the first 10 subsidy eras plus genesis 50", not a cap.
 - MAX_MONEY (2.1B) is only a per-output sanity check. A single output above that is invalid; the chain-wide sum can exceed it because of tail emission.
