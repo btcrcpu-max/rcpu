@@ -63,12 +63,12 @@ CRCCheck force
 XPStyle on
 BrandingText " "
 ShowInstDetails show
-VIProductVersion 1.3.0.0
+VIProductVersion 1.3.2.0
 VIAddVersionKey ProductName "rcpu"
-VIAddVersionKey ProductVersion "1.3.0"
+VIAddVersionKey ProductVersion "1.3.2"
 VIAddVersionKey CompanyName "${COMPANY}"
 VIAddVersionKey CompanyWebsite "${URL}"
-VIAddVersionKey FileVersion "1.3.0"
+VIAddVersionKey FileVersion "1.3.2"
 VIAddVersionKey FileDescription "Installer for rcpu"
 # !RCPU
 VIAddVersionKey LegalCopyright "Copyright (C) 2009-2026 The RCPU Core developers and the RCPU Developers"
