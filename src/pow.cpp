@@ -15,11 +15,14 @@
 
 // !RCPU
 #include <common/args.h>
+#include <crypto/etchash.h>
+#include <crypto/keccak.h>
 #include <crypto/qhash.h>
 #include <crypto/sha256.h>
 #include <limits>
 #include <randomx.h>
 #include <logging.h>
+#include <cstring>
 #include <list>
 #include <map>
 #include <optional>
@@ -1074,6 +1077,148 @@ bool CheckProofOfWorkQHash(const CBlockHeader& block, const Consensus::Params& p
     }
 
     if (UintToArith256(qhash) > bnTarget) {
+        return false;
+    }
+
+    return true;
+}
+
+// !RCPU (dual-algo etchash)
+
+int64_t GetEtchashEpoch(int64_t nHeight, const Consensus::Params& params)
+{
+    if (nHeight < 0 || nHeight < params.nDualAlgoActivationHeight) {
+        return -1;
+    }
+    return (nHeight - params.nDualAlgoActivationHeight) / params.nEtchashEpochLength;
+}
+
+uint256 GetEtchashSeedHash(int64_t nHeight, const Consensus::Params& params)
+{
+    const int64_t epoch = GetEtchashEpoch(nHeight, params);
+    if (epoch < 0) {
+        return uint256(); // pre-activation: no etchash seed
+    }
+    return etchash::SeedForEpoch(uint64_t(epoch));
+}
+
+namespace {
+
+struct EtchashCacheEntry {
+    uint64_t size{0};
+    std::vector<uint32_t> words;
+};
+
+/** Shared light-verification caches, keyed by epoch. Capacity 2 covers the
+ *  active epoch plus the previous one (reorg boundary); generating a cache
+ *  takes O(100ms), so a slightly larger window is unnecessary. */
+LRUCache<int64_t, std::shared_ptr<EtchashCacheEntry>> g_etchash_caches{2};
+
+/** Serializes cache generation so concurrent verifiers do not build the same
+ *  epoch twice. The LRU itself is internally locked; this only guards the
+ *  check-generate-insert sequence. */
+Mutex g_etchash_cache_gen;
+
+std::shared_ptr<EtchashCacheEntry> GetEtchashCache(int64_t epoch, const uint256& seed)
+{
+    LOCK(g_etchash_cache_gen);
+    if (g_etchash_caches.contains(epoch)) {
+        return g_etchash_caches.get(epoch);
+    }
+    auto entry = std::make_shared<EtchashCacheEntry>();
+    entry->size = etchash::CalcCacheSize(uint64_t(epoch));
+    const auto start{SteadyClock::now()};
+    LogPrintf("etchash: generating verification cache for epoch %d (%u bytes)...\n",
+              epoch, entry->size);
+    entry->words = etchash::GenerateCache(entry->size, seed);
+    LogPrintf("etchash: epoch %d cache generated in %dms\n",
+              epoch, Ticks<std::chrono::milliseconds>(SteadyClock::now() - start));
+    g_etchash_caches.insert(epoch, entry);
+    return entry;
+}
+
+} // namespace
+
+/**
+ * RCPU dual-algo: verify an Etchash (ECIP-1099, light verification) block.
+ *
+ * Input domain: the same canonical 112-byte header serialization used for
+ * RandomX (SerializeRandomXHeader, hashRandomX nulled). header_hash is
+ * Keccak256 of those bytes (original Keccak, not SHA3). The 64-bit nonce is
+ * the block's 32-bit nNonce zero-extended (4B LE || 4B zero). The etchash
+ * result (keccak256(seed64 || digest)) is stored in the header's hashRandomX
+ * field, reused from the other algorithms (the nVersion BLOCK_VERSION_QHASH
+ * bit plus fDualAlgoEtchash select this verifier).
+ *
+ * The epoch is height-driven: epoch = (nHeight - nDualAlgoActivationHeight) /
+ * nEtchashEpochLength. Light verification walks the shared per-epoch cache
+ * via generateDatasetItem; no full DAG is materialized.
+ */
+bool CheckProofOfWorkEtchash(const CBlockHeader& block, int64_t nHeight, const Consensus::Params& params, POWVerifyMode verifyMode, uint256 *outHash)
+{
+    // Genesis block: skip verification (mirrors the RandomX/qhash paths).
+    if (block.hashPrevBlock.IsNull()) {
+        if (outHash) *outHash = block.hashRandomX;
+        return true;
+    }
+
+    bool fNegative;
+    bool fOverflow;
+    arith_uint256 bnTarget;
+
+    bnTarget.SetCompact(block.nBits, &fNegative, &fOverflow);
+
+    // Check range
+    if (fNegative || bnTarget == 0 || fOverflow || bnTarget > UintToArith256(params.powLimit)) {
+        LogPrintf("Error: high-hash, proof of work failed: block=%s, nBits=0x%08x (target out of range)\n",
+                  block.GetHash().GetHex(), block.nBits);
+        return false;
+    }
+
+    const int64_t epoch = GetEtchashEpoch(nHeight, params);
+    if (epoch < 0) {
+        // Pre-activation (or unknown height): etchash verification is not
+        // defined. Dispatch layers must not route such blocks here.
+        LogPrintf("Error: etchash verification requested for block=%s at height %d before activation height %d\n",
+                  block.GetHash().GetHex(), nHeight, params.nDualAlgoActivationHeight);
+        return false;
+    }
+
+    const uint256 seed = etchash::SeedForEpoch(uint64_t(epoch));
+    std::shared_ptr<EtchashCacheEntry> cache = GetEtchashCache(epoch, seed);
+
+    const DataStream input = SerializeRandomXHeader(block);
+    unsigned char header_hash[32];
+    Keccak256((const unsigned char*)input.data(), input.size(), header_hash);
+
+    // nonce8 = nNonce (4B LE) || 4 zero bytes -> zero-extended uint64
+    const uint64_t nonce = uint64_t(block.nNonce);
+
+    unsigned char digest[32], result[32];
+    etchash::HashimotoLight(cache->size, cache->words, header_hash, nonce, digest, result);
+    uint256 result256;
+    std::memcpy(result256.begin(), result, 32);
+
+    // Mining mode: always expose the computed result (pool share validation),
+    // mirroring CheckProofOfWorkQHash semantics.
+    if (outHash != nullptr) {
+        *outHash = result256;
+    }
+
+    if (verifyMode != POW_VERIFY_MINING) {
+        if (block.hashRandomX.IsNull()) {
+            LogPrintf("Error: proof of work failed: etchash block=%s has null hashRandomX field\n",
+                      block.GetHash().GetHex());
+            return false;
+        }
+        if (result256 != block.hashRandomX) {
+            LogPrintf("Error: Possible spam. etchash value in block [%s] != computed [%s]\n",
+                      block.hashRandomX.GetHex(), result256.GetHex());
+            return false;
+        }
+    }
+
+    if (UintToArith256(result256) > bnTarget) {
         return false;
     }
 

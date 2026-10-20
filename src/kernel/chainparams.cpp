@@ -618,6 +618,12 @@ consensus.fPowRandomX = true;
         // active the combined cadence stays close to the current 5 minutes.
         consensus.nDualAlgoActivationHeight = 21000;
         consensus.nDualAlgoTargetSpacing = 10 * 60;
+        // !RCPU (dual-algo etchash): the bit-30 algorithm is Etchash (ECIP-1099
+        // light verification). Epoch length 6000 blocks: with both algorithms
+        // mining, ~10 days per epoch at the combined ~5-minute cadence (each
+        // algo alone would take ~20 days).
+        consensus.fDualAlgoEtchash = true;
+        consensus.nEtchashEpochLength = 6000;
         consensus.nCTActivationHeight = 0;  // RCPU: Confidential Transactions active from genesis
         // RCPU hardening (P1-2): soft-fork ban of legacy path-A (plaintext-nonce)
         // CT nonce encoding. Only outputs in blocks at or above this height are
@@ -755,6 +761,9 @@ consensus.fPowRandomX = true;
         // dual-algo rules are exercised on a public network first.
         consensus.nDualAlgoActivationHeight = 21000;
         consensus.nDualAlgoTargetSpacing = 10 * 60;
+        // !RCPU (dual-algo etchash): testnet mirrors mainnet etchash params.
+        consensus.fDualAlgoEtchash = true;
+        consensus.nEtchashEpochLength = 6000;
         consensus.nCTActivationHeight = 0;  // Testnet: CT always active
         // RCPU hardening (P1-2): ban path-A plaintext nonces early on testnet
         // so the soft-fork rule is exercised well before mainnet deployment.
@@ -877,6 +886,10 @@ public:
         // constant (fPowNoRetargeting) and trivially minable.
         consensus.nDualAlgoActivationHeight = 150;
         consensus.nDualAlgoTargetSpacing = 10 * 60;
+        // !RCPU (dual-algo etchash): regtest uses a tiny epoch (10 blocks) so
+        // functional tests cross multiple epoch boundaries cheaply.
+        consensus.fDualAlgoEtchash = true;
+        consensus.nEtchashEpochLength = 10;
         genesis = CreateRcpuGenesisBlock(1296688602, 1, 0x207fffff, 1, 50 * COIN);
         genesis.hashRandomX = uint256S("0x177a9deba97f0dae00a6bf55e03671ec6bce7051d6a5054db49237598b803f93");
         consensus.hashGenesisBlock = GetHashOfRcpuGenesisBlock(genesis);
