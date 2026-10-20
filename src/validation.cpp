@@ -3789,7 +3789,13 @@ static bool CheckBlockHeader(const CBlockHeader& block, BlockValidationState& st
     // keeps the RandomX path unchanged.
     const int nHeight = pindexPrev ? pindexPrev->nHeight + 1 : -1;
     if (nHeight >= consensusParams.nDualAlgoActivationHeight && (block.nVersion & BLOCK_VERSION_QHASH)) {
-        if (!CheckProofOfWorkQHash(block, consensusParams, POW_VERIFY_FULL, nullptr))
+        // !RCPU (dual-algo etchash): bit-30 blocks are Etchash when the flag
+        // is set, legacy qhash otherwise. Height is always known here
+        // (AcceptBlockHeader passes pindexPrev).
+        const bool fEtchashOk = consensusParams.fDualAlgoEtchash
+            ? CheckProofOfWorkEtchash(block, nHeight, consensusParams, POW_VERIFY_FULL, nullptr)
+            : CheckProofOfWorkQHash(block, consensusParams, POW_VERIFY_FULL, nullptr);
+        if (!fEtchashOk)
             return state.Invalid(BlockValidationResult::BLOCK_INVALID_HEADER, "high-hash", "proof of work failed");
         return true;
     }
@@ -3938,9 +3944,22 @@ bool CheckBlock(const CBlock& block, BlockValidationState& state, const Consensu
         // authoritative height-aware dispatch once the prev height is known.
         if (fCheckPOW && (block.nVersion & BLOCK_VERSION_QHASH)) {
             if (nHeight >= consensusParams.nDualAlgoActivationHeight) {
-                if (!CheckProofOfWorkQHash(block, consensusParams, POW_VERIFY_COMMITMENT_ONLY))
+                // !RCPU (dual-algo etchash): bit-30 blocks are Etchash when
+                // the flag is set (height known), legacy qhash otherwise.
+                const bool fAlgoOk = consensusParams.fDualAlgoEtchash
+                    ? CheckProofOfWorkEtchash(block, nHeight, consensusParams, POW_VERIFY_COMMITMENT_ONLY)
+                    : CheckProofOfWorkQHash(block, consensusParams, POW_VERIFY_COMMITMENT_ONLY);
+                if (!fAlgoOk)
                     return state.Invalid(BlockValidationResult::BLOCK_INVALID_HEADER, "high-hash", "proof of work failed");
             } else if (nHeight < 0) {
+                // Height unknown: etchash cannot be verified without a height,
+                // so only the qhash and RandomX proofs are attempted here. If
+                // the flag is set and this is really an etchash block, this
+                // branch may spuriously reject it; the authoritative
+                // height-aware dispatch in AcceptBlockHeader (CheckBlockHeader
+                // with pindexPrev) re-runs with the true height and accepts
+                // it. Headers are never rejected-and-penalized here for
+                // out-of-order relay alone.
                 if (!CheckProofOfWorkQHash(block, consensusParams, POW_VERIFY_COMMITMENT_ONLY) &&
                     !CheckProofOfWorkRandomX(block, consensusParams, POW_VERIFY_COMMITMENT_ONLY))
                     return state.Invalid(BlockValidationResult::BLOCK_INVALID_HEADER, "high-hash", "proof of work failed");

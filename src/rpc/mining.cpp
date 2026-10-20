@@ -18,6 +18,7 @@
 #include <consensus/params.h>
 #include <consensus/validation.h>
 #include <core_io.h>
+#include <crypto/etchash.h>
 #include <deploymentinfo.h>
 #include <deploymentstatus.h>
 #include <key_io.h>
@@ -149,11 +150,13 @@ static bool GenerateBlock(ChainstateManager& chainman, CBlock& block, uint64_t& 
     // arbitrarily far-future epoch via block.nTime and produce a hash that
     // the network would verify against a different epoch dataset.
     uint32_t prevBlockTime = 0;
+    int nMiningHeight = -1;
     {
         LOCK(cs_main); // recursive; callers already hold it, or not -- safe either way
         const CBlockIndex* pindexPrev = chainman.m_blockman.LookupBlockIndex(block.hashPrevBlock);
         if (pindexPrev != nullptr) {
             prevBlockTime = pindexPrev->GetBlockTime();
+            nMiningHeight = pindexPrev->nHeight + 1;
         }
     }
 
@@ -161,17 +164,22 @@ uint256 rxHash;
     rxHash.SetNull();
     LogPrintf("RCPU-DBG GenerateBlock: prev=%s nTime=%u prevBlockTime=%u nBits=0x%08x algo=%s\n",
               block.hashPrevBlock.GetHex(), block.nTime, prevBlockTime, block.nBits,
-              (block.nVersion & BLOCK_VERSION_QHASH) ? "qhash" : "randomx");
+              (block.nVersion & BLOCK_VERSION_QHASH) ? (chainman.GetConsensus().fDualAlgoEtchash ? "etchash" : "qhash") : "randomx");
     // !RCPU (dual-algo): dispatch the solve loop on the template algorithm.
-    // qhash is a cheap full rehash per nonce with no epoch, so no
-    // prevBlockTime clamp applies. The pre-activation guard lives at the
-    // template layer (generateBlocks/generateblock/gbt): below
-    // nDualAlgoActivationHeight consensus ignores the qhash bit and would
-    // verify a bit-set header as RandomX, so it must never be solved as qhash.
+    // qhash/etchash are cheap full rehashes per nonce; the epoch for etchash
+    // is height-driven, so no prevBlockTime clamp applies. The pre-activation
+    // guard lives at the template layer (generateBlocks/generateblock/gbt):
+    // below nDualAlgoActivationHeight consensus ignores the qhash bit and
+    // would verify a bit-set header as RandomX, so it must never be solved as
+    // qhash/etchash. Etchash needs the block height for its epoch; when the
+    // prev index is unknown (should not happen for a template built on the
+    // active tip) the guard above has already refused the template.
     while (max_tries > 0 &&
            block.nNonce < std::numeric_limits<uint32_t>::max() &&
-           !(block.nVersion & BLOCK_VERSION_QHASH
-                 ? CheckProofOfWorkQHash(block, chainman.GetConsensus(), POW_VERIFY_MINING, &rxHash)
+           !((block.nVersion & BLOCK_VERSION_QHASH)
+                 ? (chainman.GetConsensus().fDualAlgoEtchash
+                        ? CheckProofOfWorkEtchash(block, nMiningHeight, chainman.GetConsensus(), POW_VERIFY_MINING, &rxHash)
+                        : CheckProofOfWorkQHash(block, chainman.GetConsensus(), POW_VERIFY_MINING, &rxHash))
                  : CheckProofOfWorkRandomX(block, chainman.GetConsensus(), POW_VERIFY_MINING, &rxHash, prevBlockTime))) {
         ++block.nNonce;
         --max_tries;
@@ -199,6 +207,21 @@ uint256 rxHash;
     return true;
 }
 
+// !RCPU (dual-algo etchash): validate the "algo" RPC argument against the
+// consensus-selected second algorithm. Returns true if the template must
+// carry BLOCK_VERSION_QHASH (bit 30). The accepted name for the bit-30
+// algorithm is "etchash" when fDualAlgoEtchash is set, "qhash" otherwise.
+static bool ParseDualAlgoArg(const std::string& strAlgo, const Consensus::Params& consensusParams)
+{
+    if (strAlgo == "randomx") return false;
+    const char* active = consensusParams.fDualAlgoEtchash ? "etchash" : "qhash";
+    if (strAlgo == active) return true;
+    if (strAlgo == "qhash" || strAlgo == "etchash") {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("algo \"%s\" is not active on this chain (active dual algo: \"%s\")", strAlgo, active));
+    }
+    throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("Invalid algo \"%s\" (expected \"randomx\" or \"%s\")", strAlgo, active));
+}
+
 static UniValue generateBlocks(ChainstateManager& chainman, const CTxMemPool& mempool, const CScript& coinbase_script, int nGenerate, uint64_t nMaxTries, bool fQhash)
 {
     UniValue blockHashes(UniValue::VARR);
@@ -209,7 +232,7 @@ static UniValue generateBlocks(ChainstateManager& chainman, const CTxMemPool& me
         if (fQhash) {
             LOCK(cs_main);
             if (chainman.ActiveChain().Tip()->nHeight + 1 < chainman.GetConsensus().nDualAlgoActivationHeight) {
-                throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("qhash mining is not active before height %d", chainman.GetConsensus().nDualAlgoActivationHeight));
+                throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("%s mining is not active before height %d", chainman.GetConsensus().fDualAlgoEtchash ? "etchash" : "qhash", chainman.GetConsensus().nDualAlgoActivationHeight));
             }
         }
         BlockAssembler::Options assembler_options;
@@ -293,9 +316,7 @@ static RPCHelpMan generatetodescriptor()
     const auto num_blocks{self.Arg<int>(0)};
     const auto max_tries{self.Arg<uint64_t>(2)};
     // !RCPU (dual-algo): optional algo selector.
-    if (!request.params[3].isNull() && request.params[3].get_str() != "randomx" && request.params[3].get_str() != "qhash")
-        throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("Invalid algo \"%s\" (expected \"randomx\" or \"qhash\")", request.params[3].get_str()));
-    const bool fQhash{!request.params[3].isNull() && request.params[3].get_str() == "qhash"};
+    const bool fQhash{!request.params[3].isNull() && ParseDualAlgoArg(request.params[3].get_str(), Params().GetConsensus())};
     // !RCPU END
 
     CScript coinbase_script;
@@ -352,9 +373,7 @@ static RPCHelpMan generatetoaddress()
     const int num_blocks{request.params[0].getInt<int>()};
     const uint64_t max_tries{request.params[2].isNull() ? DEFAULT_MAX_TRIES : request.params[2].getInt<int>()};
     // !RCPU (dual-algo): optional algo selector.
-    if (!request.params[3].isNull() && request.params[3].get_str() != "randomx" && request.params[3].get_str() != "qhash")
-        throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("Invalid algo \"%s\" (expected \"randomx\" or \"qhash\")", request.params[3].get_str()));
-    const bool fQhash{!request.params[3].isNull() && request.params[3].get_str() == "qhash"};
+    const bool fQhash{!request.params[3].isNull() && ParseDualAlgoArg(request.params[3].get_str(), Params().GetConsensus())};
     // !RCPU END
 
     CTxDestination destination = DecodeDestination(request.params[1].get_str());
@@ -448,9 +467,7 @@ static RPCHelpMan generateblock()
 
     const bool process_new_block{request.params[2].isNull() ? true : request.params[2].get_bool()};
     // !RCPU (dual-algo): optional algo selector.
-    if (!request.params[3].isNull() && request.params[3].get_str() != "randomx" && request.params[3].get_str() != "qhash")
-        throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("Invalid algo \"%s\" (expected \"randomx\" or \"qhash\")", request.params[3].get_str()));
-    const bool fQhash{!request.params[3].isNull() && request.params[3].get_str() == "qhash"};
+    const bool fQhash{!request.params[3].isNull() && ParseDualAlgoArg(request.params[3].get_str(), Params().GetConsensus())};
     // !RCPU END
     CBlock block;
 
@@ -827,12 +844,7 @@ static RPCHelpMan getblocktemplate()
         // !RCPU (dual-algo): optional "algo" selector in template_request.
         const UniValue& algoval = oparam.find_value("algo");
         if (algoval.isStr()) {
-            const std::string& strAlgo = algoval.get_str();
-            if (strAlgo == "qhash") {
-                fQhashTemplate = true;
-            } else if (strAlgo != "randomx") {
-                throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("Invalid algo \"%s\" (expected \"randomx\" or \"qhash\")", strAlgo));
-            }
+            fQhashTemplate = ParseDualAlgoArg(algoval.get_str(), chainman.GetConsensus());
         } else if (!algoval.isNull()) {
             throw JSONRPCError(RPC_INVALID_PARAMETER, "algo must be a string");
         }
@@ -915,10 +927,10 @@ static RPCHelpMan getblocktemplate()
         throw JSONRPCError(RPC_INVALID_PARAMETER, "getblocktemplate must be called with the segwit rule set (call with {\"rules\": [\"segwit\"]})");
     }
 
-    // !RCPU (dual-algo): qhash templates are only served once dual-algo is
+    // !RCPU (dual-algo): bit-30 templates are only served once dual-algo is
     // active; below nDualAlgoActivationHeight consensus ignores the qhash bit.
     if (fQhashTemplate && active_chain.Tip()->nHeight + 1 < consensusParams.nDualAlgoActivationHeight) {
-        throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("qhash mining is not active before height %d", consensusParams.nDualAlgoActivationHeight));
+        throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("%s mining is not active before height %d", consensusParams.fDualAlgoEtchash ? "etchash" : "qhash", consensusParams.nDualAlgoActivationHeight));
     }
     // !RCPU END
 
@@ -1108,12 +1120,33 @@ static RPCHelpMan getblocktemplate()
     {
         enum : size_t { RCPU_LEGACY_HEADER_SIZE = 80 };
         if (pblock->nVersion & BLOCK_VERSION_QHASH) {
-            // !RCPU (dual-algo): qhash template output
-            result.pushKV("algo", "qhash");
-            result.pushKV("qhash_header_size", RCPU_LEGACY_HEADER_SIZE + RANDOMX_HASH_SIZE);
-            result.pushKV("qhash_hash_field", strprintf("hashRandomX at byte offset %zu, %d bytes; zero before hashing, fill with the qhash output before submission", RCPU_LEGACY_HEADER_SIZE, RANDOMX_HASH_SIZE));
-            result.pushKV("qhash_commitment_target", hashTarget.GetHex());
-            result.pushKV("qhash_pow_rule", "qhash-v1");
+            if (consensusParams.fDualAlgoEtchash) {
+                // !RCPU (dual-algo etchash): etchash template output. The
+                // pool MUST use etchash_epoch/etchash_seed_hash from here and
+                // MUST NOT recompute the epoch/seed from an assumed activation
+                // height. The miner builds the full DAG from etchash_seed_hash
+                // itself (etchash_cache_size is informational: it is the
+                // light-verification cache size; miners do NOT need to match
+                // it, only the seed matters).
+                const int64_t nTplHeight = pindexPrev->nHeight + 1;
+                const int64_t nEtEpoch = GetEtchashEpoch(nTplHeight, consensusParams);
+                result.pushKV("algo", "etchash");
+                result.pushKV("etchash_epoch", nEtEpoch);
+                result.pushKV("etchash_epoch_length", consensusParams.nEtchashEpochLength);
+                result.pushKV("etchash_seed_hash", GetEtchashSeedHash(nTplHeight, consensusParams).GetHex());
+                result.pushKV("etchash_cache_size", int64_t(etchash::CalcCacheSize(uint64_t(nEtEpoch))));
+                result.pushKV("etchash_header_size", RCPU_LEGACY_HEADER_SIZE + RANDOMX_HASH_SIZE);
+                result.pushKV("etchash_hash_field", strprintf("hashRandomX at byte offset %zu, %d bytes; zero before hashing, fill with the etchash result (keccak256(seed64||digest)) before submission", RCPU_LEGACY_HEADER_SIZE, RANDOMX_HASH_SIZE));
+                result.pushKV("etchash_commitment_target", hashTarget.GetHex());
+                result.pushKV("etchash_pow_rule", "etchash-ecip1099-light-v1");
+            } else {
+                // !RCPU (dual-algo): qhash template output
+                result.pushKV("algo", "qhash");
+                result.pushKV("qhash_header_size", RCPU_LEGACY_HEADER_SIZE + RANDOMX_HASH_SIZE);
+                result.pushKV("qhash_hash_field", strprintf("hashRandomX at byte offset %zu, %d bytes; zero before hashing, fill with the qhash output before submission", RCPU_LEGACY_HEADER_SIZE, RANDOMX_HASH_SIZE));
+                result.pushKV("qhash_commitment_target", hashTarget.GetHex());
+                result.pushKV("qhash_pow_rule", "qhash-v1");
+            }
         } else {
             result.pushKV("algo", "randomx");
             result.pushKV("rx_epoch_duration", consensusParams.nRandomXEpochDuration);
@@ -1337,21 +1370,30 @@ static RPCHelpMan computerandomxhash()
     // if this RPC did not clamp too, a header with a far-future nTime would
     // hash against a different epoch dataset than the one the network uses.
     uint32_t prevBlockTime = 0;
+    int nShareHeight = -1;
     {
         LOCK(cs_main);
         const CBlockIndex* pindexPrev = chainman.m_blockman.LookupBlockIndex(header.hashPrevBlock);
         if (pindexPrev != nullptr) {
             prevBlockTime = pindexPrev->GetBlockTime();
+            nShareHeight = pindexPrev->nHeight + 1;
         }
     }
 
     uint256 rx_hash;
-    // !RCPU (dual-algo): dispatch on the algorithm bit. For qhash headers the
-    // commitment is the qhash output itself (no separate RandomX commitment).
+    // !RCPU (dual-algo): dispatch on the algorithm bit. For qhash/etchash
+    // headers the commitment is the algo output itself (no separate RandomX
+    // commitment). Etchash needs the block height for its epoch.
     const bool fQhashHeader = (header.nVersion & BLOCK_VERSION_QHASH) != 0;
-    bool hash_ok = fQhashHeader
-        ? CheckProofOfWorkQHash(header, consensusParams, POW_VERIFY_MINING, &rx_hash)
-        : CheckProofOfWorkRandomX(header, consensusParams, POW_VERIFY_MINING, &rx_hash, prevBlockTime);
+    bool hash_ok;
+    if (fQhashHeader && consensusParams.fDualAlgoEtchash &&
+        nShareHeight >= consensusParams.nDualAlgoActivationHeight) {
+        hash_ok = CheckProofOfWorkEtchash(header, nShareHeight, consensusParams, POW_VERIFY_MINING, &rx_hash);
+    } else if (fQhashHeader) {
+        hash_ok = CheckProofOfWorkQHash(header, consensusParams, POW_VERIFY_MINING, &rx_hash);
+    } else {
+        hash_ok = CheckProofOfWorkRandomX(header, consensusParams, POW_VERIFY_MINING, &rx_hash, prevBlockTime);
+    }
 
     // !RCPU: For mining mode (POW_VERIFY_MINING), the hash is always computed
     // and outHash is set even if the commitment does not meet the target.

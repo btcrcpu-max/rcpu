@@ -139,9 +139,23 @@ bool BlockTreeDB::LoadBlockIndexGuts(const Consensus::Params& consensusParams, s
                 // not a RandomX hash, so the RandomX verifier must not see it.
                 {
                     const CBlockHeader hdr{pindexNew->GetBlockHeader()};
-                    const bool pow_ok = (hdr.nVersion & BLOCK_VERSION_QHASH)
-                        ? CheckProofOfWorkQHash(hdr, consensusParams, POW_VERIFY_COMMITMENT_ONLY)
-                        : CheckProofOfWorkRandomX(hdr, consensusParams, POW_VERIFY_COMMITMENT_ONLY);
+                    // !RCPU (dual-algo etchash): height-aware dispatch. Only
+                    // post-activation bit-30 blocks route to the second algo;
+                    // pindexNew->nHeight is available here.
+                    bool pow_ok;
+                    if ((hdr.nVersion & BLOCK_VERSION_QHASH) &&
+                        pindexNew->nHeight >= consensusParams.nDualAlgoActivationHeight) {
+                        pow_ok = consensusParams.fDualAlgoEtchash
+                            ? CheckProofOfWorkEtchash(hdr, pindexNew->nHeight, consensusParams, POW_VERIFY_COMMITMENT_ONLY)
+                            : CheckProofOfWorkQHash(hdr, consensusParams, POW_VERIFY_COMMITMENT_ONLY);
+                    } else if (hdr.nVersion & BLOCK_VERSION_QHASH) {
+                        // Pre-activation bit-30 block: consensus ignores the
+                        // bit, but historically these were verified as qhash
+                        // here; keep that behavior.
+                        pow_ok = CheckProofOfWorkQHash(hdr, consensusParams, POW_VERIFY_COMMITMENT_ONLY);
+                    } else {
+                        pow_ok = CheckProofOfWorkRandomX(hdr, consensusParams, POW_VERIFY_COMMITMENT_ONLY);
+                    }
                     if (!pow_ok) {
                         return error("%s: CheckProofOfWork failed: %s", __func__, pindexNew->ToString());
                     }
@@ -1060,9 +1074,26 @@ bool BlockManager::ReadBlockFromDisk(CBlock& block, const FlatFilePos& pos) cons
     // hashRandomX field carries the qhash commitment, not a RandomX hash.
     {
         const CBlockHeader hdr{block.GetBlockHeader()};
-        const bool pow_ok = (hdr.nVersion & BLOCK_VERSION_QHASH)
-            ? CheckProofOfWorkQHash(hdr, GetConsensus(), POW_VERIFY_COMMITMENT_ONLY)
-            : CheckProofOfWorkRandomX(hdr, GetConsensus(), POW_VERIFY_COMMITMENT_ONLY);
+        // !RCPU (dual-algo etchash): height-aware dispatch. Height is derived
+        // from the previous block index (hashPrevBlock); if the prev index is
+        // unknown the height is -1 and bit-30 blocks fall back to the qhash
+        // verifier (etchash needs a height; the authoritative check happens
+        // in AcceptBlockHeader with the true height).
+        int nHeight = -1;
+        {
+            LOCK(cs_main);
+            const CBlockIndex* pindexPrev = LookupBlockIndex(block.hashPrevBlock);
+            if (pindexPrev) nHeight = pindexPrev->nHeight + 1;
+        }
+        bool pow_ok;
+        if ((hdr.nVersion & BLOCK_VERSION_QHASH) &&
+            nHeight >= GetConsensus().nDualAlgoActivationHeight && GetConsensus().fDualAlgoEtchash) {
+            pow_ok = CheckProofOfWorkEtchash(hdr, nHeight, GetConsensus(), POW_VERIFY_COMMITMENT_ONLY);
+        } else if (hdr.nVersion & BLOCK_VERSION_QHASH) {
+            pow_ok = CheckProofOfWorkQHash(hdr, GetConsensus(), POW_VERIFY_COMMITMENT_ONLY);
+        } else {
+            pow_ok = CheckProofOfWorkRandomX(hdr, GetConsensus(), POW_VERIFY_COMMITMENT_ONLY);
+        }
         if (!pow_ok) {
     // !RCPU END
         return error("ReadBlockFromDisk: Errors in block header at %s", pos.ToString());

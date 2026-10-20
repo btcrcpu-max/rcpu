@@ -84,6 +84,34 @@ bool CheckProofOfWorkRandomX(const CBlockHeader& block, const Consensus::Params&
 bool CheckProofOfWorkQHash(const CBlockHeader& block, const Consensus::Params& params, POWVerifyMode mode = POW_VERIFY_FULL, uint256 *outHash = nullptr);
 
 /**
+ * RCPU dual-algo etchash: verify an Etchash (ECIP-1099, light) block. The
+ * block must carry, in its hashRandomX field, the etchash result
+ * (keccak256(seed64 || digest)) of the canonical 112-byte header
+ * (hashRandomX nulled) and that result must satisfy the block's nBits target.
+ *
+ * nHeight is required: the etchash epoch is height-driven
+ * (epoch = (nHeight - nDualAlgoActivationHeight) / nEtchashEpochLength), so
+ * verification is impossible without height context. Callers without height
+ * context must not attempt etchash verification.
+ *
+ * Semantics mirror CheckProofOfWorkQHash: in POW_VERIFY_MINING mode the
+ * computed result is returned via outHash even when it misses the target, so
+ * pool software can validate shares.
+ */
+bool CheckProofOfWorkEtchash(const CBlockHeader& block, int64_t nHeight, const Consensus::Params& params, POWVerifyMode mode = POW_VERIFY_FULL, uint256 *outHash = nullptr);
+
+/**
+ * RCPU dual-algo etchash: return the epoch seed for a given height
+ * (seed_e = keccak256^epoch(32 zero bytes)). Exposed for getblocktemplate:
+ * mining pools MUST take the seed hash from here instead of recomputing it
+ * from an assumed activation height.
+ */
+uint256 GetEtchashSeedHash(int64_t nHeight, const Consensus::Params& params);
+
+/** RCPU dual-algo etchash: epoch for a given height (-1 if pre-activation). */
+int64_t GetEtchashEpoch(int64_t nHeight, const Consensus::Params& params);
+
+/**
  * Serialize the canonical 112-byte RandomX hash-domain input for a header
  * (P1-1): fields in canonical order with hashRandomX nulled. Byte-identical
  * to the legacy raw-memory layout pinned by the static_asserts in

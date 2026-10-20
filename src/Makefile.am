@@ -577,6 +577,10 @@ crypto_libbitcoin_crypto_base_la_SOURCES = \
   crypto/muhash.cpp \
   crypto/qhash.cpp \
   crypto/qhash.h \
+  crypto/etchash.cpp \
+  crypto/etchash.h \
+  crypto/keccak.cpp \
+  crypto/keccak.h \
   crypto/ripemd160.cpp \
   crypto/ripemd160.h \
   crypto/sha1.cpp \

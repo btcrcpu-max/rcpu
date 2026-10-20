@@ -171,6 +171,22 @@ struct Params {
     // anchored at the activation height) so each converges to one block per
     // this interval and the combined chain runs at roughly half of it.
     int64_t nDualAlgoTargetSpacing{10 * 60};
+
+    // !RCPU (dual-algo etchash)
+    // When true, the second algorithm selected by BLOCK_VERSION_QHASH (bit 30)
+    // is Etchash (ECIP-1099 light verification) instead of qhash. The bit-30
+    // semantics and the per-algo difficulty machinery are unchanged; this flag
+    // only swaps which PoW function validates a bit-30 block at/after
+    // nDualAlgoActivationHeight. False keeps the legacy qhash path as a
+    // fallback. The bit stays ignored below the activation height either way.
+    bool fDualAlgoEtchash{false};
+
+    // Blocks per etchash epoch. epoch = (height - nDualAlgoActivationHeight)
+    // / nEtchashEpochLength; the seed is keccak256^epoch(32 zero bytes) and
+    // the light-verification cache is derived from that seed. Mining pools
+    // MUST take the epoch/seedhash from getblocktemplate and never recompute
+    // them locally from an assumed activation height.
+    int nEtchashEpochLength{30000};
     // !RCPU (dual-algo) END
 
 /** RCPU: block height at which confidential transactions (tx version == CT_VERSION) activate. */
