@@ -63,15 +63,15 @@ CRCCheck force
 XPStyle on
 BrandingText " "
 ShowInstDetails show
-VIProductVersion 1.0.14.0
+VIProductVersion 1.3.0.0
 VIAddVersionKey ProductName "rcpu"
-VIAddVersionKey ProductVersion "1.0.14"
+VIAddVersionKey ProductVersion "1.3.0"
 VIAddVersionKey CompanyName "${COMPANY}"
 VIAddVersionKey CompanyWebsite "${URL}"
-VIAddVersionKey FileVersion "1.0.14"
+VIAddVersionKey FileVersion "1.3.0"
 VIAddVersionKey FileDescription "Installer for rcpu"
 # !RCPU
-VIAddVersionKey LegalCopyright "Copyright (C) 2009-2026 The Bitcoin Core developers and the RCPU Developers"
+VIAddVersionKey LegalCopyright "Copyright (C) 2009-2026 The RCPU Core developers and the RCPU Developers"
 # !RCPU END
 InstallDirRegKey HKCU "${REGKEY}" Path
 ShowUninstDetails show
