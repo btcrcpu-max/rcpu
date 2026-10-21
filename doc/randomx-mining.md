@@ -149,3 +149,48 @@ Submit the full serialized block (112-byte header + transactions) to
 `submitblock`. The header in the submission must carry the computed
 `rx_hash` in `hashRandomX`; the node independently re-derives the commitment
 and, for full verification, re-hashes the header to confirm the value.
+
+## Dual-Algo (RandomX + Etchash) Mining
+
+From block height **21,000** (mainnet/testnet; 150 on regtest) RCPU runs
+dual-algo free competition (see `doc/consensus-params.md`):
+
+| Parameter | Mainnet value | Source reference |
+|-----------|---------------|------------------|
+| Activation height | **21,000** (mainnet/testnet); **150** (regtest) | `src/kernel/chainparams.cpp` (`nDualAlgoActivationHeight`) |
+| Version bit | **bit 30** (`0x40000000`, `BLOCK_VERSION_QHASH`) | `src/primitives/block.h` |
+| Second algorithm | **Etchash** (ECIP-1099 light verification, `fDualAlgoEtchash=true`) | `src/kernel/chainparams.cpp`; `src/pow.cpp` (`CheckProofOfWorkEtchash`) |
+| Etchash epoch length | **6000** blocks | `src/kernel/chainparams.cpp` (`nEtchashEpochLength`) |
+| Target spacing | 600 s (10 min) per algorithm | `src/kernel/chainparams.cpp` (`nDualAlgoTargetSpacing`) |
+
+- Blocks with bit 30 set are mined/verified with **Etchash** (light
+  verification: the node builds only the epoch cache, never the full DAG).
+- All other blocks use RandomX as described above.
+- Each algorithm runs its own ASERT difficulty instance anchored at
+  height 20,999 with a reference target of `nBits >> 1`.
+
+### Etchash epoch and seed — pools must use `getblocktemplate`
+
+The Etchash epoch is **height-driven**: `epoch = (height - 21000) / 6000` on
+mainnet/testnet. `getblocktemplate` for a bit-30 template returns
+`algo = "etchash"` plus:
+
+| Field | Meaning |
+|---|---|
+| `etchash_epoch` | Etchash epoch for the template height |
+| `etchash_epoch_length` | Epoch length in blocks (6000) |
+| `etchash_seed_hash` | 32-byte epoch seed (keccak256^epoch of 32 zero bytes) |
+| `etchash_cache_size` | Light-verification cache size for the epoch (informational) |
+| `etchash_header_size` | Serialized header size fed to the hash (**112**) |
+| `etchash_hash_field` | `hashRandomX` semantics for this template |
+| `etchash_commitment_target` | Maximum acceptable Etchash result (same 256-bit value as `target`) |
+| `etchash_pow_rule` | PoW rule identifier (`"etchash-ecip1099-light-v1"`) |
+
+**Pools MUST take `etchash_epoch` / `etchash_seed_hash` from
+`getblocktemplate` and MUST NOT recompute the epoch/seed from an assumed
+activation height.** The cache/seed derivation (Algorithm 1 in ECIP-1099) is
+standard Etchash: `seed = keccak256^epoch(32 zero bytes)`, augmented with the
+standard 64-byte header mix in the final digest
+(`result = keccak256(seed64 || digest)`, as enforced by
+`CheckProofOfWorkEtchash`). If the pool needs the full DAG to be generated
+locally it builds it from `etchash_seed_hash`; the node itself stays light.

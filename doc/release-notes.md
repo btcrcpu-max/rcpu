@@ -2,6 +2,7 @@
 
 RCPU Core release notes live in [doc/release-notes/](release-notes/):
 
+- [v1.3.0](release-notes/v1.3.0.md) — Etchash dual-algo (ECIP-1099 light verification) on bit-30 blocks from height 21,000 (`fDualAlgoEtchash`); v1.3.1 clean rebuild, v1.3.2 asset filename fix
 - [v1.1.7](release-notes/v1.1.7.md) — Wallet default Path C (`0x04`) send path; bare `rcpu1` explicit; 0x04 read-block upgrade (#66)
 - [v1.1.6](release-notes/v1.1.6.md) — CI make-check fail-closed, man rename, Windows installer match tighten (#53, #54)
 - [v1.1.5](release-notes/v1.1.5.md) — CT send path fix (fail-closed, #51)

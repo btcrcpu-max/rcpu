@@ -5,7 +5,9 @@
 
 RCPU is a CPU-mineable cryptocurrency with **Confidential Transactions (CT)**.
 Forked from Bitcoin Core 27.0, replacing SHA-256 PoW with **RandomX** for
-ASIC resistance, and adding on-chain privacy via Pedersen commitments.
+ASIC resistance, adding on-chain privacy via Pedersen commitments, and
+(mainnet/testnet from block 21,000) an **Etchash light-verification
+dual-algo** mode alongside RandomX.
 
 **Repository**: https://github.com/btcrcpu-max/rcpu
 
@@ -15,6 +17,9 @@ ASIC resistance, and adding on-chain privacy via Pedersen commitments.
 | RPC Port | **7337** |
 | CT Activation | Block **0** (genesis) |
 | ASERT Activation | Block **0** (genesis) |
+| Dual-Algo Activation | Block **21,000** |
+| Etchash Epoch Length | **6000** blocks |
+| Version Bit for Etchash | bit 30 (`0x40000000`) |
 | Genesis nTime | **1788566400** (2026-09-05 UTC) |
 | Block Time | 5 minutes |
 | Halving Interval | 210,000 blocks |
@@ -33,7 +38,9 @@ and is not the block date. Do not change either value.
 
 ## Features
 
-- **RandomX Proof-of-Work**: CPU-optimized, ASIC/GPU resistant
+- **RandomX Proof-of-Work**: CPU-optimized, ASIC/GPU resistant (primary algorithm)
+- **Etchash Dual-Algorithm** (height ≥ 21,000): ECIP-1099-style light verification
+  on version-bit-30 blocks, in free competition with RandomX (`fDualAlgoEtchash`)
 - **Confidential Transactions**: Pedersen commitments from genesis
 - **ASERT Difficulty Adjustment**: 2-day half-life, adjusts every block
 - **5-minute block time**: 288 blocks per day
@@ -54,7 +61,9 @@ RCPU defaults to **Bech32 (SegWit)** addresses, prefixed with `rcpu1`.
 RCPU also supports **confidential addresses** (`rcpux1...`) since v1.0.21.
 Sending to a `rcpux1...` address uses Path-B (ECDH) blinding: only the
 recipient can unblind the amount. Sending to an ordinary `rcpu1...` address
-falls back to Path-A (format-only confidentiality). See
+uses an explicit plaintext (non-confidential) output; the legacy Path-A
+(format-only confidentiality) Nonce style is banned above `nBanPathAHeight`
+and disabled in the wallet. See
 [doc/confidential-transactions.md](doc/confidential-transactions.md) and
 [doc/threat-model.md](doc/threat-model.md).
 

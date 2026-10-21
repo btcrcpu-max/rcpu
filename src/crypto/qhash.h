@@ -11,8 +11,16 @@
 #include <uint256.h>
 
 /**
- * RCPU qPoW ("qhash") — the second proof-of-work algorithm of the dual-algo
- * consensus (RandomX + qPoW), active from Consensus::Params::nDualAlgoActivationHeight.
+ * RCPU qPoW ("qhash") — the legacy second proof-of-work algorithm of the
+ * dual-algo consensus (RandomX + qPoW), active from
+ * Consensus::Params::nDualAlgoActivationHeight.
+ *
+ * DEPRECATED (mainnet/testnet since the Etchash switch): when
+ * Consensus::Params::fDualAlgoEtchash is true (current mainnet/testnet state)
+ * the bit-30 blocks are verified with Etchash (see src/pow.cpp
+ * CheckProofOfWorkEtchash) and qhash is kept only as a fallback for
+ * pre-etchash params, regtest overrides and test vectors. For chains with
+ * fDualAlgoEtchash false this remains the active second algorithm.
  *
  * The function simulates a 16-qubit state vector (65536 amplitudes) entirely in
  * Q30 signed fixed-point integer arithmetic (one unit = 2^30). Every operation

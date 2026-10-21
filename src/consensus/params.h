@@ -157,13 +157,15 @@ struct Params {
     uint32_t nRandomXEpochDuration{0};
 
     // !RCPU (dual-algo)
-    // Height at which dual-algo free competition (RandomX + qPoW) activates.
-    // Blocks at height >= this value may set BLOCK_VERSION_QHASH in nVersion
-    // and are then verified with qhash against the qPoW difficulty state;
-    // blocks without the bit are verified with RandomX against the RandomX
-    // difficulty state. At height < this value the bit is completely ignored
-    // (RandomX-only rules, identical to the pre-fork code paths). The default
-    // (INT_MAX) means "never active" for chains that do not opt in.
+    // Height at which dual-algo free competition (RandomX + a second
+    // algorithm) activates. Blocks at height >= this value may set
+    // BLOCK_VERSION_QHASH (bit 30) in nVersion and are then verified with the
+    // second algorithm (Etchash when fDualAlgoEtchash is true, legacy qhash
+    // otherwise) against its difficulty state; blocks without the bit are
+    // verified with RandomX against the RandomX difficulty state. At height <
+    // this value the bit is completely ignored (RandomX-only rules, identical
+    // to the pre-fork code paths). The default (INT_MAX) means "never active"
+    // for chains that do not opt in.
     int nDualAlgoActivationHeight{std::numeric_limits<int>::max()};
 
     // Post-activation target spacing for EACH algorithm (seconds). Both

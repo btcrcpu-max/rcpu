@@ -132,9 +132,11 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(const CScript& sc
     if (chainparams.MineBlocksOnDemand()) {
         pblock->nVersion = gArgs.GetIntArg("-blockversion", pblock->nVersion);
     }
-    // !RCPU (dual-algo): stamp the qhash bit before nBits is computed so
-    // GetNextWorkRequired selects the qhash ASERT difficulty (and UpdateTime's
-    // testnet min-difficulty recompute stays on the same algorithm).
+    // !RCPU (dual-algo): stamp the bit-30 (second algorithm: Etchash when
+    // fDualAlgoEtchash is set, legacy qhash otherwise) before nBits is
+    // computed so GetNextWorkRequired selects the correct per-algorithm ASERT
+    // difficulty (and UpdateTime's testnet min-difficulty recompute stays on
+    // the same algorithm).
     if (m_options.m_qhash_template) {
         pblock->nVersion |= BLOCK_VERSION_QHASH;
     }
