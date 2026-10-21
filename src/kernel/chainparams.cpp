@@ -613,7 +613,7 @@ public:
 
 consensus.fPowRandomX = true;
         consensus.nRandomXEpochDuration = 7 * 24 * 60 * 60;     // one week
-        // !RCPU (dual-algo): free competition (RandomX + qPoW) from height 21000.
+        // !RCPU (dual-algo): free competition (RandomX + second algorithm) from height 21000.
         // Each algorithm independently targets a 10-minute spacing; with both
         // active the combined cadence stays close to the current 5 minutes.
         consensus.nDualAlgoActivationHeight = 21000;
