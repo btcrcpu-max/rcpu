@@ -36,17 +36,20 @@ extern std::atomic<bool> g_isIBDFinished;
 inline bool HasRandomXHeaderField() { return g_isRandomX.load(std::memory_order_acquire); }
 
 // !RCPU
-// Dual-algo (RandomX + qPoW): nVersion bit that marks a block as mined with
-// the qPoW ("qhash") algorithm. The wire header layout is unchanged; the qPoW
-// result is carried in the existing hashRandomX field.
+// Dual-algo: nVersion bit that marks a block as mined with the second
+// algorithm (Etchash when Consensus::Params::fDualAlgoEtchash is true — the
+// current mainnet/testnet state — legacy qPoW "qhash" otherwise). The wire
+// header layout is unchanged; the algorithm result is carried in the existing
+// hashRandomX field.
 //
 // The bit is ONLY meaningful for blocks at height >=
 // Consensus::Params::nDualAlgoActivationHeight. Before activation every
 // consensus rule ignores it (blocks are verified as RandomX exactly as
 // before), so pre-activation behavior is byte-identical to the old rules.
-// From the activation height on, a set bit routes the header through qhash
-// verification and the per-algorithm (qPoW) difficulty target; a clear bit
-// keeps the RandomX path. Miners must NOT set this bit before activation.
+// From the activation height on, a set bit routes the header through the
+// second-algorithm verification and its per-algorithm difficulty target; a
+// clear bit keeps the RandomX path. Miners must NOT set this bit before
+// activation.
 static constexpr int32_t BLOCK_VERSION_QHASH = 0x40000000;
 // !RCPU END
 

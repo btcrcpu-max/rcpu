@@ -226,8 +226,8 @@ static UniValue generateBlocks(ChainstateManager& chainman, const CTxMemPool& me
 {
     UniValue blockHashes(UniValue::VARR);
     while (nGenerate > 0 && !chainman.m_interrupt) {
-        // !RCPU (dual-algo): refuse qhash templates below nDualAlgoActivationHeight
-        // (consensus ignores the qhash bit pre-activation and would verify the
+        // !RCPU (dual-algo): refuse second-algorithm templates below nDualAlgoActivationHeight
+        // (consensus ignores the bit-30 pre-activation and would verify the
         // solved block as RandomX).
         if (fQhash) {
             LOCK(cs_main);
@@ -300,7 +300,7 @@ static RPCHelpMan generatetodescriptor()
             // !RCPU END
             {"maxtries", RPCArg::Type::NUM, RPCArg::Default{DEFAULT_MAX_TRIES}, "How many iterations to try."},
             // !RCPU (dual-algo)
-            {"algo", RPCArg::Type::STR, RPCArg::Default{"randomx"}, "Which proof-of-work algorithm to mine with: \"randomx\" (default) or \"qhash\" (only after dual-algo activation)."},
+            {"algo", RPCArg::Type::STR, RPCArg::Default{"randomx"}, "Which proof-of-work algorithm to mine with: \"randomx\" (default), \"etchash\" or legacy \"qhash\" (only after dual-algo activation; the active second algorithm is etchash when fDualAlgoEtchash is set)."},
             // !RCPU END
         },
         RPCResult{
@@ -352,7 +352,7 @@ static RPCHelpMan generatetoaddress()
              // !RCPU END
              {"maxtries", RPCArg::Type::NUM, RPCArg::Default{DEFAULT_MAX_TRIES}, "How many iterations to try."},
              // !RCPU (dual-algo)
-             {"algo", RPCArg::Type::STR, RPCArg::Default{"randomx"}, "Which proof-of-work algorithm to mine with: \"randomx\" (default) or \"qhash\" (only after dual-algo activation)."},
+             {"algo", RPCArg::Type::STR, RPCArg::Default{"randomx"}, "Which proof-of-work algorithm to mine with: \"randomx\" (default), \"etchash\" or legacy \"qhash\" (only after dual-algo activation; the active second algorithm is etchash when fDualAlgoEtchash is set)."},
              // !RCPU END
          },
          RPCResult{
@@ -409,7 +409,7 @@ static RPCHelpMan generateblock()
             },
             {"submit", RPCArg::Type::BOOL, RPCArg::Default{true}, "Whether to submit the block before the RPC call returns or to return it as hex."},
             // !RCPU (dual-algo)
-            {"algo", RPCArg::Type::STR, RPCArg::Default{"randomx"}, "Which proof-of-work algorithm to mine with: \"randomx\" (default) or \"qhash\" (only after dual-algo activation)."},
+            {"algo", RPCArg::Type::STR, RPCArg::Default{"randomx"}, "Which proof-of-work algorithm to mine with: \"randomx\" (default), \"etchash\" or legacy \"qhash\" (only after dual-algo activation; the active second algorithm is etchash when fDualAlgoEtchash is set)."},
             // !RCPU END
         },
         RPCResult{
@@ -475,11 +475,11 @@ static RPCHelpMan generateblock()
     {
         LOCK(cs_main);
 
-        // !RCPU (dual-algo): refuse qhash templates below nDualAlgoActivationHeight
-        // (consensus ignores the qhash bit pre-activation and would verify the
+        // !RCPU (dual-algo): refuse second-algorithm templates below nDualAlgoActivationHeight
+        // (consensus ignores the bit-30 pre-activation and would verify the
         // solved block as RandomX).
         if (fQhash && chainman.ActiveChain().Tip()->nHeight + 1 < chainman.GetConsensus().nDualAlgoActivationHeight) {
-            throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("qhash mining is not active before height %d", chainman.GetConsensus().nDualAlgoActivationHeight));
+            throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("%s mining is not active before height %d", chainman.GetConsensus().fDualAlgoEtchash ? "etchash" : "qhash", chainman.GetConsensus().nDualAlgoActivationHeight));
         }
         BlockAssembler::Options assembler_options;
         assembler_options.m_qhash_template = fQhash;
@@ -699,7 +699,7 @@ static RPCHelpMan getblocktemplate()
                 {"longpollid", RPCArg::Type::STR, RPCArg::Optional::OMITTED, "delay processing request until the result would vary significantly from the \"longpollid\" of a prior template"},
                 {"data", RPCArg::Type::STR_HEX, RPCArg::Optional::OMITTED, "proposed block data to check, encoded in hexadecimal; valid only for mode=\"proposal\""},
                 // !RCPU (dual-algo)
-                {"algo", RPCArg::Type::STR, RPCArg::Optional::OMITTED, "Which proof-of-work algorithm the template should target: \"randomx\" (default) or \"qhash\" (only after dual-algo activation)"},
+                {"algo", RPCArg::Type::STR, RPCArg::Optional::OMITTED, "Which proof-of-work algorithm the template should target: \"randomx\" (default), \"etchash\" or legacy \"qhash\" (only after dual-algo activation; the active second algorithm is etchash when fDualAlgoEtchash is set)"},
                 // !RCPU END
             },
             },
@@ -928,7 +928,7 @@ static RPCHelpMan getblocktemplate()
     }
 
     // !RCPU (dual-algo): bit-30 templates are only served once dual-algo is
-    // active; below nDualAlgoActivationHeight consensus ignores the qhash bit.
+    // active; below nDualAlgoActivationHeight consensus ignores the bit.
     if (fQhashTemplate && active_chain.Tip()->nHeight + 1 < consensusParams.nDualAlgoActivationHeight) {
         throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("%s mining is not active before height %d", consensusParams.fDualAlgoEtchash ? "etchash" : "qhash", consensusParams.nDualAlgoActivationHeight));
     }

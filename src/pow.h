@@ -73,13 +73,18 @@ void StopRandomXThreads();
 bool CheckProofOfWorkRandomX(const CBlockHeader& block, const Consensus::Params& params, POWVerifyMode mode = POW_VERIFY_FULL, uint256 *outHash = nullptr, uint32_t prevBlockTime = 0);
 
 /**
- * RCPU dual-algo: verify a qPoW ("qhash") block. The block must carry the
- * qhash of the canonical 112-byte header (hashRandomX nulled) in its
- * hashRandomX field and that hash must satisfy the block's nBits target.
- * Semantics mirror CheckProofOfWorkRandomX: in POW_VERIFY_MINING mode the
- * computed hash is returned via outHash even when it misses the target, so
- * pool software can validate shares. qhash has no epochs and no separate
- * commitment, so every mode computes the full (fast) hash.
+ * RCPU dual-algo: verify a legacy qPoW ("qhash") block. Used for bit-30
+ * (BLOCK_VERSION_QHASH) blocks only when params.fDualAlgoEtchash is false;
+ * with fDualAlgoEtchash set (mainnet/testnet current state) bit-30 blocks are
+ * instead dispatched to CheckProofOfWorkEtchash and this function remains as
+ * fallback for pre-etchash params and test vectors.
+ * The block must carry the qhash of the canonical 112-byte header
+ * (hashRandomX nulled) in its hashRandomX field and that hash must satisfy
+ * the block's nBits target. Semantics mirror CheckProofOfWorkRandomX: in
+ * POW_VERIFY_MINING mode the computed hash is returned via outHash even when
+ * it misses the target, so pool software can validate shares. qhash has no
+ * epochs and no separate commitment, so every mode computes the full (fast)
+ * hash.
  */
 bool CheckProofOfWorkQHash(const CBlockHeader& block, const Consensus::Params& params, POWVerifyMode mode = POW_VERIFY_FULL, uint256 *outHash = nullptr);
 

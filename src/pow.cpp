@@ -422,7 +422,8 @@ arith_uint256 CalculateASERT(const arith_uint256 &refTarget,
 
 // !RCPU
 // ---------------------------------------------------------------------------
-// Dual-algo (RandomX + qPoW) difficulty, active from nDualAlgoActivationHeight.
+// Dual-algo (RandomX + Etchash) difficulty, active from
+// nDualAlgoActivationHeight.
 //
 // Each algorithm runs its own ASERT instance anchored at the activation
 // height: the anchor target is the last pre-activation target made twice as
@@ -432,6 +433,12 @@ arith_uint256 CalculateASERT(const arith_uint256 &refTarget,
 // difficulty converges to a point where it emits one block per
 // nDualAlgoTargetSpacing regardless of what the other algorithm does — free
 // competition with independent difficulty, long-run share ~50:50.
+//
+// The "second algorithm" is selected by the BLOCK_VERSION_QHASH bit (bit 30):
+// when params.fDualAlgoEtchash is true such blocks are verified with Etchash
+// (ECIP-1099-style light verification), otherwise with the legacy qhash
+// (qPoW) verifier. The fQhash parameter below is named after the version bit
+// that selects this second algorithm.
 // ---------------------------------------------------------------------------
 static uint32_t GetDualAlgoWorkRequired(const CBlockIndex* pindexLast,
                                         const CBlockHeader* pblock,
@@ -467,9 +474,11 @@ static uint32_t GetDualAlgoWorkRequired(const CBlockIndex* pindexLast,
         return powLimit.GetCompact();
     }
 
-    // Count qPoW blocks in [nActHeight, pindexLast->nHeight]. The backward
-    // walk is O(chain height - activation height) and runs under cs_main once
-    // per new header — cheap relative to the RandomX/qhash work of validation.
+    // Count bit-30 (second-algorithm) blocks in [nActHeight, pindexLast->nHeight]:
+    // Etchash when params.fDualAlgoEtchash is set, legacy qhash otherwise. The
+    // backward walk is O(chain height - activation height) and runs under
+    // cs_main once per new header — cheap relative to the hash work of
+    // validation.
     int64_t nQhashCount = 0;
     for (const CBlockIndex* p = pindexLast; p != nullptr && p->nHeight >= nActHeight; p = p->pprev) {
         if (p->nVersion & BLOCK_VERSION_QHASH) ++nQhashCount;
@@ -497,7 +506,8 @@ unsigned int GetNextWorkRequired(const CBlockIndex* pindexLast, const CBlockHead
 
     // !RCPU (dual-algo)
     // From the activation height the algorithm is chosen by the header's
-    // BLOCK_VERSION_QHASH bit and each algorithm uses its own ASERT instance.
+    // BLOCK_VERSION_QHASH bit (bit 30: Etchash when fDualAlgoEtchash is set,
+    // legacy qhash otherwise) and each algorithm uses its own ASERT instance.
     // Below the activation height this branch is dead code and the legacy
     // logic below is bit-for-bit unchanged.
     if (pindexLast->nHeight + 1 >= params.nDualAlgoActivationHeight) {
@@ -1021,7 +1031,11 @@ char rx_hash[RANDOMX_HASH_SIZE];
 }
 
 /**
- * RCPU dual-algo: verify a qPoW ("qhash") block.
+ * RCPU dual-algo: verify a legacy qPoW ("qhash") block.
+ *
+ * Used when bit 30 (BLOCK_VERSION_QHASH) is set and params.fDualAlgoEtchash
+ * is false; when fDualAlgoEtchash is true (mainnet/testnet since the Etchash
+ * switch) bit-30 blocks are instead dispatched to CheckProofOfWorkEtchash.
  *
  * Input domain: the same canonical 112-byte header serialization used for
  * RandomX (SerializeRandomXHeader, hashRandomX nulled). The 32-byte seed is

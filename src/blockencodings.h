@@ -136,7 +136,8 @@ public:
     CBlockHeader header;
 
     // Can be overridden for testing
-    // !RCPU (dual-algo): nHeight appended for the height-aware qhash dispatch;
+    // !RCPU (dual-algo): nHeight appended for the height-aware second-algorithm
+    // dispatch;
     // compact-block reconstruction has no block-index access and passes -1
     // (unknown height → permissive either-algo pre-check, authoritative
     // dispatch runs later in ProcessNewBlock/AcceptBlockHeader).

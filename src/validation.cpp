@@ -3784,9 +3784,10 @@ static bool CheckBlockHeader(const CBlockHeader& block, BlockValidationState& st
     // Check proof of work matches claimed amount
     // !RCPU
     // Dual-algo dispatch (height-aware): from nDualAlgoActivationHeight a
-    // header carrying BLOCK_VERSION_QHASH is verified with qhash, everything
-    // else (including ALL pre-activation blocks, where the bit is ignored)
-    // keeps the RandomX path unchanged.
+    // header carrying BLOCK_VERSION_QHASH is verified with the second
+    // algorithm (Etchash when fDualAlgoEtchash, legacy qhash otherwise),
+    // everything else (including ALL pre-activation blocks, where the bit is
+    // ignored) keeps the RandomX path unchanged.
     const int nHeight = pindexPrev ? pindexPrev->nHeight + 1 : -1;
     if (nHeight >= consensusParams.nDualAlgoActivationHeight && (block.nVersion & BLOCK_VERSION_QHASH)) {
         // !RCPU (dual-algo etchash): bit-30 blocks are Etchash when the flag
@@ -3932,14 +3933,17 @@ bool CheckBlock(const CBlock& block, BlockValidationState& state, const Consensu
     // disagrees with the epoch used at mining time and rejects valid blocks.
     // !RCPU END
     if (g_isRandomX) {
-        // !RCPU (dual-algo): qhash blocks are verified by full rehash (qhash is
-        // cheap and has no epoch). nHeight is supplied by contextual callers.
+        // !RCPU (dual-algo): bit-30 blocks are verified with the second
+        // algorithm — Etchash when fDualAlgoEtchash (height-aware, epoch
+        // derived from height), legacy qhash otherwise (cheap, no epoch).
+        // nHeight is supplied by contextual callers.
         // nHeight >= 0: strict height-aware dispatch — before activation the
         // bit is ignored (RandomX path), after activation a bit-set header must
-        // be qhash. nHeight < 0 (height unknown, e.g. a child header arriving
-        // before its parent): accept either proof, so pre-activation bit-set
-        // headers (where consensus ignores the bit entirely) and post-activation
-        // qhash children are not spuriously rejected and peers are not
+        // be verified with the second algorithm. nHeight < 0 (height unknown,
+        // e.g. a child header arriving before its parent): accept either
+        // proof, so pre-activation bit-set headers (where consensus ignores
+        // the bit entirely) and post-activation bit-set children are not
+        // spuriously rejected and peers are not
         // penalized for out-of-order relay; AcceptBlockHeader re-runs the
         // authoritative height-aware dispatch once the prev height is known.
         if (fCheckPOW && (block.nVersion & BLOCK_VERSION_QHASH)) {
@@ -4073,9 +4077,13 @@ std::vector<unsigned char> ChainstateManager::GenerateCoinbaseCommitment(CBlock&
 bool HasValidProofOfWork(const std::vector<CBlockHeader>& headers, const Consensus::Params& consensusParams)
 {
     return std::all_of(headers.cbegin(), headers.cend(),
-            // !RCPU (dual-algo): bit-set headers are checked with qhash;
+            // !RCPU (dual-algo): bit-set headers are checked with the second
+            // algorithm (Etchash or legacy qhash; height is unknown at this
+            // network-layer pre-check, so the height-unaware qhash verifier is
+            // attempted first and etchash acceptance happens in the
+            // authoritative height-aware dispatch);
             // everything else keeps the RandomX commitment check. The RandomX
-            // fallback for bit-set headers preserves pre-activation behaviour,
+            // fallback preserves pre-activation behaviour,
             // where consensus ignores the bit entirely: a bit-set header with a
             // valid RandomX commitment must still pass this network-layer
             // pre-check so pre-activation chains remain relayable (the
@@ -4562,9 +4570,10 @@ bool ChainstateManager::ProcessNewBlock(const std::shared_ptr<const CBlock>& blo
             }
         }
 
-        // !RCPU (dual-algo): supply the candidate height for the qhash dispatch
-        // inside CheckBlock. Unknown prev (-1) keeps the permissive either-algo
-        // pre-check; AcceptBlock/AcceptBlockHeader re-verify height-aware.
+        // !RCPU (dual-algo): supply the candidate height for the
+        // second-algorithm dispatch inside CheckBlock. Unknown prev (-1) keeps
+        // the permissive either-algo pre-check; AcceptBlock/AcceptBlockHeader
+        // re-verify height-aware.
         const CBlockIndex* pindex_prev{m_blockman.LookupBlockIndex(block->hashPrevBlock)};
         bool ret = CheckBlock(*block, state, GetConsensus(), /*fCheckPOW=*/true, /*fCheckMerkleRoot=*/true, pindex_prev ? pindex_prev->nHeight + 1 : -1);
         if (ret) {
@@ -4628,7 +4637,8 @@ bool TestBlockValidity(BlockValidationState& state,
     if (!ContextualCheckBlockHeader(block, state, chainstate.m_blockman, chainstate.m_chainman, pindexPrev))
         return error("%s: Consensus::ContextualCheckBlockHeader: %s", __func__, state.ToString());
     // !RCPU (dual-algo): pindexPrev->nHeight + 1 is the candidate block height,
-    // so a bit-set (qhash) mining template is verified with the right algorithm.
+    // so a bit-set (Etchash/qhash) mining template is verified with the right
+    // algorithm.
     if (!CheckBlock(block, state, chainparams.GetConsensus(), fCheckPOW, fCheckMerkleRoot, pindexPrev->nHeight + 1))
         return error("%s: Consensus::CheckBlock: %s", __func__, state.ToString());
     if (!ContextualCheckBlock(block, state, chainstate.m_chainman, pindexPrev))
@@ -4745,7 +4755,8 @@ VerifyDBResult CVerifyDB::VerifyDB(
             return VerifyDBResult::CORRUPTED_BLOCK_DB;
         }
         // check level 1: verify block validity
-        // !RCPU (dual-algo): supply the height for the height-aware qhash dispatch.
+        // !RCPU (dual-algo): supply the height for the height-aware
+        // second-algorithm dispatch.
         if (nCheckLevel >= 1 && !CheckBlock(block, state, consensus_params, true, true, pindex->nHeight)) {
             LogPrintf("Verification error: found bad block at %d, hash=%s (%s)\n",
                       pindex->nHeight, pindex->GetBlockHash().ToString(), state.ToString());

@@ -123,6 +123,7 @@ coinbase is rejected. Subsidy schedule is not a privacy feature
 | Path-A on-chain nonce | Legacy + `-ctlegacy` | Removing it is a wallet policy change, not consensus. |
 | Single-asset blinds | `BlindTransaction` balances one asset | Multi-asset CT is out of scope. |
 | RandomX | PoW, not CT | Custom patch vs upstream v1.2.1 must stay documented in the RandomX build scripts; swapping vanilla RandomX forks the chain. |
+| Dual-algo (bit-30: Etchash / legacy qhash) | PoW, not CT | After `nDualAlgoActivationHeight` (21,000 mainnet) bit-30 headers are verified with Etchash (ECIP-1099 light, `fDualAlgoEtchash=true`) or legacy qhash (`false`); each algorithm has an independent ASERT instance. The version bit is ignored before activation. Pools must take `etchash_epoch` / `etchash_seed_hash` from `getblocktemplate` and must not recompute the epoch from an assumed height. |
 
 ## 6. Node / p2p (non-CT)
 

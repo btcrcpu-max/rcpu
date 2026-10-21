@@ -134,8 +134,9 @@ bool BlockTreeDB::LoadBlockIndexGuts(const Consensus::Params& consensusParams, s
                 // !RCPU
                 pindexNew->hashRandomX    = diskindex.hashRandomX;
 
-                // !RCPU (dual-algo): dispatch on the algorithm bit. For qhash
-                // blocks the hashRandomX field carries the qhash commitment,
+                // !RCPU (dual-algo): dispatch on the algorithm bit. For bit-30
+                // blocks the hashRandomX field carries the second
+                // algorithm's commitment (Etchash or qhash),
                 // not a RandomX hash, so the RandomX verifier must not see it.
                 {
                     const CBlockHeader hdr{pindexNew->GetBlockHeader()};
@@ -1070,8 +1071,9 @@ bool BlockManager::ReadBlockFromDisk(CBlock& block, const FlatFilePos& pos) cons
     }
 
     // Check the header
-    // !RCPU (dual-algo): dispatch on the algorithm bit. For qhash blocks the
-    // hashRandomX field carries the qhash commitment, not a RandomX hash.
+    // !RCPU (dual-algo): dispatch on the algorithm bit. For bit-30 blocks the
+    // hashRandomX field carries the second algorithm's commitment (Etchash or
+    // qhash), not a RandomX hash.
     {
         const CBlockHeader hdr{block.GetBlockHeader()};
         // !RCPU (dual-algo etchash): height-aware dispatch. Height is derived
