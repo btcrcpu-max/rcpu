@@ -4,16 +4,22 @@
 
 #include <boost/test/unit_test.hpp>
 
+#include <consensus/amount.h>
+#include <consensus/merkle.h>
 #include <consensus/params.h>
+#include <consensus/validation.h>
 #include <crypto/etchash.h>
 #include <crypto/keccak.h>
 #include <crypto/qhash.h>
 #include <pow.h>
 #include <primitives/block.h>
+#include <primitives/transaction.h>
+#include <script/script.h>
 #include <span.h>
 #include <test/util/setup_common.h>
 #include <uint256.h>
 #include <util/strencodings.h>
+#include <validation.h>
 
 #include <vector>
 
@@ -288,6 +294,124 @@ BOOST_AUTO_TEST_CASE(etchash_pow_roundtrip)
     uint256 out;
     BOOST_CHECK(CheckProofOfWorkEtchash(genesis_like, 150, params, POW_VERIFY_FULL, &out));
     BOOST_CHECK(out.IsNull());
+}
+
+// !RCPU (dual-algo etchash): regression for the network-layer headers pre-check.
+// HasValidProofOfWork() used to probe only qhash + RandomX for bit-30 headers,
+// so every relayed Etchash header looked like invalid PoW and cost the peer 100
+// misbehaviour points (disconnect). It must verify Etchash when the height is
+// known and defer (not reject) when the height is unknown.
+BOOST_AUTO_TEST_CASE(etchash_header_pow_precheck_is_height_aware)
+{
+    Consensus::Params params;
+    params.powLimit = uint256S("0x7fffffff00000000000000000000000000000000000000000000000000000000");
+    params.nDualAlgoActivationHeight = 150;
+    params.nEtchashEpochLength = 10;
+    params.fDualAlgoEtchash = true;
+
+    CBlockHeader header;
+    header.nVersion = 1 | BLOCK_VERSION_QHASH;
+    header.hashPrevBlock = uint256S("0x0000000000000000000000000000000000000000000000000000000000000001");
+    header.hashMerkleRoot = uint256S("0x0000000000000000000000000000000000000000000000000000000000000002");
+    header.nTime = 1710000000;
+    header.nBits = 0x207fffff;
+
+    static const auto mine_header = [](CBlockHeader& h, int height, const Consensus::Params& p) {
+        uint256 solved;
+        for (uint32_t nonce = 0; nonce < 100000; ++nonce) {
+            h.nNonce = nonce;
+            if (CheckProofOfWorkEtchash(h, height, p, POW_VERIFY_MINING, &solved)) {
+                h.hashRandomX = solved;
+                return true;
+            }
+        }
+        return false;
+    };
+
+    BOOST_REQUIRE(mine_header(header, 150, params));
+
+    // Pre-activation fix this returned false: qhash does not match an Etchash
+    // result and the RandomX commitment is unrelated.
+    BOOST_CHECK(HasValidProofOfWork({header}, params, /*nStartHeight=*/150));
+
+    // Height unknown: deferred to AcceptBlockHeader, must not be rejected here.
+    BOOST_CHECK(HasValidProofOfWork({header}, params, /*nStartHeight=*/-1));
+
+    // Tampering with the stored Etchash result must still be caught.
+    CBlockHeader tampered = header;
+    *tampered.hashRandomX.begin() ^= 0x01;
+    BOOST_CHECK(!HasValidProofOfWork({tampered}, params, /*nStartHeight=*/150));
+}
+
+// !RCPU (dual-algo etchash): a valid Etchash block whose parent is unknown must
+// not be rejected as "high-hash" by the context-free CheckBlock(). Before the
+// fix the qhash/RandomX probe rejected it, which marked the relaying peer as
+// misbehaving (BLOCK_INVALID_HEADER) for ordinary out-of-order relay.
+BOOST_AUTO_TEST_CASE(etchash_block_unknown_height_defers_pow)
+{
+    // CheckBlock() takes the dual-algo branch only when g_isRandomX is set
+    // (node runtime); unit tests default to false.
+    struct RandomXFlagGuard {
+        bool saved{g_isRandomX.load()};
+        RandomXFlagGuard() { g_isRandomX = true; }
+        ~RandomXFlagGuard() { g_isRandomX = saved; }
+    } guard;
+
+    Consensus::Params params;
+    params.powLimit = uint256S("0x7fffffff00000000000000000000000000000000000000000000000000000000");
+    params.nDualAlgoActivationHeight = 150;
+    params.nEtchashEpochLength = 10;
+    params.fDualAlgoEtchash = true;
+    params.fPowRandomX = true;
+
+    CBlock block;
+    block.nVersion = 1 | BLOCK_VERSION_QHASH;
+    block.hashPrevBlock = uint256S("0x0000000000000000000000000000000000000000000000000000000000000001");
+    block.nTime = 1710000000;
+    block.nBits = 0x207fffff;
+
+    CMutableTransaction coinbase;
+    coinbase.nVersion = 1;
+    coinbase.vin.resize(1);
+    coinbase.vin[0].prevout.SetNull();
+    coinbase.vin[0].scriptSig = CScript() << OP_0 << OP_0;
+    CTxOut out;
+    out.nValue.SetToAmount(50 * COIN);
+    out.scriptPubKey = CScript() << OP_TRUE;
+    coinbase.vout.push_back(out);
+    block.vtx.push_back(MakeTransactionRef(coinbase));
+    block.hashMerkleRoot = BlockMerkleRoot(block);
+
+    // Solve at height 150. Retry with a different timestamp if the unrelated
+    // RandomX commitment happens to pass the target, so the old buggy path
+    // (reject as high-hash) is guaranteed to reproduce on a pre-fix build.
+    bool solved = false;
+    for (int attempt = 0; attempt < 64 && !solved; ++attempt) {
+        CBlockHeader candidate = block.GetBlockHeader();
+        uint256 etchash_result;
+        bool mined = false;
+        for (uint32_t nonce = 0; nonce < 100000; ++nonce) {
+            candidate.nNonce = nonce;
+            if (CheckProofOfWorkEtchash(candidate, 150, params, POW_VERIFY_MINING, &etchash_result)) {
+                candidate.hashRandomX = etchash_result;
+                mined = true;
+                break;
+            }
+        }
+        BOOST_REQUIRE(mined);
+        if (!CheckProofOfWorkRandomX(candidate, params, POW_VERIFY_COMMITMENT_ONLY)) {
+            block.nNonce = candidate.nNonce;
+            block.hashRandomX = candidate.hashRandomX;
+            solved = true;
+        } else {
+            block.nTime += 1;
+        }
+    }
+    BOOST_REQUIRE(solved);
+
+    // Height unknown (-1): PoW verdict is deferred to AcceptBlockHeader.
+    BlockValidationState state;
+    BOOST_CHECK(CheckBlock(block, state, params, /*fCheckPOW=*/true, /*fCheckMerkleRoot=*/true, /*nHeight=*/-1));
 }
 
 BOOST_AUTO_TEST_SUITE_END()

@@ -2540,17 +2540,24 @@ bool PeerManagerImpl::CheckHeadersPoW(const std::vector<CBlockHeader>& headers, 
     }
     // !RCPU END
 
-    // Do these headers have proof-of-work matching what's claimed?
-    if (!HasValidProofOfWork(headers, consensusParams)) {
-        Misbehaving(peer, 100, "header with invalid proof of work");
-        return false;
-    }
-
-    // Are these headers connected to each other?
+    // Are these headers connected to each other? Check this BEFORE the PoW
+    // pass: HasValidProofOfWork derives the height of every header from the
+    // batch start (needed for Etchash epochs), which is only meaningful for a
+    // contiguous sequence.
     if (!CheckHeadersAreContinuous(headers)) {
         Misbehaving(peer, 20, "non-continuous headers sequence");
         return false;
     }
+
+    // Do these headers have proof-of-work matching what's claimed?
+    // The first header builds on chain_start, so its height is known and the
+    // height-derived Etchash algorithm can be verified (and no longer
+    // mis-classified as invalid PoW after activation).
+    if (!HasValidProofOfWork(headers, consensusParams, chain_start->nHeight + 1)) {
+        Misbehaving(peer, 100, "header with invalid proof of work");
+        return false;
+    }
+
     return true;
 }
 
