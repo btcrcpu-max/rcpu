@@ -63,12 +63,12 @@ CRCCheck force
 XPStyle on
 BrandingText " "
 ShowInstDetails show
-VIProductVersion 1.3.2.0
+VIProductVersion 1.3.3.0
 VIAddVersionKey ProductName "rcpu"
-VIAddVersionKey ProductVersion "1.3.2"
+VIAddVersionKey ProductVersion "1.3.3"
 VIAddVersionKey CompanyName "${COMPANY}"
 VIAddVersionKey CompanyWebsite "${URL}"
-VIAddVersionKey FileVersion "1.3.2"
+VIAddVersionKey FileVersion "1.3.3"
 VIAddVersionKey FileDescription "Installer for rcpu"
 # !RCPU
 VIAddVersionKey LegalCopyright "Copyright (C) 2009-2026 The RCPU Core developers and the RCPU Developers"
@@ -112,7 +112,7 @@ Section -post SEC0001
     CreateShortcut "$SMPROGRAMS\$StartMenuGroup\Uninstall $(^Name).lnk" $INSTDIR\uninstall.exe
     !insertmacro MUI_STARTMENU_WRITE_END
     WriteRegStr HKCU "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$(^Name)" DisplayName "$(^Name)"
-    WriteRegStr HKCU "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$(^Name)" DisplayVersion "1.0.14"
+    WriteRegStr HKCU "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$(^Name)" DisplayVersion "1.3.3"
     WriteRegStr HKCU "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$(^Name)" Publisher "${COMPANY}"
     WriteRegStr HKCU "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$(^Name)" URLInfoAbout "${URL}"
 # !RCPU
