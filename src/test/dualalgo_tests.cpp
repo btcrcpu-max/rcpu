@@ -4,6 +4,8 @@
 
 #include <boost/test/unit_test.hpp>
 
+#include <arith_uint256.h>
+#include <chain.h>
 #include <consensus/amount.h>
 #include <consensus/merkle.h>
 #include <consensus/params.h>
@@ -21,6 +23,7 @@
 #include <util/strencodings.h>
 #include <validation.h>
 
+#include <memory>
 #include <vector>
 
 BOOST_FIXTURE_TEST_SUITE(dualalgo_tests, BasicTestingSetup)
@@ -412,6 +415,100 @@ BOOST_AUTO_TEST_CASE(etchash_block_unknown_height_defers_pow)
     // Height unknown (-1): PoW verdict is deferred to AcceptBlockHeader.
     BlockValidationState state;
     BOOST_CHECK(CheckBlock(block, state, params, /*fCheckPOW=*/true, /*fCheckMerkleRoot=*/true, /*nHeight=*/-1));
+}
+
+// !RCPU (dual-algo count cache): the cumulative bit-30 counter must be built
+// from the parent and must stay 0 for pre-activation blocks even when the
+// version bit is set.
+BOOST_AUTO_TEST_CASE(second_algo_count_cache_tracks_bit30)
+{
+    const int nActivation = 150;
+    std::vector<std::unique_ptr<CBlockIndex>> chain;
+    int64_t expected = 0;
+
+    for (int height = 148; height <= 158; ++height) {
+        auto index = std::make_unique<CBlockIndex>();
+        index->nHeight = height;
+        index->pprev = chain.empty() ? nullptr : chain.back().get();
+        // Even heights carry the second-algorithm bit, including pre-activation
+        // heights 148 and 150/152/... (the pre-activation ones must not count).
+        index->nVersion = (height % 2 == 0) ? BLOCK_VERSION_QHASH : 0;
+        if (height >= nActivation && (index->nVersion & BLOCK_VERSION_QHASH)) ++expected;
+
+        index->nSecondAlgoCount = ComputeSecondAlgoCount(*index, nActivation);
+        BOOST_CHECK_EQUAL(index->nSecondAlgoCount, expected);
+        chain.push_back(std::move(index));
+    }
+    BOOST_CHECK_EQUAL(chain.front()->nSecondAlgoCount, 0);
+    BOOST_CHECK_EQUAL(chain.back()->nSecondAlgoCount, 5); // 150,152,154,156,158
+
+    // An index whose parent count is unknown propagates -1 so the difficulty
+    // path falls back to the chain walk instead of using a bogus 0.
+    auto unset_parent = std::make_unique<CBlockIndex>();
+    unset_parent->nHeight = nActivation;
+    auto child = std::make_unique<CBlockIndex>();
+    child->nHeight = nActivation + 1;
+    child->pprev = unset_parent.get();
+    BOOST_CHECK_EQUAL(ComputeSecondAlgoCount(*child, nActivation), -1);
+}
+
+// !RCPU (dual-algo count cache): cached and walked difficulty must be
+// bit-for-bit identical for both algorithms, at and after activation.
+BOOST_AUTO_TEST_CASE(dual_algo_difficulty_cache_matches_chain_walk)
+{
+    Consensus::Params params;
+    params.powLimit = uint256S("0x7fffffff00000000000000000000000000000000000000000000000000000000");
+    params.nDualAlgoActivationHeight = 150;
+    params.nDualAlgoTargetSpacing = 600;
+    params.nPowTargetSpacing = 300;
+    params.fDualAlgoEtchash = true;
+    params.nEtchashEpochLength = 10;
+    params.fPowAllowMinDifficultyBlocks = false;
+    params.fPowNoRetargeting = false;
+    params.nASERTHalfLife = 2 * 24 * 60 * 60;
+
+    std::vector<std::unique_ptr<CBlockIndex>> chain;
+    for (int height = 140; height <= 185; ++height) {
+        auto index = std::make_unique<CBlockIndex>();
+        index->nHeight = height;
+        index->pprev = chain.empty() ? nullptr : chain.back().get();
+        index->nTime = 1710000000 + (height - 140) * 300;
+        index->nBits = 0x207fffff;
+        index->nVersion = (height % 3 == 0) ? BLOCK_VERSION_QHASH : 0;
+        // No BuildSkip(): this synthetic chain starts at height 140, so the
+        // skip pointers (which assume an unbroken chain from genesis) would
+        // point below the first index. GetAncestor() walks pprev instead.
+        index->nChainWork = (index->pprev ? index->pprev->nChainWork : arith_uint256(0)) + GetBlockProof(*index);
+        index->nSecondAlgoCount = ComputeSecondAlgoCount(*index, params.nDualAlgoActivationHeight);
+        chain.push_back(std::move(index));
+    }
+
+    int64_t manual = 0;
+    for (const auto& index : chain) {
+        if (index->nHeight >= params.nDualAlgoActivationHeight && (index->nVersion & BLOCK_VERSION_QHASH)) ++manual;
+    }
+    CBlockIndex* tip = chain.back().get();
+    BOOST_CHECK_EQUAL(tip->nSecondAlgoCount, manual);
+
+    CBlockHeader header;
+    header.nTime = tip->nTime + 300;
+
+    header.nVersion = 0;
+    const uint32_t randomx_cached = GetNextWorkRequired(tip, &header, params);
+    header.nVersion = BLOCK_VERSION_QHASH;
+    const uint32_t etchash_cached = GetNextWorkRequired(tip, &header, params);
+
+    // Force the O(N) fallback by clearing the cached count; the result must be
+    // identical to the O(1) cached path.
+    tip->nSecondAlgoCount = -1;
+
+    header.nVersion = 0;
+    BOOST_CHECK_EQUAL(GetNextWorkRequired(tip, &header, params), randomx_cached);
+    header.nVersion = BLOCK_VERSION_QHASH;
+    BOOST_CHECK_EQUAL(GetNextWorkRequired(tip, &header, params), etchash_cached);
+
+    // Sanity: the two algorithms do not generally produce the same target.
+    BOOST_CHECK(randomx_cached != etchash_cached);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

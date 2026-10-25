@@ -174,6 +174,17 @@ public:
     //! (memory only) Total amount of work (expected number of hashes) in the chain up to and including this block
     arith_uint256 nChainWork{};
 
+    // !RCPU
+    //! (memory only) Number of second-algorithm (BLOCK_VERSION_QHASH / bit-30)
+    //! blocks in the chain from nDualAlgoActivationHeight up to and including
+    //! this block. Pre-activation blocks are 0. -1 means "not computed yet"
+    //! (e.g. a CBlockIndex built outside BlockManager); the difficulty code
+    //! falls back to a chain walk in that case. Maintained in
+    //! BlockManager::AddToBlockIndex and rebuilt by BlockManager::LoadBlockIndex,
+    //! same lifecycle as nChainWork.
+    int64_t nSecondAlgoCount{-1};
+    // !RCPU END
+
     //! Number of transactions in this block.
     //! Note: in a potential headers-first mode, this number cannot be relied upon
     //! Note: this value is faked during UTXO snapshot load to ensure that

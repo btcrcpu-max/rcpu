@@ -421,6 +421,20 @@ arith_uint256 CalculateASERT(const arith_uint256 &refTarget,
 
 
 // !RCPU
+int64_t ComputeSecondAlgoCount(const CBlockIndex& index, int nDualAlgoActivationHeight)
+{
+    if (index.nHeight < nDualAlgoActivationHeight) {
+        return 0;
+    }
+    const int64_t prev = index.pprev ? index.pprev->nSecondAlgoCount : 0;
+    if (prev < 0) {
+        // Parent count not available (index built outside BlockManager). Signal
+        // "unknown" so the difficulty code falls back to walking the chain.
+        return -1;
+    }
+    return prev + ((index.nVersion & BLOCK_VERSION_QHASH) ? 1 : 0);
+}
+
 // ---------------------------------------------------------------------------
 // Dual-algo (RandomX + Etchash) difficulty, active from
 // nDualAlgoActivationHeight.
@@ -475,13 +489,17 @@ static uint32_t GetDualAlgoWorkRequired(const CBlockIndex* pindexLast,
     }
 
     // Count bit-30 (second-algorithm) blocks in [nActHeight, pindexLast->nHeight]:
-    // Etchash when params.fDualAlgoEtchash is set, legacy qhash otherwise. The
-    // backward walk is O(chain height - activation height) and runs under
-    // cs_main once per new header — cheap relative to the hash work of
-    // validation.
-    int64_t nQhashCount = 0;
-    for (const CBlockIndex* p = pindexLast; p != nullptr && p->nHeight >= nActHeight; p = p->pprev) {
-        if (p->nVersion & BLOCK_VERSION_QHASH) ++nQhashCount;
+    // Etchash when params.fDualAlgoEtchash is set, legacy qhash otherwise.
+    // CBlockIndex carries the cumulative count (maintained by BlockManager like
+    // nChainWork), so the normal path is O(1). A -1 count means the index was
+    // built outside BlockManager (unit tests, external tools): walk the chain
+    // then, which yields exactly the same value.
+    int64_t nQhashCount = pindexLast->nSecondAlgoCount;
+    if (nQhashCount < 0) {
+        nQhashCount = 0;
+        for (const CBlockIndex* p = pindexLast; p != nullptr && p->nHeight >= nActHeight; p = p->pprev) {
+            if (p->nVersion & BLOCK_VERSION_QHASH) ++nQhashCount;
+        }
     }
     const int64_t nTotal = pindexLast->nHeight - (nActHeight - 1);
     // Schedule index k: the next block of this algorithm is the (k+1)-th since

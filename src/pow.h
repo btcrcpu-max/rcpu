@@ -144,6 +144,18 @@ uint32_t GetNextASERTWorkRequired(const CBlockIndex *pindexPrev,
                                   const Consensus::Params &params,
                                   const CBlockIndex *pindexAnchorBlock) noexcept;
 
+/**
+ * RCPU dual-algo count cache: cumulative number of second-algorithm
+ * (BLOCK_VERSION_QHASH / bit-30) blocks from nDualAlgoActivationHeight up to
+ * and including `index`, using the cached count of `index.pprev`.
+ *
+ * Returns 0 for pre-activation blocks and -1 when the parent's count is not
+ * available (index built outside BlockManager, e.g. unit tests): the caller
+ * then falls back to walking the chain, so cached and uncached indices always
+ * produce identical difficulty.
+ */
+int64_t ComputeSecondAlgoCount(const CBlockIndex& index, int nDualAlgoActivationHeight);
+
 // !RCPU END
 
 #endif // BITCOIN_POW_H

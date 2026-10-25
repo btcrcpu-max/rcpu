@@ -252,6 +252,8 @@ CBlockIndex* BlockManager::AddToBlockIndex(const CBlockHeader& block, CBlockInde
     }
     pindexNew->nTimeMax = (pindexNew->pprev ? std::max(pindexNew->pprev->nTimeMax, pindexNew->nTime) : pindexNew->nTime);
     pindexNew->nChainWork = (pindexNew->pprev ? pindexNew->pprev->nChainWork : 0) + GetBlockProof(*pindexNew);
+    // !RCPU (dual-algo count cache): cumulative bit-30 count from activation.
+    pindexNew->nSecondAlgoCount = ComputeSecondAlgoCount(*pindexNew, GetConsensus().nDualAlgoActivationHeight);
     pindexNew->RaiseValidity(BLOCK_VALID_TREE);
     if (best_header == nullptr || best_header->nChainWork < pindexNew->nChainWork) {
         best_header = pindexNew;
@@ -458,6 +460,7 @@ bool BlockManager::LoadBlockIndex(const std::optional<uint256>& snapshot_blockha
               CBlockIndexHeightOnlyComparator());
 
     CBlockIndex* previous_index{nullptr};
+    const int nDualAlgoActivationHeight{GetConsensus().nDualAlgoActivationHeight};
     for (CBlockIndex* pindex : vSortedByHeight) {
         if (m_interrupt) return false;
         if (previous_index && pindex->nHeight > previous_index->nHeight + 1) {
@@ -466,6 +469,9 @@ bool BlockManager::LoadBlockIndex(const std::optional<uint256>& snapshot_blockha
         previous_index = pindex;
         pindex->nChainWork = (pindex->pprev ? pindex->pprev->nChainWork : 0) + GetBlockProof(*pindex);
         pindex->nTimeMax = (pindex->pprev ? std::max(pindex->pprev->nTimeMax, pindex->nTime) : pindex->nTime);
+        // !RCPU (dual-algo count cache): rebuild in height order, the parent is
+        // always processed before its children.
+        pindex->nSecondAlgoCount = ComputeSecondAlgoCount(*pindex, nDualAlgoActivationHeight);
 
         // We can link the chain of blocks for which we've received transactions at some point, or
         // blocks that are assumed-valid on the basis of snapshot load (see
