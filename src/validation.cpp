@@ -4592,11 +4592,26 @@ bool ChainstateManager::ProcessNewBlock(const std::shared_ptr<const CBlock>& blo
         }
 
         // !RCPU (dual-algo): supply the candidate height for the
-        // second-algorithm dispatch inside CheckBlock. Unknown prev (-1) keeps
-        // the permissive either-algo pre-check; AcceptBlock/AcceptBlockHeader
-        // re-verify height-aware.
+        // second-algorithm dispatch inside CheckBlock.
         const CBlockIndex* pindex_prev{m_blockman.LookupBlockIndex(block->hashPrevBlock)};
-        bool ret = CheckBlock(*block, state, GetConsensus(), /*fCheckPOW=*/true, /*fCheckMerkleRoot=*/true, pindex_prev ? pindex_prev->nHeight + 1 : -1);
+        // The real genesis block has no parent by definition and is re-processed
+        // by some callers/tests; it must still go through CheckBlock/AcceptBlock.
+        // Only the actual genesis is exempt: a peer-supplied block with a null
+        // hashPrevBlock but a different hash must not bypass the early reject.
+        const bool fGenesis{block->hashPrevBlock.IsNull() &&
+                            block->GetHash() == GetParams().GenesisBlock().GetHash()};
+        bool ret{false};
+        if (pindex_prev == nullptr && !fGenesis) {
+            // Unknown parent: the block cannot be validated or connected, and
+            // AcceptBlockHeader would reject it with BLOCK_MISSING_PREV anyway.
+            // Return before CheckBlock(): on Etchash chains the context-free PoW
+            // check is deferred for bit-30 blocks (height unknown), so running
+            // CheckBlock() first would let an orphan block force the full
+            // merkle/transaction validation path before it is discarded.
+            state.Invalid(BlockValidationResult::BLOCK_MISSING_PREV, "prev-blk-not-found");
+        } else {
+            ret = CheckBlock(*block, state, GetConsensus(), /*fCheckPOW=*/true, /*fCheckMerkleRoot=*/true, pindex_prev ? pindex_prev->nHeight + 1 : -1);
+        }
         if (ret) {
             // Store to disk
             ret = AcceptBlock(block, state, &pindex, force_processing, nullptr, new_block, min_pow_checked);
