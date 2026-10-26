@@ -33,6 +33,7 @@ struct LogSetup : public BasicTestingSetup {
     bool prev_log_timestamps;
     bool prev_log_threadnames;
     bool prev_log_sourcelocations;
+    bool prev_log_ratelimit;
     std::unordered_map<BCLog::LogFlags, BCLog::Level> prev_category_levels;
     BCLog::Level prev_log_level;
 
@@ -43,6 +44,7 @@ struct LogSetup : public BasicTestingSetup {
                  prev_log_timestamps{LogInstance().m_log_timestamps},
                  prev_log_threadnames{LogInstance().m_log_threadnames},
                  prev_log_sourcelocations{LogInstance().m_log_sourcelocations},
+                 prev_log_ratelimit{LogInstance().m_log_ratelimit},
                  prev_category_levels{LogInstance().CategoryLevels()},
                  prev_log_level{LogInstance().LogLevel()}
     {
@@ -51,6 +53,8 @@ struct LogSetup : public BasicTestingSetup {
         LogInstance().m_print_to_file = true;
         LogInstance().m_log_timestamps = false;
         LogInstance().m_log_threadnames = false;
+        // Individual tests opt in when they exercise the limiter.
+        LogInstance().m_log_ratelimit = false;
 
         // Prevent tests from failing when the line number of the logs changes.
         LogInstance().m_log_sourcelocations = false;
@@ -68,6 +72,7 @@ struct LogSetup : public BasicTestingSetup {
         LogInstance().m_log_timestamps = prev_log_timestamps;
         LogInstance().m_log_threadnames = prev_log_threadnames;
         LogInstance().m_log_sourcelocations = prev_log_sourcelocations;
+        LogInstance().m_log_ratelimit = prev_log_ratelimit;
         LogInstance().SetLogLevel(prev_log_level);
         LogInstance().SetCategoryLogLevel(prev_category_levels);
     }
@@ -275,6 +280,22 @@ BOOST_FIXTURE_TEST_CASE(logging_Conf, LogSetup)
         BOOST_CHECK(http_it != category_levels.end());
         BOOST_CHECK_EQUAL(http_it->second, BCLog::Level::Info);
     }
+}
+
+BOOST_FIXTURE_TEST_CASE(logging_ratelimit, LogSetup)
+{
+    LogInstance().m_log_ratelimit = true;
+    const std::string big(4096, 'x');
+    for (int i = 0; i < 400; ++i) {
+        LogPrintf_("fn", "ratelimit_src", 1, BCLog::LogFlags::ALL, BCLog::Level::Info, "%s\n", big.c_str());
+    }
+    std::ifstream file{tmp_log_path};
+    size_t lines{0};
+    for (std::string log; std::getline(file, log);) ++lines;
+    // 1 MiB budget / ~4 KiB per line: far fewer than 400 lines must be written.
+    BOOST_CHECK_GT(lines, 0U);
+    BOOST_CHECK_GE(lines, 200U);
+    BOOST_CHECK_LT(lines, 400U);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

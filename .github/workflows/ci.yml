@@ -1,4 +1,4 @@
-name: CI
+﻿name: CI
 
 on:
   push:
@@ -69,7 +69,7 @@ jobs:
           # name/params. dualalgo_tests covers the Etchash/qhash/RandomX
           # dispatch, including the height-aware headers pre-check regression.
           ./src/test/test_bitcoin --log_level=test_suite \
-            --run_test=blind_tests,confidential_validation_tests,randomx_tests,dualalgo_tests,coinbase_confidential_tests,group_outputs_tests,pow_tests,argsman_tests,tx_verify_tests,validation_block_tests,serialize_tests
+            --run_test=blind_tests,confidential_validation_tests,randomx_tests,dualalgo_tests,logging_tests,coinbase_confidential_tests,group_outputs_tests,pow_tests,argsman_tests,tx_verify_tests,validation_block_tests,serialize_tests
       - name: Consensus gate - explicit coinbase symbol
         run: |
           # v1.0.9 rule: every coinbase output must be explicit. The published
@@ -176,12 +176,12 @@ jobs:
           # doc/release-process.md).
           set -o pipefail
           ./src/test/test_bitcoin --log_level=test_suite \
-            --run_test=blind_tests,confidential_validation_tests,randomx_tests,dualalgo_tests,coinbase_confidential_tests,group_outputs_tests,pow_tests,argsman_tests,tx_verify_tests,validation_block_tests,serialize_tests 2>&1 | tee /tmp/rcpu-unit.log
-          # Fail closed: assert all eleven scoped suites actually ran. Guards
+            --run_test=blind_tests,confidential_validation_tests,randomx_tests,dualalgo_tests,logging_tests,coinbase_confidential_tests,group_outputs_tests,pow_tests,argsman_tests,tx_verify_tests,validation_block_tests,serialize_tests 2>&1 | tee /tmp/rcpu-unit.log
+          # Fail closed: assert all twelve scoped suites actually ran. Guards
           # against a --run_test typo or a silently dropped suite after the
           # scoped list changes.
           for suite in blind_tests confidential_validation_tests randomx_tests \
-                       dualalgo_tests coinbase_confidential_tests group_outputs_tests \
+                       dualalgo_tests logging_tests coinbase_confidential_tests group_outputs_tests \
                        pow_tests argsman_tests tx_verify_tests \
                        validation_block_tests serialize_tests; do
             grep -q "${suite}" /tmp/rcpu-unit.log || { echo "suite not executed: ${suite}"; exit 1; }
@@ -254,7 +254,8 @@ jobs:
           # fails the step. Only the --descriptors (SQLite) variant runs.
           python3 test/functional/wallet_confidential.py --descriptors
           python3 test/functional/wallet_coinbase_category.py --descriptors
-          # Dual-algo count-cache: mixed RandomX/Etchash mining across the
+          # dual-algo count-cache: mixed RandomX/Etchash mining across the
           # activation height, node restart (LoadBlockIndex rebuild) and
           # post-restart block acceptance.
           python3 test/functional/feature_dualalgo_count_cache.py --descriptors
+

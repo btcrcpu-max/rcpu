@@ -12,12 +12,15 @@
 #include <util/string.h>
 
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <functional>
 #include <list>
+#include <map>
 #include <mutex>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 static const bool DEFAULT_LOGTIMEMICROS = false;
@@ -26,6 +29,7 @@ static const bool DEFAULT_LOGTIMESTAMPS = true;
 static const bool DEFAULT_LOGTHREADNAMES = false;
 static const bool DEFAULT_LOGSOURCELOCATIONS = false;
 static constexpr bool DEFAULT_LOGLEVELALWAYS = false;
+static constexpr bool DEFAULT_LOGRATELIMIT = true;
 extern const char * const DEFAULT_DEBUGLOGFILE;
 
 extern bool fLogIPs;
@@ -86,6 +90,17 @@ namespace BCLog {
     private:
         mutable StdMutex m_cs; // Can not use Mutex from sync.h because in debug mode it would cause a deadlock when a potential deadlock was detected
 
+        struct RateLimitEntry {
+            std::chrono::steady_clock::time_point window_start;
+            uint64_t available_bytes;
+            uint64_t dropped_bytes{0};
+        };
+        static constexpr uint64_t RATELIMIT_MAX_BYTES{1 << 20};
+        static constexpr std::chrono::seconds RATELIMIT_WINDOW{3600};
+        std::map<std::pair<std::string, int>, RateLimitEntry> m_ratelimit_entries GUARDED_BY(m_cs);
+        /** Return true when this line should be dropped from the file. */
+        bool ShouldRateLimit(const std::string& source_file, int source_line, size_t bytes) EXCLUSIVE_LOCKS_REQUIRED(m_cs);
+
         FILE* m_fileout GUARDED_BY(m_cs) = nullptr;
         std::list<std::string> m_msgs_before_open GUARDED_BY(m_cs);
         bool m_buffering GUARDED_BY(m_cs) = true; //!< Buffer messages before logging can be started.
@@ -115,6 +130,9 @@ namespace BCLog {
     public:
         bool m_print_to_console = false;
         bool m_print_to_file = false;
+        //! Rate-limit unconditional info lines written to disk (1 MiB per
+        //! source location per hour) to mitigate log-flooding disk-fill DoS.
+        bool m_log_ratelimit = true;
 
         bool m_log_timestamps = DEFAULT_LOGTIMESTAMPS;
         bool m_log_time_micros = DEFAULT_LOGTIMEMICROS;
