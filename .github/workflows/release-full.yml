@@ -172,6 +172,13 @@ jobs:
           PREFIX=$PWD/depends/x86_64-pc-linux-gnu
           PKGVER=$(sed -n 's/^PACKAGE_VERSION = //p' Makefile | head -1)
           echo "PACKAGE_VERSION=$PKGVER"
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            TAGVER="${GITHUB_REF_NAME#v}"
+            if [ "$PKGVER" != "$TAGVER" ]; then
+              echo "ERROR: PACKAGE_VERSION=$PKGVER does not match tag $GITHUB_REF_NAME"
+              exit 1
+            fi
+          fi
           STAGE=$PWD/rcpu-${PKGVER}
           rm -rf "$STAGE"
           mkdir -p "$STAGE"
@@ -273,6 +280,13 @@ jobs:
         run: |
           PKGVER=$(sed -n 's/^PACKAGE_VERSION = //p' Makefile | head -1)
           echo "PACKAGE_VERSION=$PKGVER"
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            TAGVER="${GITHUB_REF_NAME#v}"
+            if [ "$PKGVER" != "$TAGVER" ]; then
+              echo "ERROR: PACKAGE_VERSION=$PKGVER does not match tag $GITHUB_REF_NAME"
+              exit 1
+            fi
+          fi
           test -n "$PKGVER" || { echo "ERROR: PKGVER empty"; exit 1; }
           echo "=== looking for installer / exe ==="
           find . -maxdepth 3 \( -iname '*win64-setup.exe' -o -iname 'rcpu-qt.exe' -o -iname 'rcpud.exe' \) | head -50

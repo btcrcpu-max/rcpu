@@ -131,6 +131,13 @@ coinbase is rejected. Subsidy schedule is not a privacy feature
   `CCheckQueueControl` and leave through one exit after `Wait()`.
   Lint: `test/lint/lint-cve-52911-connectblock.sh`.
 - 52921 / 52922 are already in the 27.0 baseline.
+- CVE-2025-46598 (CPU DoS from worst-case Script/Tapscript hashing) is **not**
+  backported (v30 mitigations #32473/#33050/#33105). Accepted as a low-severity
+  risk for now: the attack requires non-standard transactions and only delays
+  block propagation. Revisit before the next consensus release.
+- CVE-2025-54604/54605 (log flooding / disk filling) are **not** backported
+  (v29.1/v30 log rate limiting). Mitigate operationally with logrotate (or
+  equivalent) on nodes until the backport lands.
 - Other Core 28/29/30 advisories are tracked separately; this file
   does not claim they are all backported.
 
