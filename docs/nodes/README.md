@@ -116,13 +116,25 @@ sudo firewall-cmd --reload
 
 ## Seed Nodes
 
-DNS seeds compiled into the binary: seed1.rcpu.top, seed2.rcpu.top.
-The IPs below are operator fallbacks if DNS fails; they are not
-consensus and may change.
+DNS seeds compiled into the binary: seed1.rcpu.top, seed2.rcpu.top,
+seed3.rcpu.top. They point at the three public seed operators:
+
+| name | address |
+|---|---|
+| seed1.rcpu.top | 38.55.199.177:7227 |
+| seed2.rcpu.top | 207.57.129.188:7227 |
+| seed3.rcpu.top | 38.147.171.29:7227 |
+
+The same IPs are compiled in as operator fallbacks if DNS fails; they are
+not consensus and may change.
 
 ```ini
 addnode=seed1.rcpu.top:7227
 addnode=seed2.rcpu.top:7227
+addnode=seed3.rcpu.top:7227
+addnode=207.57.129.188:7227
+addnode=38.147.171.29:7227
+addnode=38.55.199.177:7227
 ```
 
 This list mirrors `share/examples/rcpu.conf` and the compiled seeds in
