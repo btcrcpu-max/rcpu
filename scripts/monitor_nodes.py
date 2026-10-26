@@ -5,6 +5,7 @@ Usage: python monitor_nodes.py [--watch] [--interval SECONDS]
 """
 
 import os
+import re
 import paramiko
 import time
 import json
@@ -42,6 +43,33 @@ NODES = [
 ]
 
 
+# === SECURITY: input validation for shell-injected fields ===
+# paramiko's exec_command runs through a remote shell, so any value
+# interpolated into the command string must be validated to prevent
+# command injection.
+_SAFE_TOKEN_RE = re.compile(r'^[A-Za-z0-9._/\-]+$')
+# rpc_cmd is a command path with arguments (spaces allowed); forbid shell
+# metacharacters that could break out of the intended command.
+_SAFE_CMD_RE = re.compile(r'^[A-Za-z0-9._/\-\s=]+$')
+
+
+def _is_valid_port(value):
+    """True if value is a decimal port number in [1, 65535]."""
+    if not isinstance(value, str):
+        return False
+    return value.isdigit() and 1 <= int(value) <= 65535
+
+
+def _is_safe_token(value):
+    """True if value contains only safe path/name characters."""
+    return isinstance(value, str) and bool(_SAFE_TOKEN_RE.match(value))
+
+
+def _is_safe_cmd(value):
+    """True if a command+args string has no shell metacharacters."""
+    return isinstance(value, str) and bool(_SAFE_CMD_RE.match(value))
+
+
 def get_node_status(node):
     """Get status of a single node"""
     rpc_port = node.get('rpc_port', RPC_PORT)
@@ -63,10 +91,24 @@ def get_node_status(node):
     }
     
     try:
+        # Validate shell-injected inputs BEFORE building any remote command.
+        if not _is_valid_port(rpc_port):
+            status['status'] = f'error: invalid rpc_port {rpc_port!r}'
+            return status
+
+        rpc_cmd = node.get('rpc_cmd', '')
+        if not _is_safe_cmd(rpc_cmd):
+            status['status'] = 'error: invalid rpc_cmd'
+            return status
+
         # Check RPC binding
         if node['is_docker']:
+            docker_name = node.get('docker_name', 'rcpud')
+            if not _is_safe_token(docker_name):
+                status['status'] = f'error: invalid docker_name {docker_name!r}'
+                return status
             _, stdout, _ = ssh.exec_command(
-                f'docker exec {node["docker_name"]} ss -tlnp 2>/dev/null | grep {rpc_port}', 
+                f'docker exec {docker_name} ss -tlnp 2>/dev/null | grep {rpc_port}', 
                 timeout=10)
         else:
             _, stdout, _ = ssh.exec_command(
@@ -82,7 +124,7 @@ def get_node_status(node):
         
         # Get blockchain info
         _, stdout, _ = ssh.exec_command(
-            f'{node["rpc_cmd"]} getblockchaininfo 2>&1', 
+            f'{rpc_cmd} getblockchaininfo 2>&1', 
             timeout=15)
         chain_info = stdout.read().decode().strip()
         
@@ -98,7 +140,7 @@ def get_node_status(node):
         
         # Get peer count
         _, stdout, _ = ssh.exec_command(
-            f'{node["rpc_cmd"]} getconnectioncount 2>&1', 
+            f'{rpc_cmd} getconnectioncount 2>&1', 
             timeout=10)
         try:
             status['peers'] = int(stdout.read().decode().strip())

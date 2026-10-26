@@ -5,6 +5,7 @@ Usage: python security_audit.py
 """
 
 import os
+import re
 import paramiko
 import json
 from datetime import datetime
@@ -35,6 +36,24 @@ NODES = [
 ]
 
 
+# === SECURITY: input validation for shell-injected fields ===
+# Allowed characters in a filesystem path / docker container name. Excludes
+# every shell metacharacter: ; | & $ ` ( ) < > space newline tab.
+_SAFE_TOKEN_RE = re.compile(r'^[A-Za-z0-9._/\-]+$')
+
+
+def _is_valid_port(value):
+    """True if value is a decimal port number in [1, 65535]."""
+    if not isinstance(value, str):
+        return False
+    return value.isdigit() and 1 <= int(value) <= 65535
+
+
+def _is_safe_token(value):
+    """True if value contains only safe path/name characters."""
+    return isinstance(value, str) and bool(_SAFE_TOKEN_RE.match(value))
+
+
 def audit_node(node):
     """Audit a single node's security"""
     rpc_port = node.get('rpc_port', RPC_PORT)
@@ -54,10 +73,22 @@ def audit_node(node):
                 password=node['password'] or None, timeout=15)
     
     try:
+        # Validate shell-injected inputs BEFORE building any remote command.
+        # rpc_port can come from the RCPU_RPC_PORT environment variable.
+        if not _is_valid_port(rpc_port):
+            report['issues'].append(f'CRITICAL: invalid rpc_port {rpc_port!r} (must be 1-65535)')
+            report['score'] = 0
+            return report
+
         # 1. Check RPC binding
         if node['is_docker']:
+            docker_name = node.get('docker_name', 'rcpud')
+            if not _is_safe_token(docker_name):
+                report['issues'].append(f'CRITICAL: invalid docker_name {docker_name!r}')
+                report['score'] = 0
+                return report
             _, stdout, _ = ssh.exec_command(
-                f'docker exec {node.get("docker_name", "rcpud")} ss -tlnp 2>/dev/null | grep {rpc_port}',
+                f'docker exec {docker_name} ss -tlnp 2>/dev/null | grep {rpc_port}',
                 timeout=10)
         else:
             _, stdout, _ = ssh.exec_command(f'ss -tlnp | grep {rpc_port}', timeout=10)
@@ -71,7 +102,12 @@ def audit_node(node):
             report['info'].append('RPC correctly bound to 127.0.0.1')
         
         # 2. Check config file
-        _, stdout, _ = ssh.exec_command(f'cat {node["conf_path"]} 2>/dev/null', timeout=10)
+        conf_path = node.get('conf_path', '')
+        if conf_path and not _is_safe_token(conf_path):
+            report['issues'].append(f'CRITICAL: invalid conf_path {conf_path!r}')
+            report['score'] = 0
+            return report
+        _, stdout, _ = ssh.exec_command(f'cat {conf_path} 2>/dev/null', timeout=10)
         conf = stdout.read().decode().strip()
         
         if conf:

@@ -1124,17 +1124,21 @@ static RPCHelpMan getblocktemplate()
                 // !RCPU (dual-algo etchash): etchash template output. The
                 // pool MUST use etchash_epoch/etchash_seed_hash from here and
                 // MUST NOT recompute the epoch/seed from an assumed activation
-                // height. The miner builds the full DAG from etchash_seed_hash
-                // itself (etchash_cache_size is informational: it is the
-                // light-verification cache size; miners do NOT need to match
-                // it, only the seed matters).
+                // height. The miner derives the full DAG size from the epoch;
+                // etchash_dataset_size/rows are provided for reference and
+                // must equal the standard ethash calcDatasetSize formula.
+                // etchash_cache_size is informational (light-verification
+                // cache); miners do NOT need to match it, only the seed matters.
                 const int64_t nTplHeight = pindexPrev->nHeight + 1;
                 const int64_t nEtEpoch = GetEtchashEpoch(nTplHeight, consensusParams);
+                const uint64_t nDatasetSize = etchash::CalcDatasetSize(uint64_t(nEtEpoch));
                 result.pushKV("algo", "etchash");
                 result.pushKV("etchash_epoch", nEtEpoch);
                 result.pushKV("etchash_epoch_length", consensusParams.nEtchashEpochLength);
                 result.pushKV("etchash_seed_hash", GetEtchashSeedHash(nTplHeight, consensusParams).GetHex());
                 result.pushKV("etchash_cache_size", int64_t(etchash::CalcCacheSize(uint64_t(nEtEpoch))));
+                result.pushKV("etchash_dataset_size", int64_t(nDatasetSize));
+                result.pushKV("etchash_dataset_rows", int64_t(nDatasetSize / etchash::MIX_BYTES));
                 result.pushKV("etchash_header_size", RCPU_LEGACY_HEADER_SIZE + RANDOMX_HASH_SIZE);
                 result.pushKV("etchash_hash_field", strprintf("hashRandomX at byte offset %zu, %d bytes; zero before hashing, fill with the etchash result (keccak256(seed64||digest)) before submission", RCPU_LEGACY_HEADER_SIZE, RANDOMX_HASH_SIZE));
                 result.pushKV("etchash_commitment_target", hashTarget.GetHex());

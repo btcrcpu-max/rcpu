@@ -1219,6 +1219,11 @@ bool CheckProofOfWorkEtchash(const CBlockHeader& block, int64_t nHeight, const C
     const uint256 seed = etchash::SeedForEpoch(uint64_t(epoch));
     std::shared_ptr<EtchashCacheEntry> cache = GetEtchashCache(epoch, seed);
 
+    // hashimotoLight's row count is derived from the full-DAG size, not the
+    // cache size (see etchash::CalcDatasetSize). Passing cache->size here
+    // would make `rows` far too small and break consensus.
+    const uint64_t dataset_size = etchash::CalcDatasetSize(uint64_t(epoch));
+
     const DataStream input = SerializeRandomXHeader(block);
     unsigned char header_hash[32];
     Keccak256((const unsigned char*)input.data(), input.size(), header_hash);
@@ -1227,7 +1232,7 @@ bool CheckProofOfWorkEtchash(const CBlockHeader& block, int64_t nHeight, const C
     const uint64_t nonce = uint64_t(block.nNonce);
 
     unsigned char digest[32], result[32];
-    etchash::HashimotoLight(cache->size, cache->words, header_hash, nonce, digest, result);
+    etchash::HashimotoLight(dataset_size, cache->words, header_hash, nonce, digest, result);
     uint256 result256;
     std::memcpy(result256.begin(), result, 32);
 
