@@ -298,4 +298,17 @@ BOOST_FIXTURE_TEST_CASE(logging_ratelimit, LogSetup)
     BOOST_CHECK_LT(lines, 400U);
 }
 
+BOOST_FIXTURE_TEST_CASE(logging_ratelimit_window_reset, LogSetup)
+{
+    LogInstance().m_log_ratelimit = true;
+    constexpr size_t MAX = 1 << 20;
+    const auto t0 = std::chrono::steady_clock::now();
+    // Exactly fill the window, then one byte is suppressed.
+    BOOST_CHECK(!LogInstance().RateLimitConsumeForTest("ratelimit_reset_src", 1, MAX, t0));
+    BOOST_CHECK(LogInstance().RateLimitConsumeForTest("ratelimit_reset_src", 1, 1, t0));
+    // Once the window has elapsed the quota must be available again. This is
+    // the regression guard for map::emplace not overwriting an existing entry.
+    BOOST_CHECK(!LogInstance().RateLimitConsumeForTest("ratelimit_reset_src", 1, 1, t0 + std::chrono::hours(2)));
+}
+
 BOOST_AUTO_TEST_SUITE_END()

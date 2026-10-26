@@ -414,13 +414,17 @@ std::string BCLog::Logger::GetLogPrefix(BCLog::LogFlags category, BCLog::Level l
     return s;
 }
 
-bool BCLog::Logger::ShouldRateLimit(const std::string& source_file, int source_line, size_t bytes)
+bool BCLog::Logger::ShouldRateLimit(const std::string& source_file, int source_line, size_t bytes, std::chrono::steady_clock::time_point now)
 {
-    const auto now = std::chrono::steady_clock::now();
     const auto key = std::make_pair(source_file, source_line);
     auto it = m_ratelimit_entries.find(key);
-    if (it == m_ratelimit_entries.end() || now - it->second.window_start >= RATELIMIT_WINDOW) {
+    if (it == m_ratelimit_entries.end()) {
         it = m_ratelimit_entries.emplace(key, RateLimitEntry{now, RATELIMIT_MAX_BYTES}).first;
+    } else if (now - it->second.window_start >= RATELIMIT_WINDOW) {
+        // Start a fresh window. map::emplace does not overwrite an existing
+        // key, so the entry must be assigned explicitly (otherwise an
+        // exhausted location would stay suppressed for the process lifetime).
+        it->second = RateLimitEntry{now, RATELIMIT_MAX_BYTES};
     }
     if (it->second.available_bytes >= bytes) {
         it->second.available_bytes -= bytes;
@@ -428,6 +432,12 @@ bool BCLog::Logger::ShouldRateLimit(const std::string& source_file, int source_l
     }
     it->second.dropped_bytes += bytes;
     return true;
+}
+
+bool BCLog::Logger::RateLimitConsumeForTest(const std::string& source_file, int source_line, size_t bytes, std::chrono::steady_clock::time_point now)
+{
+    StdLockGuard scoped_lock(m_cs);
+    return ShouldRateLimit(source_file, source_line, bytes, now);
 }
 
 void BCLog::Logger::LogPrintStr(const std::string& str, const std::string& logging_function, const std::string& source_file, int source_line, BCLog::LogFlags category, BCLog::Level level)
@@ -472,7 +482,7 @@ void BCLog::Logger::LogPrintStr(const std::string& str, const std::string& loggi
         // Rate-limit unconditional info lines written to disk (console output,
         // debug/trace categories and warnings/errors are not suppressed).
         if (m_log_ratelimit && level == BCLog::Level::Info && category == BCLog::LogFlags::ALL &&
-            ShouldRateLimit(source_file, source_line, str_prefixed.size())) {
+            ShouldRateLimit(source_file, source_line, str_prefixed.size(), std::chrono::steady_clock::now())) {
             return;
         }
 
