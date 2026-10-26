@@ -647,8 +647,9 @@ consensus.fPowRandomX = true;
 
         vFixedSeeds.assign(std::begin(chainparams_seed_main), std::end(chainparams_seed_main));  // Hardcoded mainnet seed IPs
 
-        vSeeds.emplace_back("seed1.rcpu.top");        // Main seed node
-        vSeeds.emplace_back("seed2.rcpu.top");        // Secondary seed node
+        vSeeds.emplace_back("seed1.rcpu.top");        // s3 38.55.199.177
+        vSeeds.emplace_back("seed2.rcpu.top");        // s1 207.57.129.188
+        vSeeds.emplace_back("seed3.rcpu.top");        // s2 38.147.171.29
         // vSeeds are DNS hints, not consensus.
 
         base58Prefixes[PUBKEY_ADDRESS] = std::vector<unsigned char>(1,0);
