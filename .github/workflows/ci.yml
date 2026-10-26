@@ -254,3 +254,7 @@ jobs:
           # fails the step. Only the --descriptors (SQLite) variant runs.
           python3 test/functional/wallet_confidential.py --descriptors
           python3 test/functional/wallet_coinbase_category.py --descriptors
+          # Dual-algo count-cache: mixed RandomX/Etchash mining across the
+          # activation height, node restart (LoadBlockIndex rebuild) and
+          # post-restart block acceptance.
+          python3 test/functional/feature_dualalgo_count_cache.py --descriptors
