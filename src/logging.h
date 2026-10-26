@@ -99,7 +99,7 @@ namespace BCLog {
         static constexpr std::chrono::seconds RATELIMIT_WINDOW{3600};
         std::map<std::pair<std::string, int>, RateLimitEntry> m_ratelimit_entries GUARDED_BY(m_cs);
         /** Return true when this line should be dropped from the file. */
-        bool ShouldRateLimit(const std::string& source_file, int source_line, size_t bytes) EXCLUSIVE_LOCKS_REQUIRED(m_cs);
+        bool ShouldRateLimit(const std::string& source_file, int source_line, size_t bytes, std::chrono::steady_clock::time_point now) EXCLUSIVE_LOCKS_REQUIRED(m_cs);
 
         FILE* m_fileout GUARDED_BY(m_cs) = nullptr;
         std::list<std::string> m_msgs_before_open GUARDED_BY(m_cs);
@@ -147,6 +147,9 @@ namespace BCLog {
 
         /** Send a string to the log output */
         void LogPrintStr(const std::string& str, const std::string& logging_function, const std::string& source_file, int source_line, BCLog::LogFlags category, BCLog::Level level);
+
+        /** Test seam: consume from the limiter with an explicit clock. */
+        bool RateLimitConsumeForTest(const std::string& source_file, int source_line, size_t bytes, std::chrono::steady_clock::time_point now);
 
         /** Returns whether logs will be written to any output */
         bool Enabled() const
