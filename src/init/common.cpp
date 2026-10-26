@@ -31,6 +31,7 @@ void AddLoggingArgs(ArgsManager& argsman)
         ArgsManager::ALLOW_ANY, OptionsCategory::DEBUG_TEST);
     argsman.AddArg("-debugexclude=<category>", "Exclude debug and trace logging for a category. Can be used in conjunction with -debug=1 to output debug and trace logging for all categories except the specified category. This option can be specified multiple times to exclude multiple categories.", ArgsManager::ALLOW_ANY, OptionsCategory::DEBUG_TEST);
     argsman.AddArg("-logips", strprintf("Include IP addresses in debug output (default: %u)", DEFAULT_LOGIPS), ArgsManager::ALLOW_ANY, OptionsCategory::DEBUG_TEST);
+    argsman.AddArg("-nologratelimit", strprintf("Do not rate-limit unconditional log lines written to disk (default: %u)", DEFAULT_LOGRATELIMIT), ArgsManager::ALLOW_ANY, OptionsCategory::DEBUG_TEST);
     argsman.AddArg("-loglevel=<level>|<category>:<level>", strprintf("Set the global or per-category severity level for logging categories enabled with the -debug configuration option or the logging RPC. Possible values are %s (default=%s). The following levels are always logged: error, warning, info. If <category>:<level> is supplied, the setting will override the global one and may be specified multiple times to set multiple category-specific levels. <category> can be: %s.", LogInstance().LogLevelsString(), LogInstance().LogLevelToStr(BCLog::DEFAULT_LOG_LEVEL), LogInstance().LogCategoriesString()), ArgsManager::DISALLOW_NEGATION | ArgsManager::DISALLOW_ELISION | ArgsManager::DEBUG_ONLY, OptionsCategory::DEBUG_TEST);
     argsman.AddArg("-logtimestamps", strprintf("Prepend debug output with timestamp (default: %u)", DEFAULT_LOGTIMESTAMPS), ArgsManager::ALLOW_ANY, OptionsCategory::DEBUG_TEST);
 #ifdef HAVE_THREAD_LOCAL
@@ -57,6 +58,7 @@ void SetLoggingOptions(const ArgsManager& args)
 #endif
     LogInstance().m_log_sourcelocations = args.GetBoolArg("-logsourcelocations", DEFAULT_LOGSOURCELOCATIONS);
     LogInstance().m_always_print_category_level = args.GetBoolArg("-loglevelalways", DEFAULT_LOGLEVELALWAYS);
+    LogInstance().m_log_ratelimit = !args.GetBoolArg("-nologratelimit", !DEFAULT_LOGRATELIMIT);
 
     fLogIPs = args.GetBoolArg("-logips", DEFAULT_LOGIPS);
 }

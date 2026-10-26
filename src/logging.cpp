@@ -414,6 +414,22 @@ std::string BCLog::Logger::GetLogPrefix(BCLog::LogFlags category, BCLog::Level l
     return s;
 }
 
+bool BCLog::Logger::ShouldRateLimit(const std::string& source_file, int source_line, size_t bytes)
+{
+    const auto now = std::chrono::steady_clock::now();
+    const auto key = std::make_pair(source_file, source_line);
+    auto it = m_ratelimit_entries.find(key);
+    if (it == m_ratelimit_entries.end() || now - it->second.window_start >= RATELIMIT_WINDOW) {
+        it = m_ratelimit_entries.emplace(key, RateLimitEntry{now, RATELIMIT_MAX_BYTES}).first;
+    }
+    if (it->second.available_bytes >= bytes) {
+        it->second.available_bytes -= bytes;
+        return false;
+    }
+    it->second.dropped_bytes += bytes;
+    return true;
+}
+
 void BCLog::Logger::LogPrintStr(const std::string& str, const std::string& logging_function, const std::string& source_file, int source_line, BCLog::LogFlags category, BCLog::Level level)
 {
     StdLockGuard scoped_lock(m_cs);
@@ -452,6 +468,13 @@ void BCLog::Logger::LogPrintStr(const std::string& str, const std::string& loggi
     }
     if (m_print_to_file) {
         assert(m_fileout != nullptr);
+
+        // Rate-limit unconditional info lines written to disk (console output,
+        // debug/trace categories and warnings/errors are not suppressed).
+        if (m_log_ratelimit && level == BCLog::Level::Info && category == BCLog::LogFlags::ALL &&
+            ShouldRateLimit(source_file, source_line, str_prefixed.size())) {
+            return;
+        }
 
         // reopen the log file, if requested
         if (m_reopen_file) {
