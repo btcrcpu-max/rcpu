@@ -206,7 +206,7 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y build-essential libtool autotools-dev \
             automake pkg-config bsdmainutils python3 cmake curl \
-            g++-mingw-w64-x86-64-posix nsis zip
+            g++-mingw-w64-x86-64-posix nsis zip osslsigncode
           sudo update-alternatives --set x86_64-w64-mingw32-g++ \
             /usr/bin/x86_64-w64-mingw32-g++-posix
       - name: Repair depends tree
@@ -277,6 +277,9 @@ jobs:
           strings "$BIN" | grep -q "CheckCoinbaseOutputsExplicit" ||             { echo "ERROR: rcpud.exe missing CheckCoinbaseOutputsExplicit symbol"; exit 1; }
           echo "OK: Windows rcpud.exe enforces explicit-coinbase rule"
       - name: Package Windows
+        env:
+          WINDOWS_SIGNING_CERT: ${{ secrets.WINDOWS_SIGNING_CERT }}
+          WINDOWS_SIGNING_PASSWORD: ${{ secrets.WINDOWS_SIGNING_PASSWORD }}
         run: |
           PKGVER=$(sed -n 's/^PACKAGE_VERSION = //p' Makefile | head -1)
           echo "PACKAGE_VERSION=$PKGVER"
@@ -307,6 +310,23 @@ jobs:
             SIZE=$(stat -c%s "$EXE")
             test "$SIZE" -ge 1000000 || { echo "ERROR: $EXE too small ($SIZE bytes)"; exit 1; }
             file "$EXE" || true
+            # Authenticode signing: enabled when the PFX (base64) and password
+            # secrets are configured. Unsigned releases still work but trigger
+            # SmartScreen; release managers should set the secrets.
+            if [ -n "${WINDOWS_SIGNING_CERT:-}" ]; then
+              echo "Signing $EXE with Authenticode"
+              printf '%s' "$WINDOWS_SIGNING_CERT" | base64 -d > /tmp/rcpu-sign.pfx
+              osslsigncode sign -pkcs12 /tmp/rcpu-sign.pfx \
+                -pass "${WINDOWS_SIGNING_PASSWORD}" \
+                -n "RCPU Core" -i "https://rcpu.top" \
+                -t "http://timestamp.digicert.com" \
+                -in "$EXE" -out "${EXE}.signed"
+              mv "${EXE}.signed" "$EXE"
+              osslsigncode verify -in "$EXE"
+              rm -f /tmp/rcpu-sign.pfx
+            else
+              echo "WARNING: WINDOWS_SIGNING_CERT not configured; installer will be unsigned"
+            fi
             zip "rcpu-${PKGVER}-win64-setup.zip" "$EXE"
             sha256sum "$EXE" "rcpu-${PKGVER}-win64-setup.zip" > SHA256SUMS-windows.txt
             cat SHA256SUMS-windows.txt
