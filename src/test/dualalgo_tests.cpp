@@ -198,6 +198,41 @@ BOOST_AUTO_TEST_CASE(etchash_cache_generation)
         "887899ffc556cbd174f426e32ae2ab711be859601c024d1514b29a27370b662e");
 }
 
+// !RCPU (dual-algo etchash): dataset (full DAG) sizes follow geth
+// calcDatasetSize: highest prime-bounded size below
+// DATASET_INIT_BYTES + DATASET_GROWTH_BYTES*epoch, prime on size/MIX_BYTES.
+// Values are the first entries of go-ethereum's datasetSizes table.
+BOOST_AUTO_TEST_CASE(etchash_dataset_size_table)
+{
+    BOOST_CHECK_EQUAL(etchash::CalcDatasetSize(0), 1073739904ULL);
+    BOOST_CHECK_EQUAL(etchash::CalcDatasetSize(1), 1082130304ULL);
+    BOOST_CHECK_EQUAL(etchash::CalcDatasetSize(2), 1090514816ULL);
+    BOOST_CHECK_EQUAL(etchash::CalcDatasetSize(3), 1098906752ULL);
+    BOOST_CHECK_EQUAL(etchash::CalcDatasetSize(4), 1107293056ULL);
+    for (uint64_t e : {0, 1, 2, 3, 4}) {
+        const uint64_t size = etchash::CalcDatasetSize(e);
+        BOOST_CHECK_EQUAL(size % etchash::MIX_BYTES, 0);
+        BOOST_CHECK(etchash::IsPrime(size / etchash::MIX_BYTES));
+    }
+}
+
+// !RCPU (dual-algo etchash): official go-ethereum TestHashimoto vector
+// (algorithm_test.go). Small 1 KiB cache and 32 KiB dataset keep the test fast
+// while exercising the dataset-size-derived row count end to end.
+BOOST_AUTO_TEST_CASE(etchash_hashimoto_geth_vector)
+{
+    const std::vector<uint32_t> cache = etchash::GenerateCache(1024, etchash::SeedForEpoch(0));
+    const unsigned char hash[32] = {
+        0xc9,0x14,0x9c,0xc0,0x38,0x6e,0x68,0x9d,0x78,0x9a,0x1c,0x2f,0x3d,0x5d,0x16,0x9a,
+        0x61,0xa6,0x21,0x8e,0xd3,0x0e,0x74,0x41,0x4d,0xc7,0x36,0xe4,0x42,0xef,0x3d,0x1f};
+    unsigned char digest[32], result[32];
+    etchash::HashimotoLight(32 * 1024, cache, hash, 0, digest, result);
+    BOOST_CHECK_EQUAL(HexStr(Span<const uint8_t>{digest, 32}),
+        "e4073cffaef931d37117cefd9afd27ea0f1cad6a981dd2605c4a1ac97c519800");
+    BOOST_CHECK_EQUAL(HexStr(Span<const uint8_t>{result, 32}),
+        "d3539235ee2e6f8db665c0a72169f55b7f6c605712330b778ec3944f0eb5a557");
+}
+
 // !RCPU (dual-algo etchash): hashimotoLight over the epoch-0 and epoch-1
 // caches with header_hash = keccak256("rcpu etchash vector"), nonce 42 —
 // hardcoded vectors from the independent Python reference implementation so a
@@ -213,23 +248,27 @@ BOOST_AUTO_TEST_CASE(etchash_hashimoto_vectors)
     unsigned char digest[32], result[32];
 
     {
-        const uint64_t size = etchash::CalcCacheSize(0);
-        const std::vector<uint32_t> cache = etchash::GenerateCache(size, etchash::SeedForEpoch(0));
-        etchash::HashimotoLight(size, cache, header_hash, nonce, digest, result);
+        const uint64_t cache_size = etchash::CalcCacheSize(0);
+        const uint64_t dataset_size = etchash::CalcDatasetSize(0);
+        const std::vector<uint32_t> cache = etchash::GenerateCache(cache_size, etchash::SeedForEpoch(0));
+        // hashimotoLight's row count is dataset_size / MIX_BYTES (full DAG),
+        // NOT cache_size / MIX_BYTES (the pre-fix bug).
+        etchash::HashimotoLight(dataset_size, cache, header_hash, nonce, digest, result);
         BOOST_CHECK_EQUAL(HexStr(Span<const uint8_t>{digest, 32}),
-            "f8bc0eaf90805c3635020904e3f246d1d52b2eebc6e7f4d2e9b5e4a95d72e3df");
+            "bfbb3b1a38793e4076f16a176d4cad618ecc6362ea236a82c9140402a95f10d0");
         BOOST_CHECK_EQUAL(HexStr(Span<const uint8_t>{result, 32}),
-            "5bea955a8035c5b5226a447677b25927e8428bc578aa4ae5a06abb1e60123a39");
+            "e0e36718f1c01cd5edc80ede160531f8b3756390f8353ae9da9b635ccddd4f41");
     }
 
     {
-        const uint64_t size = etchash::CalcCacheSize(1);
-        const std::vector<uint32_t> cache = etchash::GenerateCache(size, etchash::SeedForEpoch(1));
-        etchash::HashimotoLight(size, cache, header_hash, nonce, digest, result);
+        const uint64_t cache_size = etchash::CalcCacheSize(1);
+        const uint64_t dataset_size = etchash::CalcDatasetSize(1);
+        const std::vector<uint32_t> cache = etchash::GenerateCache(cache_size, etchash::SeedForEpoch(1));
+        etchash::HashimotoLight(dataset_size, cache, header_hash, nonce, digest, result);
         BOOST_CHECK_EQUAL(HexStr(Span<const uint8_t>{digest, 32}),
-            "4ac9c855055b36a204828196f892fbb591f2509ed025871b6f1c1418d28a4a92");
+            "3120a41699eac1d2a0896914b37f287946dca28ae8397568e622ffe02321d709");
         BOOST_CHECK_EQUAL(HexStr(Span<const uint8_t>{result, 32}),
-            "aee2525dc2948c931c7e94b7385c822c55abd7648f89e2bcd09591fdc0372a4f");
+            "799bdf1e383301e774b1937b50e9326392d2359d1638aa40bad22694d91fbdb8");
     }
 }
 

@@ -2,6 +2,7 @@
 
 RCPU Core release notes live in [doc/release-notes/](release-notes/):
 
+- [v1.3.4](release-notes/v1.3.4.md) — consensus-critical Etchash fix: hashimotoLight now uses the full-DAG dataset size (standard go-ethereum vector); **all Etchash miners/pools must upgrade before height 21,000**
 - [v1.3.3](release-notes/v1.3.3.md) — P0 pre-activation fix: Etchash headers are no longer rejected as invalid PoW by the height-unaware pre-checks; upgrade before height 21,000
 - [v1.3.0](release-notes/v1.3.0.md) — Etchash dual-algo (ECIP-1099 light verification) on bit-30 blocks from height 21,000 (`fDualAlgoEtchash`); v1.3.1 clean rebuild, v1.3.2 asset filename fix
 - [v1.1.7](release-notes/v1.1.7.md) — Wallet default Path C (`0x04`) send path; bare `rcpu1` explicit; 0x04 read-block upgrade (#66)

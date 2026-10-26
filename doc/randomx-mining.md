@@ -181,6 +181,8 @@ mainnet/testnet. `getblocktemplate` for a bit-30 template returns
 | `etchash_epoch_length` | Epoch length in blocks (6000) |
 | `etchash_seed_hash` | 32-byte epoch seed (keccak256^epoch of 32 zero bytes) |
 | `etchash_cache_size` | Light-verification cache size for the epoch (informational) |
+| `etchash_dataset_size` | Full DAG size for the epoch (standard ethash `calcDatasetSize`) |
+| `etchash_dataset_rows` | `dataset_size / 128` — the row count hashimotoLight indexes |
 | `etchash_header_size` | Serialized header size fed to the hash (**112**) |
 | `etchash_hash_field` | `hashRandomX` semantics for this template |
 | `etchash_commitment_target` | Maximum acceptable Etchash result (same 256-bit value as `target`) |
@@ -192,5 +194,9 @@ activation height.** The cache/seed derivation (Algorithm 1 in ECIP-1099) is
 standard Etchash: `seed = keccak256^epoch(32 zero bytes)`, augmented with the
 standard 64-byte header mix in the final digest
 (`result = keccak256(seed64 || digest)`, as enforced by
-`CheckProofOfWorkEtchash`). If the pool needs the full DAG to be generated
-locally it builds it from `etchash_seed_hash`; the node itself stays light.
+`CheckProofOfWorkEtchash`). The full-DAG size is the standard ethash
+`calcDatasetSize(epoch)` (1 GiB + 8 MiB/epoch, prime-bounded), and
+`hashimotoLight` uses `dataset_size / 128` rows. Only the epoch length is
+RCPU-specific (6000 instead of 30000), because the epoch is height-driven.
+If the pool needs the full DAG to be generated locally it builds it from
+`etchash_seed_hash`; the node itself stays light.

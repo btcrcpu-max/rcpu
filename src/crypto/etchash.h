@@ -37,6 +37,12 @@ constexpr int CACHE_ROUNDS = 3;      //!< number of rounds in cache production
 constexpr int LOOP_ACCESSES = 64;    //!< number of accesses in hashimoto loop
 constexpr uint64_t CACHE_INIT_BYTES = 1 << 24;   //!< cache size at epoch 0
 constexpr uint64_t CACHE_GROWTH_BYTES = 1 << 17; //!< cache growth per epoch
+// Etchash (ECIP-1099) keeps ethash's dataset growth constant (1<<23); the
+// "halved DAG growth" of ECIP-1099 comes from doubling the epoch length, not
+// from changing datasetGrowthBytes. These are the full-DAG sizes used to
+// derive `rows` in hashimotoLight, NOT the cache size.
+constexpr uint64_t DATASET_INIT_BYTES = 1 << 30;   //!< dataset size at epoch 0
+constexpr uint64_t DATASET_GROWTH_BYTES = 1 << 23; //!< dataset growth per epoch
 
 /** Exact primality test for n < 2^64 (deterministic Miller-Rabin, 7 bases). */
 bool IsPrime(uint64_t n);
@@ -44,6 +50,11 @@ bool IsPrime(uint64_t n);
 /** Cache size for an epoch: highest prime-bounded size below the linear
  *  threshold, per geth calcCacheSize. */
 uint64_t CalcCacheSize(uint64_t epoch);
+
+/** Dataset (full DAG) size for an epoch: same prime-bounding rule as
+ *  CalcCacheSize but on the dataset linear threshold. hashimotoLight uses
+ *  dataset_size / MIX_BYTES as its row count. */
+uint64_t CalcDatasetSize(uint64_t epoch);
 
 /** seed_e = keccak256^epoch(32 zero bytes). */
 uint256 SeedForEpoch(uint64_t epoch);
@@ -58,9 +69,11 @@ void GenerateDatasetItem(const std::vector<uint32_t>& cache_words, uint32_t inde
                          unsigned char out[HASH_BYTES]);
 
 /** hashimotoLight: run the 64-access mix loop using on-the-fly dataset item
- *  generation from the shared cache. Outputs the 32-byte compressed digest
- *  and the 32-byte result = keccak256(seed64 || digest). */
-void HashimotoLight(uint64_t cache_size, const std::vector<uint32_t>& cache_words,
+ *  generation from the shared cache. `dataset_size` is the full-DAG size for
+ *  the epoch (CalcDatasetSize); the row count is dataset_size / MIX_BYTES.
+ *  Outputs the 32-byte compressed digest and the 32-byte result =
+ *  keccak256(seed64 || digest). */
+void HashimotoLight(uint64_t dataset_size, const std::vector<uint32_t>& cache_words,
                     const unsigned char header_hash[32], uint64_t nonce,
                     unsigned char digest_out[32], unsigned char result_out[32]);
 

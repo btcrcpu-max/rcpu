@@ -110,6 +110,21 @@ uint64_t CalcCacheSize(uint64_t epoch)
     return size;
 }
 
+uint64_t CalcDatasetSize(uint64_t epoch)
+{
+    // Per geth calcDatasetSize: highest prime-bounded size below the linear
+    // threshold DATASET_INIT_BYTES + DATASET_GROWTH_BYTES*epoch. Unlike the
+    // cache (which primes on size/HASH_BYTES), the dataset primes on
+    // size/MIX_BYTES (the row count) and decrements by 2*MIX_BYTES. Etchash
+    // (ECIP-1099) keeps DATASET_GROWTH_BYTES = 1<<23 (unchanged from ethash);
+    // the halved per-block DAG growth comes from the doubled epoch length.
+    uint64_t size = DATASET_INIT_BYTES + DATASET_GROWTH_BYTES * epoch - MIX_BYTES;
+    while (!IsPrime(size / MIX_BYTES)) {
+        size -= 2 * MIX_BYTES;
+    }
+    return size;
+}
+
 uint256 SeedForEpoch(uint64_t epoch)
 {
     uint256 seed; // 32 zero bytes
@@ -184,11 +199,15 @@ void GenerateDatasetItem(const std::vector<uint32_t>& cache_words, uint32_t inde
     Keccak512(mix, HASH_BYTES, out);
 }
 
-void HashimotoLight(uint64_t cache_size, const std::vector<uint32_t>& cache_words,
+void HashimotoLight(uint64_t dataset_size, const std::vector<uint32_t>& cache_words,
                     const unsigned char header_hash[32], uint64_t nonce,
                     unsigned char digest_out[32], unsigned char result_out[32])
 {
-    const uint32_t rows = uint32_t(cache_size / MIX_BYTES);
+    // `rows` counts the number of 128-byte (MIX_BYTES) rows in the full DAG.
+    // Each row is two 64-byte dataset items, so rows = dataset_size / MIX_BYTES.
+    // (Previously this erroneously used the cache size, wrapping the dataset
+    // index far too early and producing wrong digest/result values.)
+    const uint32_t rows = uint32_t(dataset_size / MIX_BYTES);
 
     // seed = keccak512(header_hash || nonce as 8-byte LE)
     unsigned char seed_in[40];
