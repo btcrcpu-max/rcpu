@@ -1385,17 +1385,22 @@ static RPCHelpMan computerandomxhash()
     }
 
     uint256 rx_hash;
-    // !RCPU (dual-algo): dispatch on the algorithm bit. For qhash/etchash
-    // headers the commitment is the algo output itself (no separate RandomX
-    // commitment). Etchash needs the block height for its epoch.
+    // !RCPU (dual-algo): dispatch on the algorithm bit, mirroring
+    // GetPowAlgoForHeader semantics. For qhash/etchash headers the commitment
+    // is the algo output itself (no separate RandomX commitment). Etchash
+    // needs the block height for its epoch. Pre-activation (or unknown
+    // height) bit-30 headers are consensus-irrelevant RandomX blocks — they
+    // must NOT be routed to the qhash verifier.
     const bool fQhashHeader = (header.nVersion & BLOCK_VERSION_QHASH) != 0;
     bool hash_ok;
     if (fQhashHeader && consensusParams.fDualAlgoEtchash &&
         nShareHeight >= consensusParams.nDualAlgoActivationHeight) {
         hash_ok = CheckProofOfWorkEtchash(header, nShareHeight, consensusParams, POW_VERIFY_MINING, &rx_hash);
-    } else if (fQhashHeader) {
+    } else if (fQhashHeader && !consensusParams.fDualAlgoEtchash) {
         hash_ok = CheckProofOfWorkQHash(header, consensusParams, POW_VERIFY_MINING, &rx_hash);
     } else {
+        // bit clear, or bit-30 set but pre-activation / height unknown on an
+        // etchash chain (epoch cannot be derived): RandomX, as consensus does.
         hash_ok = CheckProofOfWorkRandomX(header, consensusParams, POW_VERIFY_MINING, &rx_hash, prevBlockTime);
     }
 
