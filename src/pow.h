@@ -11,6 +11,8 @@
 
 #include <stdint.h>
 
+#include <optional>
+
 #include <randomx.h>
 
 #include <streams.h>
@@ -104,6 +106,31 @@ bool CheckProofOfWorkQHash(const CBlockHeader& block, const Consensus::Params& p
  * pool software can validate shares.
  */
 bool CheckProofOfWorkEtchash(const CBlockHeader& block, int64_t nHeight, const Consensus::Params& params, POWVerifyMode mode = POW_VERIFY_FULL, uint256 *outHash = nullptr);
+
+/**
+ * RCPU dual-algo: the proof-of-work algorithm a header at `nHeight` must
+ * satisfy.
+ */
+enum class PowAlgo : uint8_t {
+    RandomX, //!< default algorithm (all pre-activation blocks, bit-30 clear)
+    Etchash, //!< bit-30 block at/after activation on etchash chains
+    QHash,   //!< bit-30 block at/after activation on legacy qhash chains
+};
+
+/**
+ * RCPU dual-algo: single source of truth for the height-aware PoW dispatch.
+ * Mirrors the rules enforced by CheckBlockHeader/CheckBlock:
+ *  - bit-30 clear                              -> RandomX
+ *  - nHeight < 0 (unknown, bit-30 set)         -> std::nullopt, cannot judge
+ *  - nHeight <  nDualAlgoActivationHeight      -> RandomX (the bit is ignored)
+ *  - nHeight >= nDualAlgoActivationHeight      -> Etchash or QHash
+ *    (per params.fDualAlgoEtchash)
+ *
+ * `std::nullopt` means the caller lacks the height needed to derive the
+ * Etchash epoch; such callers must defer the verdict to the authoritative
+ * height-aware check (AcceptBlockHeader) instead of guessing an algorithm.
+ */
+std::optional<PowAlgo> GetPowAlgoForHeader(int64_t nHeight, int32_t nVersion, const Consensus::Params& params);
 
 /**
  * RCPU dual-algo etchash: return the epoch seed for a given height

@@ -550,4 +550,123 @@ BOOST_AUTO_TEST_CASE(dual_algo_difficulty_cache_matches_chain_walk)
     BOOST_CHECK(randomx_cached != etchash_cached);
 }
 
+// !RCPU (dual-algo PoW dispatch): qhash 链 (fDualAlgoEtchash=false) 的
+// HasValidProofOfWork() 行为边界。helper 统一 dispatch 后，该函数在
+// 高度已知场景不再宽松地同时接受 qhash 和 RandomX 证明，而是严格跟随
+// GetPowAlgoForHeader 的判定：
+//   - post-activation + bit-30 + height-known  → 只认 QHash（qhash 承诺会重算）
+//   - pre-activation  + bit-30 + height-known  → 判 RandomX（共识忽略 bit-30）；
+//     预检层 RandomX 只做承诺目标检查（数据集太贵不重算），权威拒绝在
+//     CheckBlockHeader 的 POW_VERIFY_FULL
+//   - height unknown + bit-30                 → defer（不 reject）
+// 这组测试锁住上述收紧行为，防止未来有人把宽容 pre-check 加回来。
+BOOST_AUTO_TEST_CASE(qhash_chain_pow_precheck_uses_helper)
+{
+    Consensus::Params params;
+    params.powLimit = uint256S("0x7fffffff00000000000000000000000000000000000000000000000000000000");
+    params.nDualAlgoActivationHeight = 150;
+    params.fDualAlgoEtchash = false; // legacy qhash chain
+
+    static auto make_hdr = [](int32_t version) {
+        CBlockHeader h;
+        h.nVersion = version;
+        h.hashPrevBlock  = uint256S("0x0000000000000000000000000000000000000000000000000000000000000001");
+        h.hashMerkleRoot = uint256S("0x0000000000000000000000000000000000000000000000000000000000000002");
+        h.nTime   = 1710000000;
+        h.nBits   = 0x207fffff;
+        h.nNonce  = 0;
+        h.hashRandomX.SetNull();
+        return h;
+    };
+
+    // 两种挖矿辅助：分别产出 qhash 证明和 RandomX 证明并存入 hashRandomX。
+    static auto mine_qhash = [](CBlockHeader& h, const Consensus::Params& p) {
+        uint256 solved;
+        for (uint32_t nonce = 0; nonce < 100000; ++nonce) {
+            h.nNonce = nonce;
+            if (CheckProofOfWorkQHash(h, p, POW_VERIFY_MINING, &solved)) {
+                h.hashRandomX = solved;
+                return true;
+            }
+        }
+        return false;
+    };
+    static auto mine_randomx = [](CBlockHeader& h, const Consensus::Params& p) {
+        uint256 solved;
+        // prevBlockTime=0 让 RandomX 按 block.nTime 计算 epoch；
+        // 测试 powLimit 宽松，100000 次尝试内必出。
+        for (uint32_t nonce = 0; nonce < 100000; ++nonce) {
+            h.nNonce = nonce;
+            if (CheckProofOfWorkRandomX(h, p, POW_VERIFY_MINING, &solved, /*prevBlockTime=*/0)) {
+                h.hashRandomX = solved;
+                return true;
+            }
+        }
+        return false;
+    };
+
+    // ── Case 1: post-activation + bit-30 + qhash proof + height-known → OK ──
+    {
+        CBlockHeader h = make_hdr(1 | BLOCK_VERSION_QHASH);
+        BOOST_REQUIRE(mine_qhash(h, params));
+        BOOST_CHECK(HasValidProofOfWork({h}, params, /*nStartHeight=*/150));
+    }
+
+    // ── Case 2: post-activation + bit-30 + RandomX proof + height-known → FAIL ──
+    // helper 返回 PowAlgo::QHash，RandomX proof 被拒。改前宽容双路都能过。
+    {
+        CBlockHeader h = make_hdr(1 | BLOCK_VERSION_QHASH);
+        BOOST_REQUIRE(mine_randomx(h, params));
+        BOOST_CHECK(!HasValidProofOfWork({h}, params, /*nStartHeight=*/150));
+    }
+
+    // ── Case 3: pre-activation + bit-30 + height-known → helper 判 RandomX ──
+    // 直接锁定 dispatch 判定。预检层（COMMITMENT_ONLY）的 RandomX 只做承诺
+    // 目标检查、不重算数据集，因此满足目标的 qhash 承诺在预检层被接受；
+    // 真正的拒绝发生在 CheckBlockHeader 的 POW_VERIFY_FULL RandomX 重算。
+    {
+        BOOST_CHECK(GetPowAlgoForHeader(149, 1 | BLOCK_VERSION_QHASH, params) == std::optional<PowAlgo>(PowAlgo::RandomX));
+        CBlockHeader h = make_hdr(1 | BLOCK_VERSION_QHASH);
+        BOOST_REQUIRE(mine_qhash(h, params));
+        BOOST_CHECK(HasValidProofOfWork({h}, params, /*nStartHeight=*/149));
+    }
+
+    // ── Case 4: pre-activation + bit-30 + RandomX proof + height-known → OK ──
+    // helper 正确忽略 pre-activation 的 bit-30，返回 RandomX。
+    {
+        CBlockHeader h = make_hdr(1 | BLOCK_VERSION_QHASH);
+        BOOST_REQUIRE(mine_randomx(h, params));
+        BOOST_CHECK(HasValidProofOfWork({h}, params, /*nStartHeight=*/149));
+    }
+
+    // ── Case 5: height-unknown + bit-30 + tampered proof → defer ──
+    // helper 返回 nullopt，HasValidProofOfWork 跳过判定；
+    // 即使 proof 被改过，这里也不应该 reject（defer 给 AcceptBlockHeader）。
+    {
+        CBlockHeader h = make_hdr(1 | BLOCK_VERSION_QHASH);
+        BOOST_REQUIRE(mine_qhash(h, params));
+        CBlockHeader tampered = h;
+        *tampered.hashRandomX.begin() ^= 0x01;
+        BOOST_CHECK(HasValidProofOfWork({tampered}, params, /*nStartHeight=*/-1));
+    }
+
+    // ── Case 6: post-activation + tampered qhash + height-known → FAIL ──
+    // 有高度 + tampered proof 必须被拒。
+    {
+        CBlockHeader h = make_hdr(1 | BLOCK_VERSION_QHASH);
+        BOOST_REQUIRE(mine_qhash(h, params));
+        CBlockHeader tampered = h;
+        *tampered.hashRandomX.begin() ^= 0x01;
+        BOOST_CHECK(!HasValidProofOfWork({tampered}, params, /*nStartHeight=*/150));
+    }
+
+    // ── Case 7: bit-30 clear + RandomX proof + post-activation height → OK ──
+    // bit-30 清零时 helper 永远返回 RandomX，不受激活高度影响。
+    {
+        CBlockHeader h = make_hdr(1);
+        BOOST_REQUIRE(mine_randomx(h, params));
+        BOOST_CHECK(HasValidProofOfWork({h}, params, /*nStartHeight=*/150));
+    }
+}
+
 BOOST_AUTO_TEST_SUITE_END()
