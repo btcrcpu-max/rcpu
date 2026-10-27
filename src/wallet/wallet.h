@@ -142,7 +142,9 @@ static const bool DEFAULT_WALLETCROSSCHAIN = false;
 //! -maxtxfee default
 // !RCPU
 //! RCPU CT transactions are much larger than plain Bitcoin ones (each confidential
-//! output adds a ~675-byte Bulletproofs range proof plus ECDH nonce and value prefix),
+//! output adds a Borromean range proof — up to MAX_RANGEPROOF_SIZE (5134 bytes),
+//! scaling with the value's bit length — plus Pedersen commitment, ECDH nonce and
+//! value prefix),
 //! so the upstream 0.1 COIN default is far too tight and aborts legitimate sends.
 //! Raise the default to 1 RCPU; it can still be lowered or raised via -maxtxfee.
 constexpr CAmount DEFAULT_TRANSACTION_MAXFEE{COIN};

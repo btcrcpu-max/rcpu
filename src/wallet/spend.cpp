@@ -8,6 +8,7 @@
 #include <common/args.h>
 #include <common/system.h>
 #include <consensus/amount.h>
+#include <consensus/consensus.h>
 #include <consensus/validation.h>
 #include <interfaces/chain.h>
 #include <numeric>
@@ -40,6 +41,19 @@ using interfaces::FoundBlock;
 
 namespace wallet {
 static constexpr size_t OUTPUT_GROUP_MAX_ENTRIES{100};
+
+// !RCPU
+// Per-confidential-output serialized size overhead for fee estimation.
+// Blinding replaces the 9-byte explicit value with a 33-byte Pedersen
+// commitment, adds a 33-byte ECDH nonce and appends a Borromean range proof
+// whose size scales with the value's bit length (secp256k1_rangeproof_sign
+// with min_bits=0), up to MAX_RANGEPROOF_SIZE. This is NOT a ~675-byte
+// Bulletproof. The range proof is only materialized inside BlindTransaction()
+// AFTER the fee is computed, so an underestimate here is unrecoverable and
+// the signed transaction fails minrelay checks. Use the conservative upper
+// bound; the slight overpayment is negligible at typical feerates.
+static constexpr int CT_OUTPUT_SIZE_OVERHEAD{MAX_RANGEPROOF_SIZE + 100};
+// !RCPU END
 
 /** Whether the descriptor represents, directly or not, a witness program. */
 static bool IsSegwit(const Descriptor& desc) {
@@ -1160,7 +1174,7 @@ CHECK_NONFATAL(IsValidDestination(dest) != scriptChange.empty());
     }
     // RCPU CT: add CT output overhead to change output size
     if (g_con_elementsmode) {
-        coin_selection_params.change_output_size += 700;
+        coin_selection_params.change_output_size += CT_OUTPUT_SIZE_OVERHEAD;
     }
 
     // Get size of spending the change output
@@ -1228,12 +1242,13 @@ CTxOut txout(recipient.nAmount, GetScriptForDestination(recipient.dest));
         txNew.vout.push_back(txout);
     }
 
-    // RCPU CT: confidential outputs add a range proof (~675 bytes),
-    // an ECDH nonce (33 bytes) and a value prefix byte.
+    // RCPU CT: confidential outputs add a Borromean range proof (up to
+    // MAX_RANGEPROOF_SIZE, scaling with the value's bit length), a Pedersen
+    // commitment, an ECDH nonce and a value prefix byte.
     // Add this overhead to tx_noinputs_size so coin selection accounts for it.
     // Also account for the explicit fee output that is added after blinding.
     if (g_con_elementsmode) {
-        coin_selection_params.tx_noinputs_size += static_cast<int>(txNew.vout.size()) * 700;
+        coin_selection_params.tx_noinputs_size += static_cast<int>(txNew.vout.size()) * CT_OUTPUT_SIZE_OVERHEAD;
         // Fee output: explicit amount (9 bytes max) + empty scriptPubKey (1 byte) = ~10 bytes
         coin_selection_params.tx_noinputs_size += 10;
     }
@@ -1387,12 +1402,14 @@ CTxOut txout(recipient.nAmount, GetScriptForDestination(recipient.dest));
     if (nBytes == -1) {
         return util::Error{_("Missing solving data for estimating transaction size")};
     }
-    // RCPU CT: confidential outputs add a Bulletproofs range proof (~675 bytes),
-    // an ECDH nonce (33 bytes) and a value prefix byte. Account for that overhead so
-    // the fee meets the minimum relay fee after blinding (otherwise the transaction
-    // is too large for its fee and is never broadcast).
+    // RCPU CT: confidential outputs add a Borromean range proof (up to
+    // MAX_RANGEPROOF_SIZE, scaling with the value's bit length), a Pedersen
+    // commitment, an ECDH nonce and a value prefix byte. Account for that
+    // overhead so the fee meets the minimum relay fee after blinding
+    // (otherwise the transaction is too large for its fee and is never
+    // broadcast).
     if (g_con_elementsmode) {
-        nBytes += static_cast<int>(txNew.vout.size()) * 700;
+        nBytes += static_cast<int>(txNew.vout.size()) * CT_OUTPUT_SIZE_OVERHEAD;
     }
     CAmount fee_needed = coin_selection_params.m_effective_feerate.GetFee(nBytes) + result.GetTotalBumpFees();
     const CAmount output_value = CalculateOutputValue(txNew);
