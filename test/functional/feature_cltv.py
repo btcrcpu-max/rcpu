@@ -151,12 +151,14 @@ class BIP65Test(BitcoinTestFramework):
             cltv_invalidate(spendtx, i)
 
             expected_cltv_reject_reason = [
-                "mandatory-script-verify-flag-failed (Operation not valid with the current stack size)",
-                "mandatory-script-verify-flag-failed (Negative locktime)",
-                "mandatory-script-verify-flag-failed (Locktime requirement not satisfied)",
-                "mandatory-script-verify-flag-failed (Locktime requirement not satisfied)",
-                "mandatory-script-verify-flag-failed (Locktime requirement not satisfied)",
+                "mempool-script-verify-flag-failed (Operation not valid with the current stack size)",
+                "mempool-script-verify-flag-failed (Negative locktime)",
+                "mempool-script-verify-flag-failed (Locktime requirement not satisfied)",
+                "mempool-script-verify-flag-failed (Locktime requirement not satisfied)",
+                "mempool-script-verify-flag-failed (Locktime requirement not satisfied)",
             ][i]
+            expected_cltv_block_reject_reason = expected_cltv_reject_reason.replace(
+                "mempool-script-verify-flag-failed", "mandatory-script-verify-flag-failed")
             # First we show that this tx is valid except for CLTV by getting it
             # rejected from the mempool for exactly that reason.
             assert_equal(
@@ -174,7 +176,7 @@ class BIP65Test(BitcoinTestFramework):
             block.hashMerkleRoot = block.calc_merkle_root()
             block.solve()
 
-            with self.nodes[0].assert_debug_log(expected_msgs=[f'CheckInputScripts on {block.vtx[-1].hash} failed with {expected_cltv_reject_reason}']):
+            with self.nodes[0].assert_debug_log(expected_msgs=[f'CheckInputScripts on {block.vtx[-1].hash} failed with {expected_cltv_block_reject_reason}']):
                 peer.send_and_ping(msg_block(block))
                 assert_equal(int(self.nodes[0].getbestblockhash(), 16), tip)
                 peer.sync_with_ping()

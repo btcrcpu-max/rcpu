@@ -37,7 +37,8 @@ from test_framework.util import (
 from test_framework.wallet import getnewdestination
 from test_framework.wallet_util import generate_keypair
 
-NULLDUMMY_ERROR = "mandatory-script-verify-flag-failed (Dummy CHECKMULTISIG argument must be zero)"
+NULLDUMMY_ERROR = "mempool-script-verify-flag-failed (Dummy CHECKMULTISIG argument must be zero)"
+NULLDUMMY_ERROR_BLOCK = "mandatory-script-verify-flag-failed (Dummy CHECKMULTISIG argument must be zero)"
 
 
 def invalidate_nulldummy_tx(tx):
@@ -143,7 +144,7 @@ class NULLDUMMYTest(BitcoinTestFramework):
         if with_witness:
             add_witness_commitment(block)
         block.solve()
-        assert_equal(None if accept else NULLDUMMY_ERROR, node.submitblock(block.serialize().hex()))
+        assert_equal(None if accept else NULLDUMMY_ERROR_BLOCK, node.submitblock(block.serialize().hex()))
         if accept:
             assert_equal(node.getbestblockhash(), block.hash)
             self.lastblockhash = block.hash
