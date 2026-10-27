@@ -435,7 +435,10 @@ bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& 
     execdata.m_codeseparator_pos_init = true;
 
     // !RCPU
-    opcodetype prevOpcode;
+    // Initialized: the loop update assigns prevOpcode only AFTER an iteration,
+    // so a script whose FIRST opcode is OP_IF/OP_NOTIF would otherwise read an
+    // uninitialized value under SCRIPT_VERIFY_DISCOURAGE_ORDINALS (UB).
+    opcodetype prevOpcode{OP_INVALIDOPCODE};
     try
     {
         for (; pc < pend; ++opcode_pos, prevOpcode = opcode) {
