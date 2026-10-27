@@ -693,9 +693,14 @@ bech32_hrp = "rcpu";
         // node with: getchaintxstats 4096 <checkpoint_or_tip_hash>. Do not
         // invent values.
         chainTxData = ChainTxData{
-            .nTime    = 1788566400,
-            .nTxCount = 1,
-            .dTxRate  = 0.0,
+            // Data equivalent to RPC: getchaintxstats 4096 82103d7f92cb5ac901421fdf4ba96d01cf6d787df5ece136ad124408ab7b3d03
+            // (block 19423, 2026-10-27). nTxCount is nChainTx at that block from a fully synced
+            // node's UpdateTip log (RPC unavailable); the 4096-block window covers heights
+            // 15328..19423 (4691 txs over 823193s). Block hashes and times cross-checked
+            // against an independent full P2P header walk.
+            .nTime    = 1793082143,
+            .nTxCount = 26168,
+            .dTxRate  = 0.00569854214017855,
         };
     }
 };
