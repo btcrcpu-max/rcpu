@@ -22,6 +22,9 @@ remain spendable):
  7b/7c/7d. H-1 balance invariants: mixed explicit+confidential change
     succeeds, all-explicit outputs funded from a confidential input fail
     closed, and an explicit-only wallet pays a bare address fine.
+ 7e. Exact spend (no planned change) from a confidential UTXO to a bare
+    address auto-adds a dust-sized confidential balancing change output
+    instead of failing with "Confidential transaction blinding failed".
  8. -ctlegacy=1 stays usable below nBanPathAHeight (probed at runtime).
 """
 
@@ -268,6 +271,47 @@ class WalletConfidentialTest(BitcoinTestFramework):
             mixer.send, outputs=[{bech32_addr: Decimal("0.05")}],
             options={"change_address": bech32_addr},
         )
+
+        # ---- 7e. Exact spend (no change) from a confidential input to a bare address ----
+        # Regression for the reported wallet bug: a wallet whose only UTXO is
+        # confidential sending its full balance (subtractfeefromamount, so coin
+        # selection plans no change output) to a bare rcpu1 address used to
+        # fail with "Confidential transaction blinding failed" — every output
+        # explicit, nothing to absorb the input's blinding factor — while the
+        # same send to an rcpux1 address succeeded. CreateTransaction now
+        # injects a dust-sized wallet-owned confidential change output (funded
+        # from the recipient output) so the blind sum balances.
+        self.log.info("Exact spend from a confidential UTXO to a bare address auto-adds a balancing output")
+        self.restart_node(0, extra_args=["-changetype=confidential"])
+        node.loadwallet("mixer")
+        mixer = node.get_wallet_rpc("mixer")
+        node.createwallet(wallet_name="sweeper", descriptors=True)
+        sweeper = node.get_wallet_rpc("sweeper")
+        sweeper_conf = sweeper.getnewaddress("", "confidential")
+        mixer.sendtoaddress(sweeper_conf, Decimal("0.2"))
+        self.generatetoaddress(node, 1, mixer.getnewaddress("", "bech32"))
+        assert_equal(sweeper.getbalance(), Decimal("0.2"))
+        # Spend the full balance with the fee taken out of the recipient
+        # amount: coin selection finds an exact match and plans no change.
+        txid7e = sweeper.sendtoaddress(bech32_addr, Decimal("0.2"), "", "", True)
+        decoded7e = node.getrawtransaction(txid7e, True)
+        target7e = None
+        for o in decoded7e["vout"]:
+            spk = o["scriptPubKey"]
+            if bech32_addr == spk.get("address") or bech32_addr in spk.get("addresses", []):
+                target7e = o
+                break
+        assert target7e is not None, f"no vout pays {bech32_addr}: {decoded7e['vout']}"
+        assert not isinstance(target7e["value"], str), f"bare target must be explicit, got {target7e['value']}"
+        assert target7e["value"] < Decimal("0.2"), f"fee+dust must come out of the target: {target7e['value']}"
+        # The injected balancing output is a wallet-owned Path-C change output.
+        change7e = [o for o in decoded7e["vout"] if o["value"] == "confidential"]
+        assert change7e, f"expected injected confidential balancing output: {decoded7e['vout']}"
+        # vout layout: explicit payee + injected change + explicit fee output
+        # (empty scriptPubKey).
+        fee7e = [o for o in decoded7e["vout"] if o["scriptPubKey"].get("hex", "x") == ""]
+        assert fee7e, f"expected explicit fee output: {decoded7e['vout']}"
+        assert_equal(len(decoded7e["vout"]), 3)
 
         # ---- 8. -ctlegacy=1 usable below nBanPathAHeight (runtime probe) ----
         # H-1: the wallet refuses -ctlegacy=1 once the tip has reached the

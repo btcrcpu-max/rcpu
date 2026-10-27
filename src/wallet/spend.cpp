@@ -1326,6 +1326,11 @@ CTxOut txout(recipient.nAmount, GetScriptForDestination(recipient.dest));
            result.GetSelectedValue());
 
     const CAmount change_amount = result.GetChange(coin_selection_params.min_viable_change, coin_selection_params.m_change_fee);
+    // RCPU CT: mutable copy of the change value used for the sender-side
+    // vout_amount record. Normally identical to change_amount; updated when
+    // the confidential balancing-output injection below creates a change
+    // output that coin selection did not plan for (exact-spend case).
+    CAmount change_output_amount = change_amount;
     if (change_amount > 0) {
         CTxOut newTxOut(change_amount, scriptChange);
         if (!change_pos) {
@@ -1488,6 +1493,11 @@ CTxOut txout(recipient.nAmount, GetScriptForDestination(recipient.dest));
         return util::Error{error};
     }
 
+    // RCPU CT: reservation backing a balancing change output injected after
+    // coin selection (see below). Kept alongside reservedest on success;
+    // destructor returns the destination to the pool on early error.
+    std::unique_ptr<ReserveDestination> inj_reservedest;
+
 // RCPU CT: blind outputs when confidential-transactions mode is enabled.
     std::map<unsigned int, std::string> vout_addr; // vout -> encoded recipient dest (rcpux1...)
     std::map<unsigned int, CAmount> vout_amount;    // vout -> original send amount (satoshis)
@@ -1505,6 +1515,82 @@ CTxOut txout(recipient.nAmount, GetScriptForDestination(recipient.dest));
                     return util::Error{_("Cannot unblind a confidential input for spending")};
                 }
                 input_blinds[bi] = unblinded_blind;
+            }
+        }
+        // RCPU CT: a v3 transaction spending blinded inputs must carry at
+        // least one blinded output — with all-explicit outputs the Pedersen
+        // tally cannot balance (bad-txns-ct-balance) and BlindTransaction
+        // fails closed. The exact-spend case (coin selection produced no
+        // change) paying only bare rcpu1... recipients hit precisely that
+        // failure ("Confidential transaction blinding failed"). Fix it at the
+        // wallet layer: inject a dust-sized wallet-owned confidential change
+        // output, funded from the largest recipient output (dust value plus
+        // the marginal fee for the added output size), so the blind sum has
+        // a balancing output. Consensus behavior is untouched; wallets that
+        // cannot resolve a confidential change key fall through to the
+        // existing fail-closed error. An explicit (foreign) change output
+        // requested via coin control is NOT overridden here.
+        if (conf_change && !change_pos) {
+            bool has_blinded_input{false};
+            for (const uint256& b : input_blinds) {
+                if (!b.IsNull()) { has_blinded_input = true; break; }
+            }
+            const bool has_conf_recipient = std::any_of(vecSend.begin(), vecSend.end(),
+                [](const CRecipient& r) { return std::get_if<ConfidentialKeyHash>(&r.dest) != nullptr; });
+            if (has_blinded_input && !has_conf_recipient) {
+                // Reuse the already-reserved change destination when its
+                // blinding key resolved; otherwise (foreign destChange or a
+                // failed reservation) reserve a fresh confidential address.
+                if (!change_key) {
+                    inj_reservedest = std::make_unique<ReserveDestination>(&wallet, OutputType::CONFIDENTIAL);
+                    if (auto op_dest = inj_reservedest->GetReservedDestination(true)) {
+                        CTxDestination dest{*op_dest};
+                        resolve_change_key(dest);
+                        if (change_key) {
+                            scriptChange = GetScriptForDestination(dest);
+                        }
+                    }
+                }
+                if (change_key && !scriptChange.empty()) {
+                    const CTxOut proto(0, scriptChange);
+                    int out_size;
+                    {
+                        SizeComputer sc;
+                        proto.Serialize(sc, false);
+                        out_size = sc.size() + CT_OUTPUT_SIZE_OVERHEAD;
+                    }
+                    const CAmount out_dust = GetDustThreshold(proto, wallet.chain().relayDustFee());
+                    const CAmount out_fee = coin_selection_params.m_effective_feerate.GetFee(out_size);
+                    const CAmount reduction = out_dust + out_fee;
+                    // Fund from the largest recipient output that stays above
+                    // its own dust threshold after the reduction.
+                    std::vector<size_t> order(txNew.vout.size());
+                    std::iota(order.begin(), order.end(), size_t{0});
+                    std::sort(order.begin(), order.end(), [&](size_t a, size_t b) {
+                        return txNew.vout[a].nValue.GetAmount() > txNew.vout[b].nValue.GetAmount();
+                    });
+                    bool funded{false};
+                    for (const size_t oi : order) {
+                        CTxOut& payee = txNew.vout[oi];
+                        if (!payee.nValue.IsExplicit()) continue;
+                        const CAmount before = payee.nValue.GetAmount();
+                        if (before - reduction <= 0) continue;
+                        if (IsDust(CTxOut(before - reduction, payee.scriptPubKey), wallet.chain().relayDustFee())) continue;
+                        payee.nValue = before - reduction;
+                        const unsigned int pos = rng_fast.randrange(txNew.vout.size() + 1);
+                        txNew.vout.insert(txNew.vout.begin() + pos, CTxOut(out_dust, scriptChange));
+                        change_pos = pos;
+                        change_output_amount = out_dust;
+                        current_fee = result.GetSelectedValue() - CalculateOutputValue(txNew);
+                        funded = true;
+                        break;
+                    }
+                    if (!funded) {
+                        return util::Error{_("Spending confidential inputs requires a blinded balancing output, but no recipient output can fund the dust change")};
+                    }
+                }
+                // No wallet-owned confidential change key available: fall
+                // through and let BlindTransaction fail closed as before.
             }
         }
 std::vector<uint256> output_blinds, output_nonces;
@@ -1559,11 +1645,10 @@ std::vector<std::optional<CPubKey>> recipient_keys;
                     if (change_key_dest) {
                         pubkey = change_key;
                         vout_addr[vi] = EncodeDestination(*change_key_dest);
-                        // RCPU CT: persist change amount.
-                        // The change output was created at line 1248 as
-                        // CTxOut(change_amount, scriptChange), so use the same
-                        // local variable that constructed it.
-                        vout_amount[vi] = change_amount;
+                        // RCPU CT: persist change amount. change_output_amount
+                        // mirrors the change output's value, including the
+                        // injected balancing output of the exact-spend case.
+                        vout_amount[vi] = change_output_amount;
                     }
                 } else {
                     const size_t ri = vi - (change_pos && *change_pos < vi ? 1 : 0);
@@ -1651,6 +1736,9 @@ std::vector<std::optional<CPubKey>> recipient_keys;
     // Before we return success, we assume any change key will be used to prevent
     // accidental reuse.
     reservedest.KeepDestination();
+    if (inj_reservedest) {
+        inj_reservedest->KeepDestination();
+    }
 
     wallet.WalletLogPrintf("Coin Selection: Algorithm:%s, Waste Metric Score:%d\n", GetAlgorithmName(result.GetAlgo()), result.GetWaste());
     wallet.WalletLogPrintf("Fee Calculation: Fee:%d Bytes:%u Tgt:%d (requested %d) Reason:\"%s\" Decay %.5f: Estimation: (%g - %g) %.2f%% %.1f/(%.1f %d mem %.1f out) Fail: (%g - %g) %.2f%% %.1f/(%.1f %d mem %.1f out)\n",
