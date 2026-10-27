@@ -143,9 +143,29 @@ bool BlockTreeDB::LoadBlockIndexGuts(const Consensus::Params& consensusParams, s
                     const std::optional<PowAlgo> pow_algo = GetPowAlgoForHeader(pindexNew->nHeight, hdr.nVersion, consensusParams);
                     bool pow_ok;
                     switch (pow_algo.value_or(PowAlgo::RandomX)) {
-                    case PowAlgo::Etchash:
-                        pow_ok = CheckProofOfWorkEtchash(hdr, pindexNew->nHeight, consensusParams, POW_VERIFY_COMMITMENT_ONLY);
+                    case PowAlgo::Etchash: {
+                        // Cheap local sanity check, NOT a full HashimotoLight
+                        // re-verification. Etchash has no separate commitment:
+                        // the stored hashRandomX IS the PoW result, so a
+                        // "commitment-only" recheck would recompute the full
+                        // light hash. Worse, LevelDB iterates block index
+                        // entries in hash order (not height order), so epochs
+                        // arrive pseudo-randomly and thrash the 2-entry
+                        // g_etchash_caches LRU — every miss costs an epoch
+                        // cache regeneration (O(100ms+)), which adds hours to
+                        // startup on a mature chain. Instead verify the stored
+                        // result against the claimed target: catches corrupted
+                        // nBits/hashRandomX at zero CPU cost. The full proof
+                        // was already verified when the block first connected.
+                        arith_uint256 bnTarget;
+                        bool fNegative, fOverflow;
+                        bnTarget.SetCompact(hdr.nBits, &fNegative, &fOverflow);
+                        pow_ok = !fNegative && !fOverflow && bnTarget > 0 &&
+                                 bnTarget <= UintToArith256(consensusParams.powLimit) &&
+                                 !hdr.hashRandomX.IsNull() &&
+                                 UintToArith256(hdr.hashRandomX) <= bnTarget;
                         break;
+                    }
                     case PowAlgo::QHash:
                         pow_ok = CheckProofOfWorkQHash(hdr, consensusParams, POW_VERIFY_COMMITMENT_ONLY);
                         break;
