@@ -35,6 +35,26 @@ static feebumper::Result PreconditionChecks(const CWallet& wallet, const CWallet
         }
     }
 
+    // !RCPU (CT): fee bump cannot handle confidential values. feebumper's
+    // old_fee calculation is input_value - output_value where both sides
+    // currently count confidential inputs/outputs as 0; even with unblinding
+    // the real amounts, CreateTransaction (which generates the replacement)
+    // has no blind-transaction step, so it would emit non-confidential
+    // output amounts and break the structure of a CT tx. Reject up-front
+    // so the wallet surface is consistent: either all-explicit or we
+    // refuse and let the user use a CT-aware tool.
+    // Outputs are visible directly on the transaction (their nValue carries
+    // the Pedersen commitment). Inputs are checked later in
+    // CreateRateBumpTransaction after UTXOs are resolved (findCoins is
+    // non-const and cannot be called from this const PreconditionChecks).
+    for (const CTxOut& txout : wtx.tx->vout) {
+        if (!txout.nValue.IsExplicit()) {
+            errors.push_back(Untranslated("Cannot fee-bump: transaction has confidential outputs; blind fee bump is not supported"));
+            return feebumper::Result::WALLET_ERROR;
+        }
+    }
+    // !RCPU END
+
     if (wallet.GetTxDepthInMainChain(wtx) != 0) {
         errors.push_back(Untranslated("Transaction has been mined, or is conflicted with a mined transaction"));
         return feebumper::Result::WALLET_ERROR;
@@ -204,6 +224,14 @@ Result CreateRateBumpTransaction(CWallet& wallet, const uint256& txid, const CCo
             errors.push_back(Untranslated(strprintf("%s:%u is already spent", txin.prevout.hash.GetHex(), txin.prevout.n)));
             return Result::MISC_ERROR;
         }
+        // !RCPU (CT): reject confidential inputs — fee bump cannot unblind
+        // the source UTXO here and CreateTransaction has no blinding step
+        // to reproduce the confidential output structure for the replacement.
+        if (!coin.out.nValue.IsExplicit()) {
+            errors.push_back(Untranslated("Cannot fee-bump: transaction spends confidential inputs; blind fee bump is not supported"));
+            return Result::WALLET_ERROR;
+        }
+        // !RCPU END
         PreselectedInput& preset_txin = new_coin_control.Select(txin.prevout);
         if (!wallet.IsMine(txin.prevout)) {
             preset_txin.SetTxOut(coin.out);
