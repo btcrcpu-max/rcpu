@@ -620,8 +620,8 @@ consensus.fPowRandomX = true;
         consensus.nDualAlgoTargetSpacing = 10 * 60;
         // !RCPU (dual-algo etchash): the bit-30 algorithm is Etchash (ECIP-1099
         // light verification). Epoch length 6000 blocks: with both algorithms
-        // mining, ~10 days per epoch at the combined ~5-minute cadence (each
-        // algo alone would take ~20 days).
+        // mining, ~20.8 days per epoch at the combined ~5-minute cadence
+        // (6000 × 5 min); a single algorithm alone would take ~41.7 days.
         consensus.fDualAlgoEtchash = true;
         consensus.nEtchashEpochLength = 6000;
         consensus.nCTActivationHeight = 0;  // RCPU: Confidential Transactions active from genesis
