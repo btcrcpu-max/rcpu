@@ -85,8 +85,7 @@ static constexpr unsigned int EXTRA_DESCENDANT_TX_SIZE_LIMIT{10000};
 
 /**
  * Mandatory script verification flags that all new transactions must comply with for
- * them to be valid. Failing one of these tests may trigger a DoS ban;
- * see CheckInputScripts() for details.
+ * them to be valid.
  *
  * Note that this does not affect consensus validity; see GetBlockScriptFlags()
  * for that.

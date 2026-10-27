@@ -1479,7 +1479,7 @@ class SegWitTest(BitcoinTestFramework):
         sign_input_segwitv0(tx2, 0, script, tx.vout[0].nValue, key)
 
         # Should fail policy test.
-        test_transaction_acceptance(self.nodes[0], self.test_node, tx2, True, False, 'non-mandatory-script-verify-flag (Using non-compressed keys in segwit)')
+        test_transaction_acceptance(self.nodes[0], self.test_node, tx2, True, False, 'mempool-script-verify-flag-failed (Using non-compressed keys in segwit)')
         # But passes consensus.
         block = self.build_next_block()
         self.update_witness_block_with_transactions(block, [tx2])
@@ -1498,7 +1498,7 @@ class SegWitTest(BitcoinTestFramework):
         sign_p2pk_witness_input(witness_script, tx3, 0, SIGHASH_ALL, tx2.vout[0].nValue, key)
 
         # Should fail policy test.
-        test_transaction_acceptance(self.nodes[0], self.test_node, tx3, True, False, 'non-mandatory-script-verify-flag (Using non-compressed keys in segwit)')
+        test_transaction_acceptance(self.nodes[0], self.test_node, tx3, True, False, 'mempool-script-verify-flag-failed (Using non-compressed keys in segwit)')
         # But passes consensus.
         block = self.build_next_block()
         self.update_witness_block_with_transactions(block, [tx3])
@@ -1515,7 +1515,7 @@ class SegWitTest(BitcoinTestFramework):
         sign_p2pk_witness_input(witness_script, tx4, 0, SIGHASH_ALL, tx3.vout[0].nValue, key)
 
         # Should fail policy test.
-        test_transaction_acceptance(self.nodes[0], self.test_node, tx4, True, False, 'non-mandatory-script-verify-flag (Using non-compressed keys in segwit)')
+        test_transaction_acceptance(self.nodes[0], self.test_node, tx4, True, False, 'mempool-script-verify-flag-failed (Using non-compressed keys in segwit)')
         block = self.build_next_block()
         self.update_witness_block_with_transactions(block, [tx4])
         test_witness_block(self.nodes[0], self.test_node, block, accepted=True)
