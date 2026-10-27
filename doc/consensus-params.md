@@ -53,7 +53,7 @@ They are listed here so other docs have one place to copy from.
 - Default chain is RCPUMAIN; `rcpud` without `-chain` launches the RCPU mainnet.
 - `ChainType::MAIN` (Bitcoin mainnet) is disabled at runtime; `-chain=main` throws an error.
 - The Bitcoin template (`CMainParams`) remains in source for structure/tests but cannot be selected as the live chain.
-- `nMinimumChainWork` is the chainwork at **height 5072**, measured from a real synced node (2026-09-17; raised in v1.1.4, previously a height-100 value from v1.0.8). Raise it only from a synced node's `getblockchaininfo.chainwork` — never by hand from an old document. Every time a hardening tier is advanced, **this table and the `checkpointData` list must be updated in the same change**, or the doc/code drift reappears.
+- `nMinimumChainWork` is the chainwork at **height 10,000** (`000000000000000000000000000000000000000000000000000000084efb7f04`), measured from a real synced node on **2026-09-29** and raised to that value in **v1.1.8** (v1.1.4 used the height-5072 value `0x…` measured 2026-09-17, and v1.0.8 the original height-100 value). Raise it only from a synced node's `getblockchaininfo.chainwork` — never by hand from an old document. Every time a hardening tier is advanced, **this table, this note and the `checkpointData` list must be updated in the same change**, or the doc/code drift reappears.
 
 ## Genesis Block
 

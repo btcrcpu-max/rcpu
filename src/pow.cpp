@@ -1117,6 +1117,24 @@ bool CheckProofOfWorkQHash(const CBlockHeader& block, const Consensus::Params& p
 
 // !RCPU (dual-algo etchash)
 
+std::optional<PowAlgo> GetPowAlgoForHeader(int64_t nHeight, int32_t nVersion, const Consensus::Params& params)
+{
+    if ((nVersion & BLOCK_VERSION_QHASH) == 0) {
+        return PowAlgo::RandomX;
+    }
+    if (nHeight < 0) {
+        // Height unknown: Etchash derives its epoch from the height, so the
+        // verdict cannot be reached here.
+        return std::nullopt;
+    }
+    if (nHeight < params.nDualAlgoActivationHeight) {
+        // Below activation the bit is consensus-irrelevant: the block is a
+        // RandomX block that happens to carry bit 30.
+        return PowAlgo::RandomX;
+    }
+    return params.fDualAlgoEtchash ? PowAlgo::Etchash : PowAlgo::QHash;
+}
+
 int64_t GetEtchashEpoch(int64_t nHeight, const Consensus::Params& params)
 {
     if (nHeight < 0 || nHeight < params.nDualAlgoActivationHeight) {

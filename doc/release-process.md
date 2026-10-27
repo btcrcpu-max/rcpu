@@ -45,7 +45,15 @@ and `configure.ac`.
    ./autogen.sh
    ./configure --without-gui --disable-bench
    make -j$(nproc)
-   make check    # must pass on RCPUMAIN
+   # Scoped test gate (see .github/workflows/ci.yml "make check scope"):
+   #   ./src/test/test_bitcoin --run_test=blind_tests,confidential_validation_tests,\
+   #     randomx_tests,dualalgo_tests,logging_tests,coinbase_confidential_tests,\
+   #     group_outputs_tests,pow_tests,argsman_tests,tx_verify_tests,\
+   #     validation_block_tests,serialize_tests
+   # Plain `make check` still cannot pass: the Bitcoin-legacy data-driven suites
+   # (sighash, transaction, txpackage, script_standard) assume upstream
+   # serialization, and several suites select ChainType::MAIN, which RCPU
+   # disables on purpose. Re-enabling them is tracked as follow-up work.
    ```
 
 3. Create the tarball:
@@ -109,7 +117,9 @@ the Bitcoin Core build process can adapt the Guix configuration for RCPU.
 
 ## Release Checklist
 
-1. [ ] All tests pass (`make check`) on RCPUMAIN
+1. [ ] Scoped unit gate is green (the twelve `--run_test` suites listed above,
+       as enforced by CI). Plain `make check` is **not** a release gate today —
+       see the note in step 2; re-enabling the remaining suites is follow-up work.
 2. [ ] Version bumped in `configure.ac` and `src/clientversion.h`
 3. [ ] Git tag created and signed
 4. [ ] Binaries built on clean environment

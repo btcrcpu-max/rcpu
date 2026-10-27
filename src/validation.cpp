@@ -3789,17 +3789,22 @@ static bool CheckBlockHeader(const CBlockHeader& block, BlockValidationState& st
     // everything else (including ALL pre-activation blocks, where the bit is
     // ignored) keeps the RandomX path unchanged.
     const int nHeight = pindexPrev ? pindexPrev->nHeight + 1 : -1;
-    if (nHeight >= consensusParams.nDualAlgoActivationHeight && (block.nVersion & BLOCK_VERSION_QHASH)) {
+    const std::optional<PowAlgo> pow_algo = GetPowAlgoForHeader(nHeight, block.nVersion, consensusParams);
+    if (pow_algo == PowAlgo::Etchash || pow_algo == PowAlgo::QHash) {
         // !RCPU (dual-algo etchash): bit-30 blocks are Etchash when the flag
         // is set, legacy qhash otherwise. Height is always known here
         // (AcceptBlockHeader passes pindexPrev).
-        const bool fEtchashOk = consensusParams.fDualAlgoEtchash
+        const bool fSecondAlgoOk = pow_algo == PowAlgo::Etchash
             ? CheckProofOfWorkEtchash(block, nHeight, consensusParams, POW_VERIFY_FULL, nullptr)
             : CheckProofOfWorkQHash(block, consensusParams, POW_VERIFY_FULL, nullptr);
-        if (!fEtchashOk)
+        if (!fSecondAlgoOk)
             return state.Invalid(BlockValidationResult::BLOCK_INVALID_HEADER, "high-hash", "proof of work failed");
         return true;
     }
+    // pow_algo == std::nullopt (bit-30 with unknown height) keeps the historic
+    // RandomX verdict: this function's only production caller with a known
+    // height is AcceptBlockHeader, which is authoritative; the context-free
+    // CheckBlock defers that case explicitly (see below).
     const uint32_t prevBlockTime = pindexPrev ? pindexPrev->GetBlockTime() : 0;
     if (!CheckProofOfWorkRandomX(block, consensusParams, POW_VERIFY_FULL, nullptr, prevBlockTime))
     // !RCPU END
@@ -3946,15 +3951,16 @@ bool CheckBlock(const CBlock& block, BlockValidationState& state, const Consensu
         // dispatch in AcceptBlockHeader; on legacy qhash chains either proof is
         // accepted so out-of-order relay is not penalized.
         if (fCheckPOW && (block.nVersion & BLOCK_VERSION_QHASH)) {
-            if (nHeight >= consensusParams.nDualAlgoActivationHeight) {
+            const std::optional<PowAlgo> pow_algo = GetPowAlgoForHeader(nHeight, block.nVersion, consensusParams);
+            if (pow_algo == PowAlgo::Etchash || pow_algo == PowAlgo::QHash) {
                 // !RCPU (dual-algo etchash): bit-30 blocks are Etchash when
                 // the flag is set (height known), legacy qhash otherwise.
-                const bool fAlgoOk = consensusParams.fDualAlgoEtchash
+                const bool fAlgoOk = pow_algo == PowAlgo::Etchash
                     ? CheckProofOfWorkEtchash(block, nHeight, consensusParams, POW_VERIFY_COMMITMENT_ONLY)
                     : CheckProofOfWorkQHash(block, consensusParams, POW_VERIFY_COMMITMENT_ONLY);
                 if (!fAlgoOk)
                     return state.Invalid(BlockValidationResult::BLOCK_INVALID_HEADER, "high-hash", "proof of work failed");
-            } else if (nHeight < 0) {
+            } else if (!pow_algo) {
                 // Height unknown (e.g. a block whose parent we have not seen
                 // yet). Etchash needs the height to derive its epoch, so a
                 // valid Etchash proof cannot be checked here. Do not judge it at
@@ -4075,44 +4081,34 @@ std::vector<unsigned char> ChainstateManager::GenerateCoinbaseCommitment(CBlock&
 
 bool HasValidProofOfWork(const std::vector<CBlockHeader>& headers, const Consensus::Params& consensusParams, int nStartHeight)
 {
-    // !RCPU (dual-algo): the second algorithm is selected by the version bit
-    // and, since the Etchash switch, is height-derived (epoch cache). The
-    // height of headers[0] is supplied by the caller when known; each
-    // subsequent header is assumed to be one higher (the caller checks
-    // continuity before calling this function).
+    // !RCPU (dual-algo): height-aware headers pre-check. Every verdict comes
+    // from the same GetPowAlgoForHeader helper that CheckBlockHeader/CheckBlock
+    // use, so a header accepted by consensus here cannot be rejected live, and
+    // vice versa. nHeight is tracked across the contiguous batch (the caller
+    // enforces continuity before calling us); when nHeight is -1 the helper
+    // defers (returns nullopt) and we defer too — Etchash epochs require
+    // height context.
     int nHeight = nStartHeight;
     for (const auto& header : headers) {
-        const bool fSecondAlgo = (header.nVersion & BLOCK_VERSION_QHASH) != 0;
-        if (fSecondAlgo && consensusParams.fDualAlgoEtchash) {
-            if (nHeight < 0) {
-                // Height unknown: Etchash cannot be verified without an epoch.
-                // Leave the decision to the authoritative height-aware check in
-                // AcceptBlockHeader (which always runs with pindexPrev). This is
-                // the same trade-off as the unknown-ancestor fast path in
-                // CheckHeadersPoW: no PoW work is spent here.
-            } else if (nHeight >= consensusParams.nDualAlgoActivationHeight) {
-                // Post-activation bit-30 headers MUST be Etchash; there is no
-                // RandomX/qhash fallback (both would fail anyway and used to
-                // make every relayed Etchash header look like invalid PoW).
-                if (!CheckProofOfWorkEtchash(header, nHeight, consensusParams, POW_VERIFY_COMMITMENT_ONLY)) {
-                    return false;
-                }
-            } else if (!CheckProofOfWorkRandomX(header, consensusParams, POW_VERIFY_COMMITMENT_ONLY)) {
-                // Pre-activation the bit is ignored, so the header must carry a
-                // valid RandomX commitment (a qhash proof is also tolerated,
-                // matching the historical pre-check).
-                if (!CheckProofOfWorkQHash(header, consensusParams, POW_VERIFY_COMMITMENT_ONLY)) {
-                    return false;
-                }
-            }
-        } else if (fSecondAlgo) {
-            // Legacy qhash dual-algo chains keep the old permissive pre-check.
-            if (!CheckProofOfWorkQHash(header, consensusParams, POW_VERIFY_COMMITMENT_ONLY) &&
-                !CheckProofOfWorkRandomX(header, consensusParams, POW_VERIFY_COMMITMENT_ONLY)) {
+        const std::optional<PowAlgo> pow_algo = GetPowAlgoForHeader(nHeight, header.nVersion, consensusParams);
+        if (!pow_algo) {
+            // Height unknown + bit-30 set: Etchash epoch unknowable. Defer.
+        } else switch (*pow_algo) {
+        case PowAlgo::Etchash:
+            if (!CheckProofOfWorkEtchash(header, nHeight, consensusParams, POW_VERIFY_COMMITMENT_ONLY)) {
                 return false;
             }
-        } else if (!CheckProofOfWorkRandomX(header, consensusParams, POW_VERIFY_COMMITMENT_ONLY)) {
-            return false;
+            break;
+        case PowAlgo::QHash:
+            if (!CheckProofOfWorkQHash(header, consensusParams, POW_VERIFY_COMMITMENT_ONLY)) {
+                return false;
+            }
+            break;
+        case PowAlgo::RandomX:
+            if (!CheckProofOfWorkRandomX(header, consensusParams, POW_VERIFY_COMMITMENT_ONLY)) {
+                return false;
+            }
+            break;
         }
         if (nHeight >= 0) ++nHeight;
     }
