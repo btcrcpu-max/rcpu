@@ -554,8 +554,10 @@ BOOST_AUTO_TEST_CASE(dual_algo_difficulty_cache_matches_chain_walk)
 // HasValidProofOfWork() 行为边界。helper 统一 dispatch 后，该函数在
 // 高度已知场景不再宽松地同时接受 qhash 和 RandomX 证明，而是严格跟随
 // GetPowAlgoForHeader 的判定：
-//   - post-activation + bit-30 + height-known  → 只认 QHash
-//   - pre-activation  + bit-30 + height-known  → 只认 RandomX（共识忽略 bit-30）
+//   - post-activation + bit-30 + height-known  → 只认 QHash（qhash 承诺会重算）
+//   - pre-activation  + bit-30 + height-known  → 判 RandomX（共识忽略 bit-30）；
+//     预检层 RandomX 只做承诺目标检查（数据集太贵不重算），权威拒绝在
+//     CheckBlockHeader 的 POW_VERIFY_FULL
 //   - height unknown + bit-30                 → defer（不 reject）
 // 这组测试锁住上述收紧行为，防止未来有人把宽容 pre-check 加回来。
 BOOST_AUTO_TEST_CASE(qhash_chain_pow_precheck_uses_helper)
@@ -618,12 +620,15 @@ BOOST_AUTO_TEST_CASE(qhash_chain_pow_precheck_uses_helper)
         BOOST_CHECK(!HasValidProofOfWork({h}, params, /*nStartHeight=*/150));
     }
 
-    // ── Case 3: pre-activation + bit-30 + qhash proof + height-known → FAIL ──
-    // helper 对 pre-activation bit-30 返回 RandomX，qhash proof 被拒。
+    // ── Case 3: pre-activation + bit-30 + height-known → helper 判 RandomX ──
+    // 直接锁定 dispatch 判定。预检层（COMMITMENT_ONLY）的 RandomX 只做承诺
+    // 目标检查、不重算数据集，因此满足目标的 qhash 承诺在预检层被接受；
+    // 真正的拒绝发生在 CheckBlockHeader 的 POW_VERIFY_FULL RandomX 重算。
     {
+        BOOST_CHECK(GetPowAlgoForHeader(149, 1 | BLOCK_VERSION_QHASH, params) == std::optional<PowAlgo>(PowAlgo::RandomX));
         CBlockHeader h = make_hdr(1 | BLOCK_VERSION_QHASH);
         BOOST_REQUIRE(mine_qhash(h, params));
-        BOOST_CHECK(!HasValidProofOfWork({h}, params, /*nStartHeight=*/149));
+        BOOST_CHECK(HasValidProofOfWork({h}, params, /*nStartHeight=*/149));
     }
 
     // ── Case 4: pre-activation + bit-30 + RandomX proof + height-known → OK ──
