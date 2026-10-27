@@ -43,6 +43,11 @@ static feebumper::Result PreconditionChecks(const CWallet& wallet, const CWallet
     // output amounts and break the structure of a CT tx. Reject up-front
     // so the wallet surface is consistent: either all-explicit or we
     // refuse and let the user use a CT-aware tool.
+    // Replacement is disabled by policy on RCPU chains today (see the gates in
+    // init.cpp, wallet/init.cpp, wallet/rpc/spend.cpp and rpc/rawtransaction.cpp),
+    // so this guard is currently unreachable through RPC. It stays as
+    // defense-in-depth so that enabling replacement later cannot silently
+    // mis-fee a confidential transaction.
     // Outputs are visible directly on the transaction (their nValue carries
     // the Pedersen commitment). Inputs are checked later in
     // CreateRateBumpTransaction after UTXOs are resolved (findCoins is

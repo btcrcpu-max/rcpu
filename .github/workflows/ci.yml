@@ -258,4 +258,9 @@ jobs:
           # activation height, node restart (LoadBlockIndex rebuild) and
           # post-restart block acceptance.
           python3 test/functional/feature_dualalgo_count_cache.py --descriptors
+          # Replacement (BIP125) is disabled by policy on every RCPU chain;
+          # these pin the enforcement points so it cannot be re-enabled
+          # silently, plus the CT guard in the fee bumper.
+          python3 test/functional/feature_rbf_rcpu.py --descriptors
+          python3 test/functional/wallet_bumpfee_ct.py --descriptors
 
