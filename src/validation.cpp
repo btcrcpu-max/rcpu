@@ -775,13 +775,6 @@ bool MemPoolAccept::PreChecks(ATMPArgs& args, Workspace& ws)
         const CTransaction* ptxConflicting = m_pool.GetConflictTx(txin.prevout);
         if (ptxConflicting) {
 
-            // !RCPU
-            // First-seen rule to reject conflicting transactions (legacy behaviour disables RBF).
-            if (g_isRandomX) {
-                return state.Invalid(TxValidationResult::TX_MEMPOOL_POLICY, "txn-mempool-conflict");
-            }
-            // !RCPU END
-
             if (!args.m_allow_replacement) {
                 // Transaction conflicts with a mempool tx, but we're not allowing replacements.
                 return state.Invalid(TxValidationResult::TX_MEMPOOL_POLICY, "bip125-replacement-disallowed");
