@@ -312,6 +312,10 @@ class WalletConfidentialTest(BitcoinTestFramework):
         fee7e = [o for o in decoded7e["vout"] if o["scriptPubKey"].get("hex", "x") == ""]
         assert fee7e, f"expected explicit fee output: {decoded7e['vout']}"
         assert_equal(len(decoded7e["vout"]), 3)
+        # Confirm the 7e spend so the unconfirmed payment to bech32_addr does
+        # not leak into the balance assertions of the sections below.
+        self.generatetoaddress(node, 1, mixer.getnewaddress("", "bech32"))
+        self.sync_all()
 
         # ---- 8. -ctlegacy=1 usable below nBanPathAHeight (runtime probe) ----
         # H-1: the wallet refuses -ctlegacy=1 once the tip has reached the
