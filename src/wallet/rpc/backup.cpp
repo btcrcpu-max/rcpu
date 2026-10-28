@@ -670,6 +670,12 @@ RPCHelpMan dumpprivkey()
 
     EnsureWalletIsUnlocked(*pwallet);
 
+    // !RCPU: EncodeSecret() returns an empty string on mainnet (WIF is not
+    // supported); fail loudly instead of returning an empty private key.
+    if (Params().GetChainType() == ChainType::RCPUMAIN) {
+        throw JSONRPCError(RPC_WALLET_ERROR, "dumpprivkey is disabled on RCPU mainnet (WIF secret encoding is not supported). Back up wallet.dat and the HD seed instead");
+    }
+
     std::string strAddress = request.params[0].get_str();
     CTxDestination dest = DecodeDestination(strAddress);
     if (!IsValidDestination(dest)) {
@@ -727,6 +733,12 @@ RPCHelpMan dumpwallet()
     LOCK(wallet.cs_wallet);
 
     EnsureWalletIsUnlocked(wallet);
+
+    // !RCPU: EncodeSecret() returns an empty string on mainnet (WIF is not
+    // supported); fail loudly instead of writing a dump with blank keys.
+    if (Params().GetChainType() == ChainType::RCPUMAIN) {
+        throw JSONRPCError(RPC_WALLET_ERROR, "dumpwallet is disabled on RCPU mainnet (WIF secret encoding is not supported). Back up wallet.dat and the HD seed instead");
+    }
 
     fs::path filepath = fs::u8path(request.params[0].get_str());
     filepath = fs::absolute(filepath);
