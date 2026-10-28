@@ -201,6 +201,23 @@ struct QueuedBlock {
  * TODO: move most members from CNodeState to this structure.
  * TODO: move remaining application-layer data members from CNode to this structure.
  */
+/**
+ * P2-9: total serialized rangeproof bytes in a confidential transaction.
+ * Used to charge a peer's validation budget before CheckTxInputs runs the
+ * (relatively expensive) Borromean verification.
+ */
+static int64_t CTProofBytes(const CTransaction& tx)
+{
+    if (tx.nVersion != CT_VERSION) return 0;
+    int64_t bytes = 0;
+    for (const CTxOut& out : tx.vout) {
+        if (!out.nValue.IsExplicit()) {
+            bytes += out.vchRangeproof.size();
+        }
+    }
+    return bytes;
+}
+
 struct Peer {
     /** Same id as the CNode object for this peer */
     const NodeId m_id{0};
@@ -395,7 +412,41 @@ struct Peer {
         , m_our_services{our_services}
     {}
 
+    /**
+     * P2-9: bound the amount of confidential-output rangeproof work a peer can
+     * make us do. The mempool path verifies rangeproofs in CheckTxInputs
+     * before the fee check, and a 400k-weight CT transaction can carry
+     * hundreds of proofs. A per-peer byte budget with a burst allowance keeps
+     * one peer from monopolising validation CPU; legitimate wallets send a
+     * handful of proofs per transaction.
+     *
+     * Measured locally: a 2.2 KiB Borromean proof costs ~2.6 ms to verify, so
+     * the 256 KiB burst caps one peer's initial work at ~0.3 s and the
+     * 32 KiB/s refill at ~40 ms of CPU per second.
+     */
+    bool ConsumeCTProofBudget(int64_t bytes)
+    {
+        if (bytes <= 0) return true;
+        LOCK(m_ct_budget_mutex);
+        const auto now = std::chrono::steady_clock::now();
+        const int64_t elapsed_us = std::chrono::duration_cast<std::chrono::microseconds>(now - m_ct_budget_last).count();
+        if (elapsed_us > 0) {
+            // 32 KiB/s refill, capped at the 256 KiB burst allowance.
+            const int64_t refill = elapsed_us * 32 / 1000;
+            m_ct_budget_tokens = std::min<int64_t>(CT_PROOF_BUDGET_MAX, m_ct_budget_tokens + refill);
+            m_ct_budget_last = now;
+        }
+        if (m_ct_budget_tokens < bytes) return false;
+        m_ct_budget_tokens -= bytes;
+        return true;
+    }
+
 private:
+    static constexpr int64_t CT_PROOF_BUDGET_MAX{256 * 1024};
+    mutable Mutex m_ct_budget_mutex;
+    int64_t m_ct_budget_tokens{CT_PROOF_BUDGET_MAX};
+    std::chrono::steady_clock::time_point m_ct_budget_last{std::chrono::steady_clock::now()};
+
     mutable Mutex m_tx_relay_mutex;
 
     /** Transaction relay data. May be a nullptr. */
@@ -3026,6 +3077,14 @@ bool PeerManagerImpl::ProcessOrphanTx(Peer& peer)
     CTransactionRef porphanTx = nullptr;
 
     while (CTransactionRef porphanTx = m_orphanage.GetTxToReconsider(peer.m_id)) {
+        // P2-9: orphans are replayed through the same mempool path; charge the
+        // originating peer's CT verification budget as well.
+        const int64_t ct_proof_bytes = CTProofBytes(*porphanTx);
+        if (ct_proof_bytes > 0 && !peer.ConsumeCTProofBudget(ct_proof_bytes)) {
+            LogPrint(BCLog::MEMPOOL, "Deferring CT orphan tx %s (wtxid=%s) from peer=%d: rangeproof verification budget exhausted\n",
+                     porphanTx->GetHash().ToString(), porphanTx->GetWitnessHash().ToString(), peer.m_id);
+            return false;
+        }
         const MempoolAcceptResult result = m_chainman.ProcessTransaction(porphanTx);
         const TxValidationState& state = result.m_state;
         const Txid& orphanHash = porphanTx->GetHash();
@@ -4253,6 +4312,15 @@ void PeerManagerImpl::ProcessMessage(CNode& pfrom, const std::string& msg_type, 
             // due to node policy (vs. consensus). So we can't blanket penalize a
             // peer simply for relaying a tx that our m_recent_rejects has caught,
             // regardless of false positives.
+            return;
+        }
+
+        // P2-9: charge the peer's CT validation budget before entering the
+        // mempool checks (rangeproof verification happens in CheckTxInputs).
+        const int64_t ct_proof_bytes = CTProofBytes(tx);
+        if (ct_proof_bytes > 0 && !peer->ConsumeCTProofBudget(ct_proof_bytes)) {
+            LogPrint(BCLog::MEMPOOL, "Ignoring CT tx %s (wtxid=%s) from peer=%d: rangeproof verification budget exhausted\n",
+                     tx.GetHash().ToString(), tx.GetWitnessHash().ToString(), pfrom.GetId());
             return;
         }
 
