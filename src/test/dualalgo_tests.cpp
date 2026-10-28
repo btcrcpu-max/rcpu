@@ -727,4 +727,28 @@ BOOST_AUTO_TEST_CASE(qhash_chain_pow_precheck_uses_helper)
     }
 }
 
+// Mainnet-parameter KAT for the 21000 activation boundary. This pins the
+// height/epoch/BE/bit-30 dispatch that the deployed mainnet params use, even
+// though the unit fixture builds Consensus::Params by hand (CMainParams is not
+// cheap to instantiate inside a unit test).
+BOOST_AUTO_TEST_CASE(etchash_mainnet_21000_boundaries)
+{
+    Consensus::Params params;
+    params.fDualAlgoEtchash = true;
+    params.nDualAlgoActivationHeight = 21000;
+    params.nEtchashEpochLength = 6000;
+    params.nEtchashBigEndianHeight = 21000;
+
+    BOOST_CHECK_EQUAL(GetEtchashEpoch(20999, params), -1);
+    BOOST_CHECK_EQUAL(GetEtchashEpoch(21000, params), 0);
+    BOOST_CHECK_EQUAL(GetEtchashEpoch(26999, params), 0);
+    BOOST_CHECK_EQUAL(GetEtchashEpoch(27000, params), 1);
+    BOOST_CHECK(GetEtchashSeedHash(21000, params).IsNull());
+    BOOST_CHECK(GetEtchashSeedHash(27000, params) == etchash::SeedForEpoch(1));
+
+    BOOST_CHECK(GetPowAlgoForHeader(20999, BLOCK_VERSION_QHASH, params) == PowAlgo::RandomX);
+    BOOST_CHECK(GetPowAlgoForHeader(21000, BLOCK_VERSION_QHASH, params) == PowAlgo::Etchash);
+    BOOST_CHECK(GetPowAlgoForHeader(21000, 0x20000000, params) == PowAlgo::RandomX);
+}
+
 BOOST_AUTO_TEST_SUITE_END()
