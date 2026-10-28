@@ -317,6 +317,43 @@ class WalletConfidentialTest(BitcoinTestFramework):
         self.generatetoaddress(node, 1, mixer.getnewaddress("", "bech32"))
         self.sync_all()
 
+        # ---- 7f. sendall sweeps confidential UTXOs ----
+        # Regression for the reported wallet bug: sendall counted confidential
+        # (blinded) inputs as 0, so a wallet whose UTXOs were confidential
+        # always failed with "Total value of UTXO pool too low" (or built a
+        # consensus-invalid v2 spend when construction got that far). sendall
+        # now resolves the real input values and routes through
+        # CreateTransaction whenever any input or recipient is confidential.
+        self.log.info("sendall sweeps a confidential-only wallet")
+        node.createwallet(wallet_name="sweepall", descriptors=True)
+        sweepall = node.get_wallet_rpc("sweepall")
+        sweepall_conf = sweepall.getnewaddress("", "confidential")
+        mixer.sendtoaddress(sweepall_conf, Decimal("0.2"))
+        self.generatetoaddress(node, 1, mixer.getnewaddress("", "bech32"))
+        assert_equal(sweepall.getbalance(), Decimal("0.2"))
+        # Sweep to a bare rcpu1 address: the payee output is explicit and a
+        # dust-sized wallet-owned confidential balancing output is injected.
+        sweep_res = sweepall.sendall([payer.getnewaddress("", "bech32")])
+        assert_equal(sweep_res["complete"], True)
+        sweep_tx = node.getrawtransaction(sweep_res["txid"], True)
+        assert_equal(sweep_tx["version"], 3)
+        assert any(o["scriptPubKey"].get("hex", "x") == "" for o in sweep_tx["vout"]), f"no explicit fee output: {sweep_tx['vout']}"
+        assert any(o["value"] == "confidential" for o in sweep_tx["vout"]), f"no confidential balancing output: {sweep_tx['vout']}"
+        self.generatetoaddress(node, 1, mixer.getnewaddress("", "bech32"))
+        # Only the dust balancing change remains in the wallet.
+        assert sweepall.getbalance() < Decimal("0.0001"), sweepall.getbalance()
+        # Sweep to a confidential address: the payee output itself is blinded,
+        # so no balancing output is needed and the wallet ends up empty.
+        mixer.sendtoaddress(sweepall_conf, Decimal("0.2"))
+        self.generatetoaddress(node, 1, mixer.getnewaddress("", "bech32"))
+        sweep_conf_res = sweepall.sendall([payer.getnewaddress("", "confidential")])
+        assert_equal(sweep_conf_res["complete"], True)
+        sweep_conf_tx = node.getrawtransaction(sweep_conf_res["txid"], True)
+        conf_payees = [o for o in sweep_conf_tx["vout"] if o["value"] == "confidential"]
+        assert_equal(len(conf_payees), 1)  # blinded payee, no balancing change
+        self.generatetoaddress(node, 1, mixer.getnewaddress("", "bech32"))
+        assert_equal(sweepall.getbalance(), Decimal("0"))
+
         # ---- 8. -ctlegacy=1 usable below nBanPathAHeight (runtime probe) ----
         # H-1: the wallet refuses -ctlegacy=1 once the tip has reached the
         # chain's nBanPathAHeight (testnet: 0 -> banned from genesis; regtest:

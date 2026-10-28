@@ -1193,6 +1193,11 @@ CHECK_NONFATAL(IsValidDestination(dest) != scriptChange.empty());
     // Get the fee rate to use effective values in coin selection
     FeeCalculation feeCalc;
     coin_selection_params.m_effective_feerate = GetMinimumFeeRate(wallet, coin_control, &feeCalc);
+    // RCPU CT: an explicit user fee rate must never be silently clamped to
+    // the CT safety cap (-ctmaxfeerate); fail loudly instead.
+    if (coin_control.m_feerate && *coin_control.m_feerate > wallet.m_max_ct_fee_rate) {
+        return util::Error{strprintf(_("Fee rate (%s) exceeds the CT safety cap (-ctmaxfeerate=%s). Raise -ctmaxfeerate if this is intentional."), coin_control.m_feerate->ToString(FeeEstimateMode::SAT_VB), wallet.m_max_ct_fee_rate.ToString(FeeEstimateMode::SAT_VB))};
+    }
     // Do not, ever, assume that it's fine to change the fee rate if the user has explicitly
     // provided one
     if (coin_control.m_feerate && coin_selection_params.m_effective_feerate > *coin_control.m_feerate) {

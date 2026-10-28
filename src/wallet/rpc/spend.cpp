@@ -20,6 +20,7 @@
 #include <rpc/util.h>
 #include <script/script.h>
 #include <script/signingprovider.h>
+#include <script/standard.h>
 #include <logging.h>
 #include <util/fees.h>
 #include <util/rbf.h>
@@ -38,6 +39,7 @@
 #include <wallet/fees.h>
 #include <wallet/rpc/util.h>
 #include <chainparams.h>
+#include <wallet/receive.h>
 #include <wallet/spend.h>
 #include <wallet/scriptpubkeyman.h>
 #include <wallet/wallet.h>
@@ -2074,7 +2076,29 @@ RPCHelpMan sendall()
                 throw JSONRPCError(RPC_INVALID_PARAMETER, "Cannot combine send_max with specific inputs.");
             } else if (options.exists("inputs") && (options.exists("minconf") || options.exists("maxconf"))) {
                 throw JSONRPCError(RPC_INVALID_PARAMETER, "Cannot combine minconf or maxconf with specific inputs.");
-            } else if (options.exists("inputs")) {
+            }
+
+            // !RCPU CT: resolve the true value of every input up front.
+            // Confidential (blinded) UTXOs used to be counted as 0 here, so
+            // sendall either failed with "Total value of UTXO pool too low"
+            // or built a v2 transaction spending confidential inputs that
+            // consensus rejects (bad-txns-v2-spend-ct). Wallets holding at
+            // least one confidential input are now routed through
+            // CreateTransaction (blinding, CT_VERSION, fee output) below;
+            // wallets with only explicit UTXOs keep the classic path.
+            std::vector<CTxIn> txins;
+            bool has_confidential_input{false};
+            auto resolve_input_value{[&](const CTxOut& txout, const COutPoint& outpoint) -> CAmount {
+                if (txout.nValue.IsExplicit()) return txout.nValue.GetAmount();
+                CAmount value{0};
+                uint256 blind;
+                if (!UnblindConfidentialOutput(*pwallet, txout, value, blind)) {
+                    throw JSONRPCError(RPC_WALLET_ERROR, strprintf("Cannot determine the value of confidential UTXO (%s:%d). If it belongs to this wallet, unlock the wallet first.", outpoint.hash.ToString(), outpoint.n));
+                }
+                has_confidential_input = true;
+                return value;
+            }};
+            if (options.exists("inputs")) {
                 for (const CTxIn& input : rawTx.vin) {
                     if (pwallet->IsSpent(input.prevout)) {
                         throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("Input not available. UTXO (%s:%d) was already spent.", input.prevout.hash.ToString(), input.prevout.n));
@@ -2083,20 +2107,163 @@ RPCHelpMan sendall()
                     if (!tx || input.prevout.n >= tx->tx->vout.size() || !(pwallet->IsMine(tx->tx->vout[input.prevout.n]) & (coin_control.fAllowWatchOnly ? ISMINE_ALL : ISMINE_SPENDABLE))) {
                         throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("Input not found. UTXO (%s:%d) is not part of wallet.", input.prevout.hash.ToString(), input.prevout.n));
                     }
-                    total_input_value += (tx->tx->vout[input.prevout.n].nValue.IsExplicit() ? tx->tx->vout[input.prevout.n].nValue.GetAmount() : 0);
+                    total_input_value += resolve_input_value(tx->tx->vout[input.prevout.n], input.prevout);
+                    txins.push_back(input);
                 }
             } else {
                 CoinFilterParams coins_params;
                 coins_params.min_amount = 0;
                 for (const COutput& output : AvailableCoins(*pwallet, &coin_control, fee_rate, coins_params).All()) {
                     CHECK_NONFATAL(output.input_bytes > 0);
-                    if (send_max && fee_rate.GetFee(output.input_bytes) > (output.txout.nValue.IsExplicit() ? output.txout.nValue.GetAmount() : 0)) {
+                    const CAmount input_value{resolve_input_value(output.txout, output.outpoint)};
+                    if (send_max && fee_rate.GetFee(output.input_bytes) > input_value) {
                         continue;
                     }
                     CTxIn input(output.outpoint.hash, output.outpoint.n, CScript(), rbf ? MAX_BIP125_RBF_SEQUENCE : CTxIn::SEQUENCE_FINAL);
                     rawTx.vin.push_back(input);
-                    total_input_value += (output.txout.nValue.IsExplicit() ? output.txout.nValue.GetAmount() : 0);
+                    txins.push_back(input);
+                    total_input_value += input_value;
                 }
+            }
+
+            // !RCPU CT: a confidential recipient (rcpux1...) also needs the
+            // CreateTransaction path — the classic path would degrade it to a
+            // plain explicit script and lose the blinding public key carried
+            // inside the address (and the remainder-assignment below would
+            // never match it, failing with a spurious dust error).
+            bool has_confidential_recipient{false};
+            for (unsigned int i = 0; i < recipients.size(); ++i) {
+                const UniValue& recipient{recipients[i]};
+                const std::string addr_str{recipient.isStr() ? recipient.get_str() : recipient.get_obj().getKeys()[0]};
+                const CTxDestination dest{DecodeDestination(addr_str)};
+                if (std::holds_alternative<ConfidentialKeyHash>(dest)) {
+                    has_confidential_recipient = true;
+                    break;
+                }
+            }
+
+            if (has_confidential_input || has_confidential_recipient) {
+                // !RCPU CT: confidential-aware sweep. Re-parse the recipients
+                // as destinations so confidential rcpux1... addresses keep
+                // their blinding public key (ConstructTransaction degraded
+                // them to plain scripts), preselect exactly the enumerated
+                // inputs and let CreateTransaction blind the outputs, set
+                // CT_VERSION and append the explicit fee output.
+                std::vector<std::pair<CTxDestination, CAmount>> ct_outputs;
+                std::set<CTxDestination> ct_dests;
+                std::vector<size_t> no_amount_positions;
+                CAmount claimed_amount{0};
+                for (unsigned int i = 0; i < recipients.size(); ++i) {
+                    const UniValue& recipient{recipients[i]};
+                    std::string addr_str;
+                    std::optional<CAmount> amount;
+                    if (recipient.isStr()) {
+                        addr_str = recipient.get_str();
+                    } else {
+                        const UniValue& rkvp{recipient.get_obj()};
+                        if (rkvp.size() != 1) {
+                            throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameter, key-value pair must contain exactly one key");
+                        }
+                        addr_str = rkvp.getKeys()[0];
+                        amount = AmountFromValue(rkvp.getValues()[0]);
+                    }
+                    CTxDestination dest{DecodeDestination(addr_str)};
+                    if (!IsValidDestination(dest)) {
+                        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, std::string("Invalid RCPU address: ") + addr_str);
+                    }
+                    if (!ct_dests.insert(dest).second) {
+                        throw JSONRPCError(RPC_INVALID_PARAMETER, std::string("Invalid parameter, duplicated address: ") + addr_str);
+                    }
+                    if (amount) {
+                        claimed_amount += *amount;
+                    } else {
+                        no_amount_positions.push_back(ct_outputs.size());
+                    }
+                    ct_outputs.emplace_back(dest, amount.value_or(0));
+                }
+
+                if (claimed_amount > total_input_value) {
+                    throw JSONRPCError(RPC_WALLET_INSUFFICIENT_FUNDS, "Assigned more value to outputs than available funds.");
+                }
+
+                // Split what remains after the fixed-amount recipients into
+                // equal shares; CreateTransaction subtracts the fee from
+                // those shares (they are flagged subtractFeeFromAmount), so
+                // no fee is pre-deducted here.
+                const CAmount remainder{total_input_value - claimed_amount};
+                const CAmount share_count{static_cast<CAmount>(no_amount_positions.size())};
+                const CAmount per_share{remainder / share_count};
+                const CAmount share_extra{remainder % share_count};
+                std::set<int> sffo_set;
+                bool first_share{true};
+                for (const size_t pos : no_amount_positions) {
+                    const CAmount share{per_share + (first_share ? share_extra : 0)};
+                    first_share = false;
+                    if (IsDust(CTxOut(share, GetScriptForDestination(ct_outputs[pos].first)), pwallet->chain().relayDustFee())) {
+                        // Dynamically generated output amount is dust
+                        throw JSONRPCError(RPC_WALLET_INSUFFICIENT_FUNDS, "Dynamically assigned remainder results in dust output.");
+                    }
+                    ct_outputs[pos].second = share;
+                    sffo_set.insert(static_cast<int>(pos));
+                }
+
+                coin_control.m_allow_other_inputs = false;
+                coin_control.m_signal_bip125_rbf = rbf;
+                if (rawTx.nLockTime != 0) {
+                    coin_control.m_locktime = rawTx.nLockTime;
+                }
+                for (const CTxIn& txin : txins) {
+                    // Pin the exact sequence numbers ConstructTransaction /
+                    // the enumeration above resolved (rbf, locktime and
+                    // per-input sequence options already applied).
+                    coin_control.Select(txin.prevout).SetSequence(txin.nSequence);
+                }
+
+                const std::vector<CRecipient> ct_recipients{CreateRecipients(ct_outputs, sffo_set)};
+                const bool psbt_opt_in{options.exists("psbt") && options["psbt"].get_bool()};
+                const bool add_to_wallet{options.exists("add_to_wallet") ? options["add_to_wallet"].get_bool() : true};
+                const bool can_sign{!pwallet->IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS) && !pwallet->IsLocked()};
+                // Sign inside CreateTransaction only when the result is
+                // committed directly; every other mode goes through
+                // FinishTransaction (PSBT) below, which does its own signing
+                // pass on the unsigned transaction.
+                const bool sign_now{can_sign && add_to_wallet && !psbt_opt_in};
+                auto created{CreateTransaction(*pwallet, ct_recipients, /*change_pos=*/std::nullopt, coin_control, sign_now)};
+                if (!created) {
+                    throw JSONRPCError(RPC_WALLET_ERROR, util::ErrorString(created).original);
+                }
+
+                const bool lock_unspents_ct{options.exists("lock_unspents") ? options["lock_unspents"].get_bool() : false};
+                if (lock_unspents_ct) {
+                    for (const CTxIn& txin : txins) {
+                        pwallet->LockCoin(txin.prevout);
+                    }
+                }
+
+                if (!sign_now) {
+                    // Locked / watch-only / keyless wallet, psbt=1 or
+                    // add_to_wallet=0: hand the unsigned (but fully blinded)
+                    // transaction to the PSBT flow.
+                    return FinishTransaction(pwallet, options, CMutableTransaction(*created->tx));
+                }
+
+                // Persist the confidential recipient addresses and send
+                // amounts like SendMoney does, so the sender's record keeps
+                // the rcpux1 address and the outgoing amount.
+                mapValue_t map_value;
+                for (const auto& [vout_idx, addr] : created->vout_addr) {
+                    map_value[std::string("vout_addr_") + std::to_string(vout_idx)] = addr;
+                }
+                for (const auto& [vout_idx, amount] : created->vout_amount) {
+                    map_value[std::string("vout_amount_") + std::to_string(vout_idx)] = std::to_string(amount);
+                }
+                if (auto err = pwallet->CommitTransaction(created->tx, std::move(map_value), /*orderForm=*/{}); err) {
+                    throw JSONRPCError(RPC_WALLET_ERROR, "Broadcast failed: " + err->original);
+                }
+                UniValue result(UniValue::VOBJ);
+                result.pushKV("txid", created->tx->GetHash().GetHex());
+                result.pushKV("complete", true);
+                return result;
             }
 
             // estimate final size of tx

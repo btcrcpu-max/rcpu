@@ -1154,7 +1154,13 @@ static RPCHelpMan getblocktemplate()
         } else {
             result.pushKV("algo", "randomx");
             result.pushKV("rx_epoch_duration", consensusParams.nRandomXEpochDuration);
-            const uint32_t nEpoch = GetEpoch(pblock->GetBlockTime(), consensusParams.nRandomXEpochDuration);
+            // N-03: clamp the epoch timestamp exactly like validation does
+            // (pow.cpp): min(nTime, prevBlockTime + MAX_FUTURE_BLOCK_TIME).
+            // Without the clamp a template could advertise a seed for an
+            // epoch that validation will never use, and the miner's shares
+            // would be rejected.
+            const uint32_t nEpochTime = std::min<uint32_t>(pblock->GetBlockTime(), pindexPrev->GetBlockTime() + static_cast<uint32_t>(MAX_FUTURE_BLOCK_TIME));
+            const uint32_t nEpoch = GetEpoch(nEpochTime, consensusParams.nRandomXEpochDuration);
             result.pushKV("rx_epoch", nEpoch);
             result.pushKV("rx_seed_hash", GetSeedHash(nEpoch).GetHex());
             result.pushKV("rx_header_size", RCPU_LEGACY_HEADER_SIZE + RANDOMX_HASH_SIZE);

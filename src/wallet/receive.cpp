@@ -10,6 +10,7 @@
 #include <key_io.h>
 #include <script/signingprovider.h>
 #include <script/solver.h>
+#include <util/strencodings.h>
 #include <wallet/receive.h>
 #include <wallet/transaction.h>
 #include <wallet/wallet.h>
@@ -475,6 +476,13 @@ void CachedTxGetAmounts(const CWallet& wallet, const CWalletTx& wtx,
         uint256 blind;
         if (!UnblindConfidentialOutput(wallet, txout, nOutValue, blind)) {
             nOutValue = 0;
+            // RCPU CT: the sender cannot unblind a foreign Path-B/C output, so
+            // fall back to the plaintext amount persisted at send time
+            // (vout_amount_<idx>), mirroring qt/transactionrecord.cpp.
+            const auto amount_it = wtx.mapValue.find("vout_amount_" + std::to_string(i));
+            if (amount_it != wtx.mapValue.end()) {
+                nOutValue = LocaleIndependentAtoi<CAmount>(amount_it->second);
+            }
         }
         COutputEntry output = {address, nOutValue, (int)i};
 
