@@ -33,7 +33,7 @@ They are listed here so other docs have one place to copy from.
 | Dual-algo target spacing | 600 s (10 min) per algorithm | `src/kernel/chainparams.cpp` (`nDualAlgoTargetSpacing`) |
 | Etchash version bit | **bit 30** (`0x40000000`, `BLOCK_VERSION_QHASH`) | `src/primitives/block.h` |
 | Etchash epoch length | **6000** blocks (mainnet/testnet); 10 (regtest) | `src/kernel/chainparams.cpp` (`nEtchashEpochLength`) |
-| Etchash result byte order | **big-endian** (geth/ethminer standard) from height 21,000; legacy little-endian before | `src/consensus/params.h` (`nEtchashBigEndianHeight`), `src/pow.cpp` |
+| Etchash result byte order | **big-endian** (geth/standard) from the first Etchash block at height 21,000; the legacy little-endian branch is unreachable on RCPU chains and kept only for tests/non-Etchash params | `src/consensus/params.h` (`nEtchashBigEndianHeight`), `src/pow.cpp` |
 | Etchash mode | Light verification only (ECIP-1099 style, no full DAG) | `src/crypto/etchash.cpp`, `src/pow.cpp` (`CheckProofOfWorkEtchash`) |
 | RandomX epoch | 7 days | `src/kernel/chainparams.cpp` (`nRandomXEpochDuration`) |
 | Message start (magic) | `R C P U` (0x52 0x43 0x50 0x55) | `src/kernel/chainparams.cpp` (`pchMessageStart`) |
