@@ -2,6 +2,8 @@
 
 RCPU Core release notes live in [doc/release-notes/](release-notes/):
 
+- [v1.3.7](release-notes/v1.3.7.md) — **MANDATORY before block 21,000**: Etchash result comparison is big-endian (geth/standard) from the first Etchash block; v1.3.6 and earlier are little-endian and will split/reject. All nodes, pools and miners must upgrade.
+- v1.3.6 — superseded by v1.3.7 for Etchash; its binaries use the legacy little-endian rule. Do not use v1.3.6 to mine or validate bit-30 blocks at/after 21,000.
 - [v1.3.4](release-notes/v1.3.4.md) — consensus-critical Etchash fix: hashimotoLight now uses the full-DAG dataset size (standard go-ethereum vector); **all Etchash miners/pools must upgrade before height 21,000**
 - [v1.3.3](release-notes/v1.3.3.md) — P0 pre-activation fix: Etchash headers are no longer rejected as invalid PoW by the height-unaware pre-checks; upgrade before height 21,000
 - [v1.3.0](release-notes/v1.3.0.md) — Etchash dual-algo (ECIP-1099 light verification) on bit-30 blocks from height 21,000 (`fDualAlgoEtchash`); v1.3.1 clean rebuild, v1.3.2 asset filename fix

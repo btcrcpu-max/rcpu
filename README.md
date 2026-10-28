@@ -11,6 +11,13 @@ dual-algo** mode alongside RandomX.
 
 **Repository**: https://github.com/btcrcpu-max/rcpu
 
+> **MANDATORY UPGRADE BEFORE BLOCK 21,000 — v1.3.7 or later.**
+> Etchash result comparison is **big-endian** from the first Etchash block.
+> v1.3.6 and earlier use the legacy little-endian rule and will reject/split
+> at 21,000. Every node, pool and miner that validates or mines bit-30 blocks
+> must upgrade; miners need `rcpuminer` 1.0.23+ and pools need the matching
+> Miningcore plugin. See [v1.3.7 release notes](doc/release-notes/v1.3.7.md).
+
 | Parameter | Value |
 |---|---|
 | P2P Port | **7227** |
@@ -19,6 +26,7 @@ dual-algo** mode alongside RandomX.
 | ASERT Activation | Block **0** (genesis) |
 | Dual-Algo Activation | Block **21,000** |
 | Etchash Epoch Length | **6000** blocks |
+| Etchash Result Byte Order | **big-endian** from block 21,000 |
 | Version Bit for Etchash | bit 30 (`0x40000000`) |
 | Genesis nTime | **1788566400** (2026-09-05 UTC) |
 | Block Time | 5 minutes |
