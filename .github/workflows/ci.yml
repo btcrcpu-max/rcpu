@@ -253,6 +253,8 @@ jobs:
           # raises SkipTest and the test exits 77 (TEST_EXIT_SKIPPED), which still
           # fails the step. Only the --descriptors (SQLite) variant runs.
           python3 test/functional/wallet_confidential.py --descriptors
+          # P2-4: locked/restarted wallet must keep its confidential balance.
+          python3 test/functional/wallet_ct_locked_balance.py --descriptors
           python3 test/functional/wallet_coinbase_category.py --descriptors
           # dual-algo count-cache: mixed RandomX/Etchash mining across the
           # activation height, node restart (LoadBlockIndex rebuild) and

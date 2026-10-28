@@ -179,7 +179,7 @@ mainnet/testnet. `getblocktemplate` for a bit-30 template returns
 |---|---|
 | `etchash_epoch` | Etchash epoch for the template height |
 | `etchash_epoch_length` | Epoch length in blocks (6000) |
-| `etchash_seed_hash` | 32-byte epoch seed (keccak256^epoch of 32 zero bytes) |
+| `etchash_seed_hash` | 32-byte epoch seed (keccak256^epoch of 32 zero bytes), hex in byte order (not reversed) |
 | `etchash_cache_size` | Light-verification cache size for the epoch (informational) |
 | `etchash_dataset_size` | Full DAG size for the epoch (standard ethash `calcDatasetSize`) |
 | `etchash_dataset_rows` | `dataset_size / 128` — the row count hashimotoLight indexes |
@@ -198,5 +198,10 @@ standard 64-byte header mix in the final digest
 `calcDatasetSize(epoch)` (1 GiB + 8 MiB/epoch, prime-bounded), and
 `hashimotoLight` uses `dataset_size / 128` rows. Only the epoch length is
 RCPU-specific (6000 instead of 30000), because the epoch is height-driven.
+**Byte order (P2-7):** from the first Etchash block (height 21,000 on
+mainnet/testnet) the 32-byte result is interpreted as a **big-endian**
+256-bit number when compared with `etchash_commitment_target`, matching
+standard geth/ethminer. `hashRandomX` carries the raw result bytes and
+`etchash_seed_hash` is the raw seed hex (do not reverse it).
 If the pool needs the full DAG to be generated locally it builds it from
 `etchash_seed_hash`; the node itself stays light.

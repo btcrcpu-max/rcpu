@@ -624,6 +624,10 @@ consensus.fPowRandomX = true;
         // (6000 × 5 min); a single algorithm alone would take ~41.7 days.
         consensus.fDualAlgoEtchash = true;
         consensus.nEtchashEpochLength = 6000;
+        // P2-7: Etchash activates at 21000; use standard big-endian result
+        // comparison from the first Etchash block so external geth/ethminer
+        // miners interoperate.
+        consensus.nEtchashBigEndianHeight = 21000;
         consensus.nCTActivationHeight = 0;  // RCPU: Confidential Transactions active from genesis
         // RCPU hardening (P1-2): soft-fork ban of legacy path-A (plaintext-nonce)
         // CT nonce encoding. Only outputs in blocks at or above this height are
@@ -773,6 +777,8 @@ consensus.fPowRandomX = true;
         // !RCPU (dual-algo etchash): testnet mirrors mainnet etchash params.
         consensus.fDualAlgoEtchash = true;
         consensus.nEtchashEpochLength = 6000;
+        // P2-7: same standard big-endian rule as mainnet.
+        consensus.nEtchashBigEndianHeight = 21000;
         consensus.nCTActivationHeight = 0;  // Testnet: CT always active
         // RCPU hardening (P1-2): ban path-A plaintext nonces early on testnet
         // so the soft-fork rule is exercised well before mainnet deployment.
@@ -899,6 +905,7 @@ public:
         // functional tests cross multiple epoch boundaries cheaply.
         consensus.fDualAlgoEtchash = true;
         consensus.nEtchashEpochLength = 10;
+        consensus.nEtchashBigEndianHeight = 0; // tests exercise standard geth ordering
         genesis = CreateRcpuGenesisBlock(1296688602, 1, 0x207fffff, 1, 50 * COIN);
         genesis.hashRandomX = uint256S("0x177a9deba97f0dae00a6bf55e03671ec6bce7051d6a5054db49237598b803f93");
         consensus.hashGenesisBlock = GetHashOfRcpuGenesisBlock(genesis);

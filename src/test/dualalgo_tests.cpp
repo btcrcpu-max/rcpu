@@ -24,6 +24,8 @@
 #include <validation.h>
 
 #include <memory>
+#include <algorithm>
+#include <cstring>
 #include <vector>
 
 BOOST_FIXTURE_TEST_SUITE(dualalgo_tests, BasicTestingSetup)
@@ -336,6 +338,62 @@ BOOST_AUTO_TEST_CASE(etchash_pow_roundtrip)
     uint256 out;
     BOOST_CHECK(CheckProofOfWorkEtchash(genesis_like, 150, params, POW_VERIFY_FULL, &out));
     BOOST_CHECK(out.IsNull());
+}
+
+// P2-7: standard Etchash compares the hashimoto result as a big-endian number.
+// The historical RCPU code copied the bytes straight into uint256 (little-endian
+// interpretation), so geth/ethminer nonces were rejected as high-hash.
+BOOST_AUTO_TEST_CASE(etchash_big_endian_result_order)
+{
+    const std::vector<unsigned char> raw = ParseHex(
+        "d3539235ee2e6f8db665c0a72169f55b7f6c605712330b778ec3944f0eb5a557");
+    BOOST_REQUIRE_EQUAL(raw.size(), 32U);
+
+    uint256 historical;
+    std::memcpy(historical.begin(), raw.data(), 32);
+
+    uint256 big_endian;
+    std::reverse_copy(raw.begin(), raw.end(), big_endian.begin());
+
+    arith_uint256 expected;
+    expected.SetHex("d3539235ee2e6f8db665c0a72169f55b7f6c605712330b778ec3944f0eb5a557");
+    BOOST_CHECK(UintToArith256(big_endian) == expected);
+    BOOST_CHECK(UintToArith256(historical) != expected);
+}
+
+// P2-7: the height-gated big-endian path must solve and verify round-trip.
+BOOST_AUTO_TEST_CASE(etchash_big_endian_pow_roundtrip)
+{
+    Consensus::Params params;
+    params.powLimit = uint256S("0x7fffffff00000000000000000000000000000000000000000000000000000000");
+    params.nDualAlgoActivationHeight = 150;
+    params.nEtchashEpochLength = 10;
+    params.fDualAlgoEtchash = true;
+    params.nEtchashBigEndianHeight = 150;
+
+    CBlockHeader block;
+    block.nVersion = 1 | BLOCK_VERSION_QHASH;
+    block.hashPrevBlock = uint256S("0x0000000000000000000000000000000000000000000000000000000000000001");
+    block.hashMerkleRoot = uint256S("0x0000000000000000000000000000000000000000000000000000000000000002");
+    block.nTime = 1710000000;
+    block.nBits = 0x207fffff;
+
+    uint256 solved;
+    bool found = false;
+    for (uint32_t nonce = 0; nonce < 1000; ++nonce) {
+        block.nNonce = nonce;
+        if (CheckProofOfWorkEtchash(block, 150, params, POW_VERIFY_MINING, &solved)) {
+            found = true;
+            break;
+        }
+    }
+    BOOST_CHECK(found);
+    block.hashRandomX = solved;
+    BOOST_CHECK(CheckProofOfWorkEtchash(block, 150, params, POW_VERIFY_FULL));
+
+    CBlockHeader tampered = block;
+    *tampered.hashRandomX.begin() ^= 0x01;
+    BOOST_CHECK(!CheckProofOfWorkEtchash(tampered, 150, params, POW_VERIFY_FULL));
 }
 
 // !RCPU (dual-algo etchash): regression for the network-layer headers pre-check.

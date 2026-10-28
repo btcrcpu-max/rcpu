@@ -492,6 +492,15 @@ public:
     bool IsLocked() const override;
     bool Lock();
 
+    /**
+     * RCPU P2-4: while the wallet is unlocked, persist the plaintext value of
+     * every confidential output this wallet can unblind into the wallet
+     * transaction's mapValue ("ct_unblind_<n>"). Wallet locking/restart then
+     * keeps showing the real CT balance instead of falling back to 0.
+     * Must be called while the keys are available (e.g. right after Unlock).
+     */
+    void CacheCTUnblindedAmounts();
+
     /** Interface to assert chain access */
     bool HaveChain() const { return m_chain ? true : false; }
 

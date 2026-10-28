@@ -713,6 +713,10 @@ static const char *RANDOMX_EPOCH_SEED_STRING = "RCPU/RandomX/Epoch/%d";
 
 // Epoch is Unix time stamp in seconds divided by epoch duration in seconds.
 uint32_t GetEpoch(uint32_t nTimestamp, uint32_t nDuration) {
+    // Non-RandomX chains leave nRandomXEpochDuration at 0. Returning 0 is
+    // safer than dividing by zero (getblocktemplate used to SIGFPE on
+    // signet/Bitcoin-testnet before it was guarded as well).
+    if (nDuration == 0) return 0;
     return nTimestamp / nDuration;
 }
 
@@ -1273,7 +1277,16 @@ bool CheckProofOfWorkEtchash(const CBlockHeader& block, int64_t nHeight, const C
         }
     }
 
-    if (UintToArith256(result256) > bnTarget) {
+    if (nHeight >= params.nEtchashBigEndianHeight) {
+        // P2-7: standard Etchash (geth/ethminer) treats the 32-byte hashimoto
+        // result as a big-endian 256-bit number. uint256 stores bytes in the
+        // reverse order, so reverse once into a temporary before converting.
+        uint256 big_endian_result;
+        std::reverse_copy(result, result + 32, big_endian_result.begin());
+        if (UintToArith256(big_endian_result) > bnTarget) {
+            return false;
+        }
+    } else if (UintToArith256(result256) > bnTarget) {
         return false;
     }
 

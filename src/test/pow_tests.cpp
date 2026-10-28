@@ -267,6 +267,9 @@ BOOST_AUTO_TEST_CASE(Check_Epoch_Calculation)
     BOOST_CHECK(0 / 10000 == GetEpoch(0, 10000));
     BOOST_CHECK(1600000000 / 1 == GetEpoch(1600000000, 1));
     BOOST_CHECK(1707328799 / 3600 == GetEpoch(1707328799, 3600));
+    // P3-2: non-RandomX chains leave the epoch duration at 0; getblocktemplate
+    // must not divide by zero (signet/Bitcoin-testnet SIGFPE regression).
+    BOOST_CHECK_EQUAL(GetEpoch(1707328799, 0), 0);
     BOOST_CHECK_EQUAL(474257, GetEpoch(1707328799, 3600));
     BOOST_CHECK_EQUAL(474258, GetEpoch(1707328800, 3600));
     BOOST_CHECK_EQUAL(474258, GetEpoch(1707330114, 3600));

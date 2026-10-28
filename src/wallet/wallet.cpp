@@ -60,6 +60,7 @@
 #include <util/message.h>
 #include <util/moneystr.h>
 #include <util/result.h>
+#include <util/strencodings.h>
 #include <util/string.h>
 #include <util/time.h>
 #include <util/translation.h>
@@ -1593,6 +1594,12 @@ const CWalletTx& prev = (*mi).second;
                     uint256 blind;
                     if (UnblindConfidentialOutput(*this, prev.tx->vout[txin.prevout.n], value, blind)) {
                         return value;
+                    }
+                    // P2-4: locked wallet, fall back to the value cached while
+                    // the output was unblinded (see CacheCTUnblindedAmounts).
+                    const auto unblind_it = prev.mapValue.find(strprintf("ct_unblind_%u", txin.prevout.n));
+                    if (unblind_it != prev.mapValue.end()) {
+                        return LocaleIndependentAtoi<CAmount>(unblind_it->second);
                     }
                     return 0;
                 }
@@ -3529,6 +3536,9 @@ bool CWallet::Lock()
     {
         LOCK2(m_relock_mutex, cs_wallet);
         if (!vMasterKey.empty()) {
+            // RCPU P2-4: capture unblinded confidential amounts before the
+            // master key goes away, so the locked wallet still reports them.
+            CacheCTUnblindedAmounts();
             memory_cleanse(vMasterKey.data(), vMasterKey.size() * sizeof(decltype(vMasterKey)::value_type));
             vMasterKey.clear();
         }
@@ -3536,6 +3546,39 @@ bool CWallet::Lock()
 
     NotifyStatusChanged(this);
     return true;
+}
+
+void CWallet::CacheCTUnblindedAmounts()
+{
+    LOCK(cs_wallet);
+    WalletBatch batch(GetDatabase());
+    for (auto& [txid, wtx] : mapWallet) {
+        bool changed = false;
+        for (unsigned int i = 0; i < wtx.tx->vout.size(); ++i) {
+            const CTxOut& txout = wtx.tx->vout[i];
+            if (txout.nValue.IsExplicit()) continue;
+
+            const std::string key = strprintf("ct_unblind_%u", i);
+            if (wtx.mapValue.count(key)) continue;
+
+            CAmount value{0};
+            uint256 blind;
+            if (!UnblindConfidentialOutput(*this, txout, value, blind)) continue;
+            if (!MoneyRange(value)) continue;
+
+            // Persist the plaintext amount so a later lock/restart can still
+            // value this output. This is the same per-vout mapValue cache that
+            // AvailableCoins already consults.
+            wtx.mapValue[key] = std::to_string(value);
+            changed = true;
+        }
+        if (changed) {
+            wtx.MarkDirty();
+            if (!batch.WriteTx(wtx)) {
+                WalletLogPrintf("%s: Failed to persist ct_unblind_ cache for %s\n", __func__, txid.ToString());
+            }
+        }
+    }
 }
 
 bool CWallet::Unlock(const CKeyingMaterial& vMasterKeyIn)
@@ -3574,6 +3617,11 @@ bool CWallet::Unlock(const CKeyingMaterial& vMasterKeyIn)
             m_needs_confidential_rescan = true; // retry next unlock
         }
     }
+
+    // RCPU P2-4: persist the plaintext values of confidential outputs while
+    // the keys are available. A later wallet lock or restart can then value
+    // them from the mapValue cache instead of reporting a false zero balance.
+    CacheCTUnblindedAmounts();
 
     return true;
 }

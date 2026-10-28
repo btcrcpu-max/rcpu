@@ -5,6 +5,7 @@
 
 #include <node/blockstorage.h>
 
+#include <algorithm>
 #include <arith_uint256.h>
 #include <chain.h>
 #include <consensus/params.h>
@@ -160,10 +161,19 @@ bool BlockTreeDB::LoadBlockIndexGuts(const Consensus::Params& consensusParams, s
                         arith_uint256 bnTarget;
                         bool fNegative, fOverflow;
                         bnTarget.SetCompact(hdr.nBits, &fNegative, &fOverflow);
+                        // P2-7: the stored result is raw hashimoto bytes; on
+                        // chains using the standard big-endian rule it must be
+                        // reversed before the numeric comparison.
+                        uint256 result_for_target = hdr.hashRandomX;
+                        if (pindexNew->nHeight >= consensusParams.nEtchashBigEndianHeight) {
+                            uint256 reversed;
+                            std::reverse_copy(hdr.hashRandomX.begin(), hdr.hashRandomX.end(), reversed.begin());
+                            result_for_target = reversed;
+                        }
                         pow_ok = !fNegative && !fOverflow && bnTarget > 0 &&
                                  bnTarget <= UintToArith256(consensusParams.powLimit) &&
                                  !hdr.hashRandomX.IsNull() &&
-                                 UintToArith256(hdr.hashRandomX) <= bnTarget;
+                                 UintToArith256(result_for_target) <= bnTarget;
                         break;
                     }
                     case PowAlgo::QHash:

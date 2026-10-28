@@ -249,6 +249,24 @@ class WalletConfidentialTest(BitcoinTestFramework):
         # depends on it.
         self.generatetoaddress(node, 1, pure.getnewaddress("", "bech32"))
 
+        # ---- 7c-bis. Explicit-only exact spend must fall back to v2 ----
+        # A wallet whose only UTXO is explicit and which pays its entire
+        # balance to a bare address produces no change. Before P2-3 this was
+        # serialized as v3 with all-explicit outputs, hit the all-explicit-v3
+        # policy rule, and never relayed even though consensus accepts it.
+        self.log.info("Explicit-only exact spend uses v2, not all-explicit v3")
+        node.createwallet(wallet_name="exact", descriptors=True)
+        exact = node.get_wallet_rpc("exact")
+        exact_addr = exact.getnewaddress("", "bech32")
+        pure.sendtoaddress(exact_addr, Decimal("0.1"))
+        self.generatetoaddress(node, 1, pure.getnewaddress("", "bech32"))
+        assert_equal(exact.getbalance(), Decimal("0.1"))
+        txid_exact = exact.sendtoaddress(bech32_addr, Decimal("0.1"), "", "", True)
+        decoded_exact = node.getrawtransaction(txid_exact, True)
+        assert_equal(decoded_exact["version"], 2)
+        self.generatetoaddress(node, 1, pure.getnewaddress("", "bech32"))
+        assert_equal(exact.getbalance(), Decimal("0"))
+
         # ---- 7d. Confidential input into all-explicit outputs fails closed ----
         # The all-explicit output set cannot be forced via -changetype alone:
         # resolve_change_key() upgrades any wallet-owned change key to Path C

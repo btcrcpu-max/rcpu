@@ -189,6 +189,15 @@ struct Params {
     // MUST take the epoch/seedhash from getblocktemplate and never recompute
     // them locally from an assumed activation height.
     int nEtchashEpochLength{30000};
+
+    // RCPU P2-7: Etchash result byte order. Before this height the historical
+    // RCPU implementation interpreted the 32-byte hashimoto result as a
+    // little-endian number; standard geth/ethminer treat it as big-endian.
+    // Mainnet/testnet set this to nDualAlgoActivationHeight (Etchash is not
+    // active before it), so external Etchash miners interoperate from the
+    // first Etchash block. std::numeric_limits<int>::max() keeps the legacy
+    // behavior (used by unit tests that do not opt in).
+    int nEtchashBigEndianHeight{std::numeric_limits<int>::max()};
     // !RCPU (dual-algo) END
 
 /** RCPU: block height at which confidential transactions (tx version == CT_VERSION) activate. */

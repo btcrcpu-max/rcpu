@@ -10,6 +10,7 @@
 #include <rpc/util.h>
 #include <script/script.h>
 #include <util/moneystr.h>
+#include <util/strencodings.h>
 #include <wallet/coincontrol.h>
 #include <wallet/receive.h>
 #include <wallet/rpc/util.h>
@@ -714,7 +715,17 @@ RPCHelpMan listunspent()
         entry.pushKV("scriptPubKey", HexStr(scriptPubKey));
 CAmount nAmount;
         uint256 blind;
-        if (!UnblindConfidentialOutput(*pwallet, out.txout, nAmount, blind)) nAmount = 0;
+        if (!UnblindConfidentialOutput(*pwallet, out.txout, nAmount, blind)) {
+            nAmount = 0;
+            // P2-4: a locked wallet cannot unblind. Use the plaintext value
+            // cached while it was unlocked (same mapValue key as AvailableCoins).
+            if (const CWalletTx* wtx = pwallet->GetWalletTx(out.outpoint.hash)) {
+                const auto unblind_it = wtx->mapValue.find("ct_unblind_" + std::to_string(out.outpoint.n));
+                if (unblind_it != wtx->mapValue.end()) {
+                    nAmount = LocaleIndependentAtoi<CAmount>(unblind_it->second);
+                }
+            }
+        }
         entry.pushKV("amount", ValueFromAmount(nAmount));
         entry.pushKV("confirmations", out.depth);
         if (!out.depth) {

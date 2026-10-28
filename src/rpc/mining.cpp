@@ -1117,7 +1117,11 @@ static RPCHelpMan getblocktemplate()
     }
 
 // !RCPU
-    {
+    // Only emit the RCPU-specific mining fields on chains that actually use
+    // one of the RCPU PoW rules. On signet/Bitcoin-testnet fPowRandomX and
+    // fDualAlgoEtchash are false and nRandomXEpochDuration is 0; the old
+    // unconditional stanza divided by that zero and crashed the node.
+    if (consensusParams.fPowRandomX || consensusParams.fDualAlgoEtchash) {
         enum : size_t { RCPU_LEGACY_HEADER_SIZE = 80 };
         if (pblock->nVersion & BLOCK_VERSION_QHASH) {
             if (consensusParams.fDualAlgoEtchash) {
@@ -1135,7 +1139,10 @@ static RPCHelpMan getblocktemplate()
                 result.pushKV("algo", "etchash");
                 result.pushKV("etchash_epoch", nEtEpoch);
                 result.pushKV("etchash_epoch_length", consensusParams.nEtchashEpochLength);
-                result.pushKV("etchash_seed_hash", GetEtchashSeedHash(nTplHeight, consensusParams).GetHex());
+                // P2-7: geth/ethminer expect the seed as raw bytes in memory
+                // order, not uint256::GetHex() (which reverses them).
+                const uint256 etchash_seed = GetEtchashSeedHash(nTplHeight, consensusParams);
+                result.pushKV("etchash_seed_hash", HexStr(Span<const uint8_t>{etchash_seed.data(), etchash_seed.size()}));
                 result.pushKV("etchash_cache_size", int64_t(etchash::CalcCacheSize(uint64_t(nEtEpoch))));
                 result.pushKV("etchash_dataset_size", int64_t(nDatasetSize));
                 result.pushKV("etchash_dataset_rows", int64_t(nDatasetSize / etchash::MIX_BYTES));

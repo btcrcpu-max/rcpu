@@ -1694,7 +1694,21 @@ std::vector<std::optional<CPubKey>> recipient_keys;
         // nBanPathAHeight=0 (Path A banned from genesis); mainnet keeps
         // nBanPathAHeight=12748 since v1.1.10. The soft fork was activated at
         // that height; -ctlegacy is now rejected at and above 12748.
-        txNew.nVersion = CT_VERSION;
+        //
+        // RCPU P2-3: an all-explicit spend (every input unblinded, every
+        // output plaintext) has no confidentiality at all. Emitting it as v3
+        // makes it hit the all-explicit-v3 non-standard policy rule, so a
+        // wallet paying an exact amount to a bare rcpu1... address could build
+        // a transaction that consensus accepts but the mempool rejects. Keep
+        // such transactions on the ordinary v2 serialization; no blinding or
+        // CT fee output is needed. Mixed/CT spends still use v3 below.
+        const bool all_outputs_explicit = !explicit_outputs.empty() &&
+            std::all_of(explicit_outputs.begin(), explicit_outputs.end(), [](bool explicit_out) { return explicit_out; });
+        const bool all_inputs_explicit = std::all_of(input_blinds.begin(), input_blinds.end(),
+            [](const uint256& blind) { return blind.IsNull(); });
+        const bool use_plain_v2 = !gArgs.GetBoolArg("-ctlegacy", false) &&
+                                  all_outputs_explicit && all_inputs_explicit;
+        txNew.nVersion = use_plain_v2 ? CTransaction::CURRENT_VERSION : CT_VERSION;
         if (txNew.nVersion == CT_VERSION) {
             if (gArgs.GetBoolArg("-ctlegacy", false) &&
                 wallet.GetLastBlockHeight() >= Params().GetConsensus().nBanPathAHeight) {

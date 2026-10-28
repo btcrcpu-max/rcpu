@@ -332,8 +332,36 @@ CAmount CachedTxGetCredit(const CWallet& wallet, const CWalletTx& wtx, const ism
     CAmount credit = 0;
     const isminefilter get_amount_filter{filter & ISMINE_ALL};
     if (get_amount_filter) {
-        // GetBalance can assume transactions in mapWallet won't change
-        credit += GetCachableAmount(wallet, wtx, CWalletTx::CREDIT, get_amount_filter);
+        auto& amount = wtx.m_amounts[CWalletTx::CREDIT];
+        if (!amount.m_cached[get_amount_filter]) {
+            CAmount computed = 0;
+            for (unsigned int i = 0; i < wtx.tx->vout.size(); ++i) {
+                const CTxOut& txout = wtx.tx->vout[i];
+                if (!(wallet.IsMine(txout) & get_amount_filter)) continue;
+                CAmount value = 0;
+                if (txout.nValue.IsExplicit()) {
+                    value = txout.nValue.GetAmount();
+                } else {
+                    uint256 blind;
+                    if (!UnblindConfidentialOutput(wallet, txout, value, blind)) {
+                        // P2-4: locked wallet; use the value cached while it
+                        // was unlocked, otherwise this output is unknown.
+                        value = 0;
+                        const auto unblind_it = wtx.mapValue.find("ct_unblind_" + std::to_string(i));
+                        if (unblind_it != wtx.mapValue.end()) {
+                            value = LocaleIndependentAtoi<CAmount>(unblind_it->second);
+                        }
+                    }
+                }
+                computed += value;
+                if (!MoneyRange(computed)) {
+                    throw std::runtime_error(std::string(__func__) + ": value out of range");
+                }
+            }
+            amount.Set(get_amount_filter, computed);
+            wtx.m_is_cache_empty = false;
+        }
+        credit = amount.m_value[get_amount_filter];
     }
     return credit;
 }
@@ -392,7 +420,18 @@ CAmount CachedTxGetAvailableCredit(const CWallet& wallet, const CWalletTx& wtx, 
     for (unsigned int i = 0; i < wtx.tx->vout.size(); i++) {
         const CTxOut& txout = wtx.tx->vout[i];
         if (!wallet.IsSpent(COutPoint(hashTx, i)) && (allow_used_addresses || !wallet.IsSpentKey(txout.scriptPubKey))) {
-            nCredit += OutputGetCredit(wallet, txout, filter);
+            CAmount output_credit = OutputGetCredit(wallet, txout, filter);
+            // RCPU P2-4: while the wallet is locked, OutputGetCredit cannot
+            // unblind and returns 0. Use the plaintext value persisted while
+            // the wallet was unlocked, but only for outputs that are ours.
+            if (output_credit == 0 && !txout.nValue.IsExplicit() &&
+                (wallet.IsMine(txout) & filter)) {
+                const auto unblind_it = wtx.mapValue.find("ct_unblind_" + std::to_string(i));
+                if (unblind_it != wtx.mapValue.end()) {
+                    output_credit = LocaleIndependentAtoi<CAmount>(unblind_it->second);
+                }
+            }
+            nCredit += output_credit;
             if (!MoneyRange(nCredit))
                 throw std::runtime_error(std::string(__func__) + " : value out of range");
         }
@@ -476,12 +515,19 @@ void CachedTxGetAmounts(const CWallet& wallet, const CWalletTx& wtx,
         uint256 blind;
         if (!UnblindConfidentialOutput(wallet, txout, nOutValue, blind)) {
             nOutValue = 0;
-            // RCPU CT: the sender cannot unblind a foreign Path-B/C output, so
-            // fall back to the plaintext amount persisted at send time
-            // (vout_amount_<idx>), mirroring qt/transactionrecord.cpp.
-            const auto amount_it = wtx.mapValue.find("vout_amount_" + std::to_string(i));
-            if (amount_it != wtx.mapValue.end()) {
-                nOutValue = LocaleIndependentAtoi<CAmount>(amount_it->second);
+            // RCPU CT: a locked wallet cannot unblind, but the value was
+            // persisted while it was unlocked (CacheCTUnblindedAmounts).
+            const auto unblind_it = wtx.mapValue.find("ct_unblind_" + std::to_string(i));
+            if (unblind_it != wtx.mapValue.end()) {
+                nOutValue = LocaleIndependentAtoi<CAmount>(unblind_it->second);
+            } else {
+                // The sender cannot unblind a foreign Path-B/C output, so fall
+                // back to the plaintext amount persisted at send time
+                // (vout_amount_<idx>), mirroring qt/transactionrecord.cpp.
+                const auto amount_it = wtx.mapValue.find("vout_amount_" + std::to_string(i));
+                if (amount_it != wtx.mapValue.end()) {
+                    nOutValue = LocaleIndependentAtoi<CAmount>(amount_it->second);
+                }
             }
         }
         COutputEntry output = {address, nOutValue, (int)i};
