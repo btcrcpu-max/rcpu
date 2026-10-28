@@ -14,6 +14,22 @@
 #include <numeric>
 #include <vector>
 
+// RCPU CT: nVersion == CT_VERSION (3) collides with Bitcoin's TRUC "v3"
+// policy marker. RCPU confidential transactions must NOT be subject to TRUC
+// topology limits: they are payment transactions, not fee-bumping contracts,
+// and the wallet legitimately chains unconfirmed CT spends. A transaction is
+// treated as CT (and thus exempt from the v3 rules below) when it carries at
+// least one confidential (non-explicit) or fee output -- the same content
+// test policy.cpp uses to reject all-explicit v3 as non-standard.
+static bool IsConfidentialTx(const CTransaction& tx)
+{
+    if (tx.nVersion != CT_VERSION) return false;
+    for (const CTxOut& out : tx.vout) {
+        if (!out.nValue.IsExplicit() || out.IsFee()) return true;
+    }
+    return false;
+}
+
 /** Helper for PackageV3Checks: Returns a vector containing the indices of transactions (within
  * package) that are direct parents of ptx. */
 std::vector<size_t> FindInPackageParents(const Package& package, const CTransactionRef& ptx)
@@ -64,6 +80,9 @@ std::optional<std::string> PackageV3Checks(const CTransactionRef& ptx, int64_t v
     static_assert(V3_DESCENDANT_LIMIT == 2);
 
     const auto in_package_parents{FindInPackageParents(package, ptx)};
+
+    // RCPU CT: confidential transactions are exempt from TRUC topology rules.
+    if (IsConfidentialTx(*ptx)) return std::nullopt;
 
     // Now we have all ancestors, so we can start checking v3 rules.
     if (ptx->nVersion == 3) {
@@ -138,15 +157,18 @@ std::optional<std::string> PackageV3Checks(const CTransactionRef& ptx, int64_t v
         }
     } else {
         // Non-v3 transactions cannot have v3 parents.
+        // RCPU CT: a CT parent (nVersion=3 with confidential/fee outputs) is
+        // not a TRUC transaction, so spending its outputs from a non-v3 tx is
+        // fine.
         for (auto it : mempool_ancestors) {
-            if (it->GetTx().nVersion == 3) {
+            if (it->GetTx().nVersion == 3 && !IsConfidentialTx(it->GetTx())) {
                 return strprintf("non-v3 tx %s (wtxid=%s) cannot spend from v3 tx %s (wtxid=%s)",
                                  ptx->GetHash().ToString(), ptx->GetWitnessHash().ToString(),
                                  it->GetSharedTx()->GetHash().ToString(), it->GetSharedTx()->GetWitnessHash().ToString());
             }
         }
         for (const auto& index: in_package_parents) {
-            if (package.at(index)->nVersion == 3) {
+            if (package.at(index)->nVersion == 3 && !IsConfidentialTx(*package.at(index))) {
                 return strprintf("non-v3 tx %s (wtxid=%s) cannot spend from v3 tx %s (wtxid=%s)",
                                  ptx->GetHash().ToString(),
                                  ptx->GetWitnessHash().ToString(),
@@ -164,8 +186,11 @@ std::optional<std::string> SingleV3Checks(const CTransactionRef& ptx,
                                           int64_t vsize)
 {
     // Check v3 and non-v3 inheritance.
+    // RCPU CT: confidential transactions (and CT parents) are exempt from
+    // TRUC rules entirely.
+    if (IsConfidentialTx(*ptx)) return std::nullopt;
     for (const auto& entry : mempool_ancestors) {
-        if (ptx->nVersion != 3 && entry->GetTx().nVersion == 3) {
+        if (ptx->nVersion != 3 && entry->GetTx().nVersion == 3 && !IsConfidentialTx(entry->GetTx())) {
             return strprintf("non-v3 tx %s (wtxid=%s) cannot spend from v3 tx %s (wtxid=%s)",
                              ptx->GetHash().ToString(), ptx->GetWitnessHash().ToString(),
                              entry->GetSharedTx()->GetHash().ToString(), entry->GetSharedTx()->GetWitnessHash().ToString());
