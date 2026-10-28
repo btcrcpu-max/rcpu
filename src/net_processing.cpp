@@ -441,11 +441,41 @@ struct Peer {
         return true;
     }
 
+    /**
+     * P1-1: bound header proof-of-work work per peer. Etchash has no cheap
+     * commitment (unlike RandomX), so a 2000-header batch can cost ~5 seconds
+     * of HashimotoLight. The primary fix is the known/ancestor early-out in
+     * ProcessHeadersMessage; this budget is a generous backstop for new
+     * headers (20,000-header burst, 2,000 headers/s refill) so normal headers
+     * sync is not throttled.
+     */
+    bool ConsumeHeaderBudget(int64_t headers)
+    {
+        if (headers <= 0) return true;
+        LOCK(m_header_budget_mutex);
+        const auto now = std::chrono::steady_clock::now();
+        const int64_t elapsed_us = std::chrono::duration_cast<std::chrono::microseconds>(now - m_header_budget_last).count();
+        if (elapsed_us > 0) {
+            const int64_t refill = elapsed_us * HEADER_BUDGET_REFILL_PER_SEC / 1'000'000;
+            m_header_budget_tokens = std::min<int64_t>(HEADER_BUDGET_MAX, m_header_budget_tokens + refill);
+            m_header_budget_last = now;
+        }
+        if (m_header_budget_tokens < headers) return false;
+        m_header_budget_tokens -= headers;
+        return true;
+    }
+
 private:
     static constexpr int64_t CT_PROOF_BUDGET_MAX{256 * 1024};
     mutable Mutex m_ct_budget_mutex;
     int64_t m_ct_budget_tokens{CT_PROOF_BUDGET_MAX};
     std::chrono::steady_clock::time_point m_ct_budget_last{std::chrono::steady_clock::now()};
+
+    static constexpr int64_t HEADER_BUDGET_MAX{20000};
+    static constexpr int64_t HEADER_BUDGET_REFILL_PER_SEC{2000};
+    mutable Mutex m_header_budget_mutex;
+    int64_t m_header_budget_tokens{HEADER_BUDGET_MAX};
+    std::chrono::steady_clock::time_point m_header_budget_last{std::chrono::steady_clock::now()};
 
     mutable Mutex m_tx_relay_mutex;
 
@@ -2564,6 +2594,14 @@ bool PeerManagerImpl::CheckHeadersPoW(const std::vector<CBlockHeader>& headers, 
         return false;
     }
 
+    // P1-1: charge the per-peer header PoW budget before HasValidProofOfWork.
+    // A known/ancestor batch never reaches this function (the caller skips it),
+    // so replaying public Etchash headers cannot burn hashimoto CPU.
+    if (!peer.ConsumeHeaderBudget(headers.size())) {
+        Misbehaving(peer, 20, "header rate limit exceeded");
+        return false;
+    }
+
     // Do these headers have proof-of-work matching what's claimed?
     // The first header builds on chain_start, so its height is known and the
     // height-derived Etchash algorithm can be verified (and no longer
@@ -2943,11 +2981,27 @@ void PeerManagerImpl::ProcessHeadersMessage(CNode& pfrom, Peer& peer,
         return;
     }
 
+    // P1-1: known/ancestor batches need no proof-of-work re-verification. Do
+    // this before CheckHeadersPoW so replaying public Etchash headers cannot
+    // force a full HashimotoLight per header (a 2000-header batch is ~5 s CPU).
+    bool already_validated_work = false;
+    {
+        LOCK(::cs_main);
+        const CBlockIndex* last_known = m_chainman.m_blockman.LookupBlockIndex(headers.back().GetHash());
+        // Any header already in the block index was PoW-verified when it was
+        // accepted, including side-branch headers. Only skip when the batch is
+        // actually a chain; a malformed batch still goes through CheckHeadersPoW
+        // and its continuity/misbehaviour handling.
+        if (last_known != nullptr && CheckHeadersAreContinuous(headers)) {
+            already_validated_work = true;
+        }
+    }
+
     // Before we do any processing, make sure these pass basic sanity checks.
     // We'll rely on headers having valid proof-of-work further down, as an
     // anti-DoS criteria (note: this check is required before passing any
     // headers into HeadersSyncState).
-    if (!CheckHeadersPoW(headers, m_chainparams.GetConsensus(), peer)) {
+    if (!already_validated_work && !CheckHeadersPoW(headers, m_chainparams.GetConsensus(), peer)) {
         // Misbehaving() calls are handled within CheckHeadersPoW(), so we can
         // just return. (Note that even if a header is announced via compact
         // block, the header itself should be valid, so this type of error can
@@ -2962,14 +3016,13 @@ void PeerManagerImpl::ProcessHeadersMessage(CNode& pfrom, Peer& peer,
     // (either in PRESYNC or REDOWNLOAD phase).
     // If true, this will mean that any headers returned to us (ie during
     // REDOWNLOAD) can be validated without further anti-DoS checks.
-    bool already_validated_work = false;
 
     // If we're in the middle of headers sync, let it do its magic.
     bool have_headers_sync = false;
     {
         LOCK(peer.m_headers_sync_mutex);
 
-        already_validated_work = IsContinuationOfLowWorkHeadersSync(peer, pfrom, headers);
+        already_validated_work = IsContinuationOfLowWorkHeadersSync(peer, pfrom, headers) || already_validated_work;
 
         // The headers we passed in may have been:
         // - untouched, perhaps if no headers-sync was in progress, or some
