@@ -328,12 +328,14 @@ class WalletConfidentialTest(BitcoinTestFramework):
         node.createwallet(wallet_name="sweepall", descriptors=True)
         sweepall = node.get_wallet_rpc("sweepall")
         sweepall_conf = sweepall.getnewaddress("", "confidential")
+        # 7b and 7e already spent most of the mixer's 0.3; mine directly to it.
+        self.generatetoaddress(node, 101, mixer.getnewaddress("", "bech32"))
         mixer.sendtoaddress(sweepall_conf, Decimal("0.2"))
         self.generatetoaddress(node, 1, mixer.getnewaddress("", "bech32"))
         assert_equal(sweepall.getbalance(), Decimal("0.2"))
         # Sweep to a bare rcpu1 address: the payee output is explicit and a
         # dust-sized wallet-owned confidential balancing output is injected.
-        sweep_res = sweepall.sendall([payer.getnewaddress("", "bech32")])
+        sweep_res = sweepall.sendall([mixer.getnewaddress("", "bech32")])
         assert_equal(sweep_res["complete"], True)
         sweep_tx = node.getrawtransaction(sweep_res["txid"], True)
         assert_equal(sweep_tx["version"], 3)
@@ -346,7 +348,7 @@ class WalletConfidentialTest(BitcoinTestFramework):
         # so no balancing output is needed and the wallet ends up empty.
         mixer.sendtoaddress(sweepall_conf, Decimal("0.2"))
         self.generatetoaddress(node, 1, mixer.getnewaddress("", "bech32"))
-        sweep_conf_res = sweepall.sendall([payer.getnewaddress("", "confidential")])
+        sweep_conf_res = sweepall.sendall([mixer.getnewaddress("", "confidential")])
         assert_equal(sweep_conf_res["complete"], True)
         sweep_conf_tx = node.getrawtransaction(sweep_conf_res["txid"], True)
         conf_payees = [o for o in sweep_conf_tx["vout"] if o["value"] == "confidential"]

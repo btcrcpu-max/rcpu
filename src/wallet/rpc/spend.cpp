@@ -20,7 +20,6 @@
 #include <rpc/util.h>
 #include <script/script.h>
 #include <script/signingprovider.h>
-#include <script/standard.h>
 #include <logging.h>
 #include <util/fees.h>
 #include <util/rbf.h>
