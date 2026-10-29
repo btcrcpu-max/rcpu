@@ -274,6 +274,65 @@ BOOST_AUTO_TEST_CASE(etchash_hashimoto_vectors)
     }
 }
 
+// !RCPU (dual-algo etchash): the 32-byte header hash fed to hashimoto must NOT
+// depend on the nonce (standard Ethash/Etchash semantics). This is what lets a
+// stock GPU kernel — which keeps the header hash constant and only varies the
+// nonce — mine RCPU Etchash. Regression guard: if the nonce leaked back into
+// the hashed header, every off-the-shelf GPU miner would produce invalid
+// shares while CPU miners using the same code would still agree with each
+// other, i.e. the breakage would be silent.
+BOOST_AUTO_TEST_CASE(etchash_header_hash_is_nonce_independent)
+{
+    Consensus::Params params;
+    params.powLimit = uint256S("0x7fffffff00000000000000000000000000000000000000000000000000000000");
+    params.nDualAlgoActivationHeight = 150;
+    params.nEtchashEpochLength = 10;
+    params.fDualAlgoEtchash = true;
+    params.nEtchashBigEndianHeight = 0;
+
+    CBlockHeader block;
+    block.nVersion = 1 | BLOCK_VERSION_QHASH;
+    block.hashPrevBlock = uint256S("0x0000000000000000000000000000000000000000000000000000000000000001");
+    block.hashMerkleRoot = uint256S("0x0000000000000000000000000000000000000000000000000000000000000002");
+    block.nTime = 1710000000;
+    block.nBits = 0x207fffff;
+    block.nNonce = 123456;
+
+    uint256 produced;
+    BOOST_CHECK(CheckProofOfWorkEtchash(block, 150, params, POW_VERIFY_MINING, &produced));
+
+    const uint64_t dataset_size = etchash::CalcDatasetSize(0);
+    const std::vector<uint32_t> cache = etchash::GenerateCache(etchash::CalcCacheSize(0), etchash::SeedForEpoch(0));
+    unsigned char digest[32], result[32], old_result[32];
+
+    // Standard domain: nonce zeroed inside the header hash, nonce passed separately.
+    {
+        CBlockHeader zeroed = block;
+        zeroed.nNonce = 0;
+        const DataStream input = SerializeRandomXHeader(zeroed);
+        unsigned char header_hash[32];
+        Keccak256((const unsigned char*)input.data(), input.size(), header_hash);
+        etchash::HashimotoLight(dataset_size, cache, header_hash, uint64_t(block.nNonce), digest, result);
+
+        uint256 expected;
+        std::memcpy(expected.begin(), result, 32);
+        BOOST_CHECK(produced == expected);
+    }
+
+    // The pre-change domain (nonce part of the header hash) must NOT reproduce
+    // it, otherwise this test would pass even with the old, non-standard rule.
+    {
+        const DataStream input = SerializeRandomXHeader(block);
+        unsigned char header_hash[32];
+        Keccak256((const unsigned char*)input.data(), input.size(), header_hash);
+        etchash::HashimotoLight(dataset_size, cache, header_hash, uint64_t(block.nNonce), digest, old_result);
+
+        uint256 old_expected;
+        std::memcpy(old_expected.begin(), old_result, 32);
+        BOOST_CHECK(produced != old_expected);
+    }
+}
+
 // !RCPU (dual-algo etchash): end-to-end etchash proof-of-work semantics —
 // epoch plumbing, solve/verify roundtrip, tamper rejection, pre-activation
 // refusal, and epoch-switch rejection.

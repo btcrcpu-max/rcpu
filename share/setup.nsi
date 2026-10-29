@@ -16,11 +16,11 @@ Unicode true
 
 # MUI Symbol Definitions
 # !RCPU
-!define MUI_ICON "/c/tmp/rcpu-build-security/share/pixmaps/rcpu.ico"
-!define MUI_WELCOMEFINISHPAGE_BITMAP "/c/tmp/rcpu-build-security/share/pixmaps/nsis-wizard-rcpu.bmp"
+!define MUI_ICON "/root/rcpu-src-1.3.4/share/pixmaps/rcpu.ico"
+!define MUI_WELCOMEFINISHPAGE_BITMAP "/root/rcpu-src-1.3.4/share/pixmaps/nsis-wizard-rcpu.bmp"
 !define MUI_HEADERIMAGE
 !define MUI_HEADERIMAGE_RIGHT
-!define MUI_HEADERIMAGE_BITMAP "/c/tmp/rcpu-build-security/share/pixmaps/nsis-header-rcpu.bmp"
+!define MUI_HEADERIMAGE_BITMAP "/root/rcpu-src-1.3.4/share/pixmaps/nsis-header-rcpu.bmp"
 #! RCPU END
 !define MUI_FINISHPAGE_NOAUTOCLOSE
 !define MUI_STARTMENUPAGE_REGISTRY_ROOT HKLM
@@ -29,10 +29,10 @@ Unicode true
 !define MUI_STARTMENUPAGE_DEFAULTFOLDER "rcpu"
 # !RCPU - removed auto-run on finish
 # !define MUI_FINISHPAGE_RUN "$WINDIR\explorer.exe"
-# !define MUI_FINISHPAGE_RUN_PARAMETERS $INSTDIR\rcpu-qt.exe
+# !define MUI_FINISHPAGE_RUN_PARAMETERS $INSTDIR\rcpu-qt
 # !RCPU END
 !define MUI_UNICON "${NSISDIR}\Contrib\Graphics\Icons\modern-uninstall.ico"
-!define MUI_UNWELCOMEFINISHPAGE_BITMAP "/c/tmp/rcpu-build-security/share/pixmaps/nsis-wizard.bmp"
+!define MUI_UNWELCOMEFINISHPAGE_BITMAP "/root/rcpu-src-1.3.4/share/pixmaps/nsis-wizard.bmp"
 !define MUI_UNFINISHPAGE_NOAUTOCLOSE
 
 # Included files
@@ -63,12 +63,12 @@ CRCCheck force
 XPStyle on
 BrandingText " "
 ShowInstDetails show
-VIProductVersion 1.3.4.0
+VIProductVersion 1.4.0.0
 VIAddVersionKey ProductName "rcpu"
-VIAddVersionKey ProductVersion "1.3.4"
+VIAddVersionKey ProductVersion "1.4.0"
 VIAddVersionKey CompanyName "${COMPANY}"
 VIAddVersionKey CompanyWebsite "${URL}"
-VIAddVersionKey FileVersion "1.3.4"
+VIAddVersionKey FileVersion "1.4.0"
 VIAddVersionKey FileDescription "Installer for rcpu"
 # !RCPU
 VIAddVersionKey LegalCopyright "Copyright (C) 2009-2026 The RCPU Core developers and the RCPU Developers"
@@ -81,19 +81,19 @@ Section -Main SEC0000
     SetOutPath $INSTDIR
     SetOverwrite on
 # !RCPU
-    File /c/tmp/rcpu-build-security/release/rcpu-qt.exe
-    File /oname=COPYING.txt /c/tmp/rcpu-build-security/COPYING
-    File /oname=readme.txt /c/tmp/rcpu-build-security/doc/README_windows_rcpu.txt
-    File /c/tmp/rcpu-build-security/share/examples/rcpu.conf
+    File /root/rcpu-src-1.3.4/release/rcpu-qt
+    File /oname=COPYING.txt /root/rcpu-src-1.3.4/COPYING
+    File /oname=readme.txt /root/rcpu-src-1.3.4/doc/README_windows_rcpu.txt
+    File /root/rcpu-src-1.3.4/share/examples/rcpu.conf
 # !RCPU END
     SetOutPath $INSTDIR\share\rpcauth
-    File /c/tmp/rcpu-build-security/share/rpcauth/*.*
+    File /root/rcpu-src-1.3.4/share/rpcauth/*.*
     SetOutPath $INSTDIR\daemon
 # !RCPU
-    File /c/tmp/rcpu-build-security/release/rcpud.exe
-    File /c/tmp/rcpu-build-security/release/rcpu-cli.exe
-    File /c/tmp/rcpu-build-security/release/rcpu-tx.exe
-    File /c/tmp/rcpu-build-security/release/rcpu-wallet.exe
+    File /root/rcpu-src-1.3.4/release/rcpud
+    File /root/rcpu-src-1.3.4/release/rcpu-cli
+    File /root/rcpu-src-1.3.4/release/rcpu-tx
+    File /root/rcpu-src-1.3.4/release/rcpu-wallet
 # !RCPU END
     SetOutPath $INSTDIR
     WriteRegStr HKCU "${REGKEY}\Components" Main 1
@@ -106,13 +106,13 @@ Section -post SEC0001
     !insertmacro MUI_STARTMENU_WRITE_BEGIN Application
     CreateDirectory $SMPROGRAMS\$StartMenuGroup
 # !RCPU
-    CreateShortcut "$SMPROGRAMS\$StartMenuGroup\$(^Name).lnk" $INSTDIR\rcpu-qt.exe
-    CreateShortcut "$DESKTOP\$(^Name).lnk" $INSTDIR\rcpu-qt.exe
+    CreateShortcut "$SMPROGRAMS\$StartMenuGroup\$(^Name).lnk" $INSTDIR\rcpu-qt
+    CreateShortcut "$DESKTOP\$(^Name).lnk" $INSTDIR\rcpu-qt
 # !RCPU END
     CreateShortcut "$SMPROGRAMS\$StartMenuGroup\Uninstall $(^Name).lnk" $INSTDIR\uninstall.exe
     !insertmacro MUI_STARTMENU_WRITE_END
     WriteRegStr HKCU "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$(^Name)" DisplayName "$(^Name)"
-    WriteRegStr HKCU "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$(^Name)" DisplayVersion "1.3.4"
+    WriteRegStr HKCU "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$(^Name)" DisplayVersion "1.4.0"
     WriteRegStr HKCU "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$(^Name)" Publisher "${COMPANY}"
     WriteRegStr HKCU "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$(^Name)" URLInfoAbout "${URL}"
 # !RCPU
@@ -124,8 +124,8 @@ Section -post SEC0001
     WriteRegStr HKCR "rcpu" "URL Protocol" ""
 # !RCPU
     WriteRegStr HKCR "rcpu" "" "URL:RCPU"
-    WriteRegStr HKCR "rcpu\DefaultIcon" "" $INSTDIR\rcpu-qt.exe
-    WriteRegStr HKCR "rcpu\shell\open\command" "" '"$INSTDIR\rcpu-qt.exe" "%1"'
+    WriteRegStr HKCR "rcpu\DefaultIcon" "" $INSTDIR\rcpu-qt
+    WriteRegStr HKCR "rcpu\shell\open\command" "" '"$INSTDIR\rcpu-qt" "%1"'
 # !RCPU END
 SectionEnd
 
@@ -145,7 +145,7 @@ done${UNSECTION_ID}:
 # Uninstaller sections
 Section /o -un.Main UNSEC0000
 # !RCPU
-    Delete /REBOOTOK $INSTDIR\rcpu-qt.exe
+    Delete /REBOOTOK $INSTDIR\rcpu-qt
 # !RCPU END
     Delete /REBOOTOK $INSTDIR\COPYING.txt
     Delete /REBOOTOK $INSTDIR\readme.txt

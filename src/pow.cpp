@@ -1257,7 +1257,19 @@ bool CheckProofOfWorkEtchash(const CBlockHeader& block, int64_t nHeight, const C
     // would make `rows` far too small and break consensus.
     const uint64_t dataset_size = etchash::CalcDatasetSize(uint64_t(epoch));
 
-    const DataStream input = SerializeRandomXHeader(block);
+    // Etchash hash domain (standard Ethash semantics, pre-activation change):
+    // the 32-byte header hash MUST NOT depend on the nonce. The nonce is passed
+    // to hashimoto separately as nonce8 = nNonce (4B LE) || 4 zero bytes, so
+    // off-the-shelf GPU miners (ethminer / lolMiner / T-Rex via an eth-proxy)
+    // can keep their header hash constant while varying the nonce.
+    //
+    // Before this change the nonce was part of the serialized header, which
+    // made header_hash change for every nonce and made every stock Ethash
+    // kernel unusable. No Etchash block exists yet on any chain, so this is a
+    // pre-activation rule change, not a fork.
+    CBlockHeader etchash_header = block;
+    etchash_header.nNonce = 0;
+    const DataStream input = SerializeRandomXHeader(etchash_header);
     unsigned char header_hash[32];
     Keccak256((const unsigned char*)input.data(), input.size(), header_hash);
 
