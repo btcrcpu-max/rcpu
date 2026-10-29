@@ -2,6 +2,7 @@
 
 RCPU Core release notes live in [doc/release-notes/](release-notes/):
 
+- [v1.3.9](release-notes/v1.3.9.md) — hardening: Etchash headers cost 10× in the per-peer header budget, dual-algo GBT templates are cached per algorithm, plus a fail-loud activation-height guard and a dual-algo reorg functional test. No consensus change.
 - [v1.3.8](release-notes/v1.3.8.md) — P2P hardening: skip PoW for known/ancestor header batches (fixes Etchash header replay CPU DoS) plus a per-peer header budget; adds the mainnet-21000 KAT. No consensus change.
 - [v1.3.7](release-notes/v1.3.7.md) — **MANDATORY before block 21,000**: Etchash result comparison is big-endian (geth/standard) from the first Etchash block; v1.3.6 and earlier are little-endian and will split/reject. All nodes, pools and miners must upgrade.
 - v1.3.6 — superseded by v1.3.7 for Etchash; its binaries use the legacy little-endian rule. Do not use v1.3.6 to mine or validate bit-30 blocks at/after 21,000.
