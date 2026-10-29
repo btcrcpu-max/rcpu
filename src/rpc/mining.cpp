@@ -934,47 +934,52 @@ static RPCHelpMan getblocktemplate()
     }
     // !RCPU END
 
-    // Update block
-    static CBlockIndex* pindexPrev;
-    static int64_t time_start;
-    static std::unique_ptr<CBlockTemplate> pblocktemplate;
-    // !RCPU (dual-algo): the cached template must match the requested algo,
-    // otherwise an RX request could be served a qhash template (or vice versa)
-    // while tip and mempool are unchanged.
-    static bool fCachedQhashTemplate = false;
-    if (pindexPrev != active_chain.Tip() ||
-        fCachedQhashTemplate != fQhashTemplate ||
-        (mempool.GetTransactionsUpdated() != nTransactionsUpdatedLast && GetTime() - time_start > 5))
+    // !RCPU (dual-algo): per-algo template cache. Miners that alternate
+    // RandomX and Etchash templates (two workers, one pool polling both)
+    // previously forced a full CreateNewBlock on every algo switch because
+    // there was only one slot. Two slots keep each algo's template live as
+    // long as tip/mempool haven't moved, and the original invalidation rules
+    // (tip changed, mempool updated, or stale cache) are applied per-algo.
+    struct TemplateCache {
+        CBlockIndex* pindexPrev{nullptr};
+        int64_t time_start{0};
+        int64_t tx_updated{0};
+        std::unique_ptr<CBlockTemplate> template_;
+    };
+    static TemplateCache cache_rx;
+    static TemplateCache cache_qh;
+    TemplateCache& cache = fQhashTemplate ? cache_qh : cache_rx;
+
+    // Update block if tip moved, mempool drifted, or cache is older than 5 s.
+    if (cache.pindexPrev != active_chain.Tip() ||
+        (mempool.GetTransactionsUpdated() != cache.tx_updated && GetTime() - cache.time_start > 5))
     {
-        // Clear pindexPrev so future calls make a new block, despite any failures from here on
-        pindexPrev = nullptr;
+        cache.pindexPrev = nullptr; // fail future calls if CreateNewBlock throws
 
-        // Store the pindexBest used before CreateNewBlock, to avoid races
-        nTransactionsUpdatedLast = mempool.GetTransactionsUpdated();
+        const int64_t now_txn_upd = mempool.GetTransactionsUpdated();
         CBlockIndex* pindexPrevNew = active_chain.Tip();
-        time_start = GetTime();
 
-        // Create new block
         CScript scriptDummy = CScript() << OP_TRUE;
         BlockAssembler::Options assembler_options;
         assembler_options.m_qhash_template = fQhashTemplate;
-        pblocktemplate = BlockAssembler{active_chainstate, &mempool, assembler_options}.CreateNewBlock(scriptDummy);
-        if (!pblocktemplate)
+        cache.template_ = BlockAssembler{active_chainstate, &mempool, assembler_options}.CreateNewBlock(scriptDummy);
+        if (!cache.template_)
             throw JSONRPCError(RPC_OUT_OF_MEMORY, "Out of memory");
 
-        // Need to update only after we know CreateNewBlock succeeded
-        fCachedQhashTemplate = fQhashTemplate;
-        pindexPrev = pindexPrevNew;
+        cache.tx_updated = now_txn_upd;
+        cache.time_start = GetTime();
+        cache.pindexPrev = pindexPrevNew;
+        nTransactionsUpdatedLast = now_txn_upd; // longpoll watches globally, not per-algo
     }
-    CHECK_NONFATAL(pindexPrev);
-    CBlock* pblock = &pblocktemplate->block; // pointer for convenience
+    CHECK_NONFATAL(cache.pindexPrev);
+    CBlock* pblock = &cache.template_->block; // pointer for convenience
 
     // Update nTime
-    UpdateTime(pblock, consensusParams, pindexPrev);
+    UpdateTime(pblock, consensusParams, cache.pindexPrev);
     pblock->nNonce = 0;
 
     // NOTE: If at some point we support pre-segwit miners post-segwit-activation, this needs to take segwit support into consideration
-    const bool fPreSegWit = !DeploymentActiveAfter(pindexPrev, chainman, Consensus::DEPLOYMENT_SEGWIT);
+    const bool fPreSegWit = !DeploymentActiveAfter(cache.pindexPrev, chainman, Consensus::DEPLOYMENT_SEGWIT);
 
     UniValue aCaps(UniValue::VARR); aCaps.push_back("proposal");
 
@@ -1004,8 +1009,8 @@ static RPCHelpMan getblocktemplate()
         entry.pushKV("depends", deps);
 
         int index_in_template = i - 1;
-        entry.pushKV("fee", pblocktemplate->vTxFees[index_in_template]);
-        int64_t nTxSigOps = pblocktemplate->vTxSigOpsCost[index_in_template];
+        entry.pushKV("fee", cache.template_->vTxFees[index_in_template]);
+        int64_t nTxSigOps = cache.template_->vTxSigOpsCost[index_in_template];
         if (fPreSegWit) {
             CHECK_NONFATAL(nTxSigOps % WITNESS_SCALE_FACTOR == 0);
             nTxSigOps /= WITNESS_SCALE_FACTOR;
@@ -1040,7 +1045,7 @@ static RPCHelpMan getblocktemplate()
     UniValue vbavailable(UniValue::VOBJ);
     for (int j = 0; j < (int)Consensus::MAX_VERSION_BITS_DEPLOYMENTS; ++j) {
         Consensus::DeploymentPos pos = Consensus::DeploymentPos(j);
-        ThresholdState state = chainman.m_versionbitscache.State(pindexPrev, consensusParams, pos);
+        ThresholdState state = chainman.m_versionbitscache.State(cache.pindexPrev, consensusParams, pos);
         switch (state) {
             case ThresholdState::DEFINED:
             case ThresholdState::FAILED:
@@ -1088,7 +1093,7 @@ static RPCHelpMan getblocktemplate()
     result.pushKV("coinbasevalue", (int64_t)pblock->vtx[0]->vout[0].nValue.GetAmount());
     result.pushKV("longpollid", active_chain.Tip()->GetBlockHash().GetHex() + ToString(nTransactionsUpdatedLast));
     result.pushKV("target", hashTarget.GetHex());
-    result.pushKV("mintime", (int64_t)pindexPrev->GetMedianTimePast()+1);
+    result.pushKV("mintime", (int64_t)cache.pindexPrev->GetMedianTimePast()+1);
     result.pushKV("mutable", aMutable);
     result.pushKV("noncerange", "00000000ffffffff");
     int64_t nSigOpLimit = MAX_BLOCK_SIGOPS_COST;
@@ -1106,14 +1111,14 @@ static RPCHelpMan getblocktemplate()
     }
     result.pushKV("curtime", pblock->GetBlockTime());
     result.pushKV("bits", strprintf("%08x", pblock->nBits));
-    result.pushKV("height", (int64_t)(pindexPrev->nHeight+1));
+    result.pushKV("height", (int64_t)(cache.pindexPrev->nHeight+1));
 
     if (consensusParams.signet_blocks) {
         result.pushKV("signet_challenge", HexStr(consensusParams.signet_challenge));
     }
 
-    if (!pblocktemplate->vchCoinbaseCommitment.empty()) {
-        result.pushKV("default_witness_commitment", HexStr(pblocktemplate->vchCoinbaseCommitment));
+    if (!cache.template_->vchCoinbaseCommitment.empty()) {
+        result.pushKV("default_witness_commitment", HexStr(cache.template_->vchCoinbaseCommitment));
     }
 
 // !RCPU
@@ -1133,7 +1138,7 @@ static RPCHelpMan getblocktemplate()
                 // must equal the standard ethash calcDatasetSize formula.
                 // etchash_cache_size is informational (light-verification
                 // cache); miners do NOT need to match it, only the seed matters.
-                const int64_t nTplHeight = pindexPrev->nHeight + 1;
+                const int64_t nTplHeight = cache.pindexPrev->nHeight + 1;
                 const int64_t nEtEpoch = GetEtchashEpoch(nTplHeight, consensusParams);
                 const uint64_t nDatasetSize = etchash::CalcDatasetSize(uint64_t(nEtEpoch));
                 result.pushKV("algo", "etchash");
@@ -1166,7 +1171,7 @@ static RPCHelpMan getblocktemplate()
             // Without the clamp a template could advertise a seed for an
             // epoch that validation will never use, and the miner's shares
             // would be rejected.
-            const uint32_t nEpochTime = std::min<uint32_t>(pblock->GetBlockTime(), pindexPrev->GetBlockTime() + static_cast<uint32_t>(MAX_FUTURE_BLOCK_TIME));
+            const uint32_t nEpochTime = std::min<uint32_t>(pblock->GetBlockTime(), cache.pindexPrev->GetBlockTime() + static_cast<uint32_t>(MAX_FUTURE_BLOCK_TIME));
             const uint32_t nEpoch = GetEpoch(nEpochTime, consensusParams.nRandomXEpochDuration);
             result.pushKV("rx_epoch", nEpoch);
             result.pushKV("rx_seed_hash", GetSeedHash(nEpoch).GetHex());
