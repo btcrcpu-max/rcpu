@@ -2608,13 +2608,29 @@ bool PeerManagerImpl::CheckHeadersPoW(const std::vector<CBlockHeader>& headers, 
     static constexpr int64_t HEADER_WEIGHT_ETCHASH{10};
     int64_t weighted_cost = 0;
     int64_t h = chain_start->nHeight + 1;
+
+    // !RCPU: During IBD / large headers catch-up, do not apply the 10x Etchash
+    // weight. Honest nodes that are far behind will otherwise exhaust the
+    // budget on the second full batch of 2000 Etchash headers and get
+    // misbehavior points. The known-header early-out already protects against
+    // replay of already-validated headers; new headers still require valid PoW.
+    const bool in_ibd = m_chainman.IsInitialBlockDownload();
+
     for (const auto& hdr : headers) {
         const auto algo = GetPowAlgoForHeader(h, hdr.nVersion, consensusParams);
-        weighted_cost += (algo && *algo == PowAlgo::Etchash) ? HEADER_WEIGHT_ETCHASH : 1;
+        if (algo && *algo == PowAlgo::Etchash && !in_ibd) {
+            weighted_cost += HEADER_WEIGHT_ETCHASH;
+        } else {
+            weighted_cost += 1;
+        }
         if (h >= 0) ++h;
     }
     if (!peer.ConsumeHeaderBudget(weighted_cost)) {
-        Misbehaving(peer, 20, "header rate limit exceeded");
+        // Do not assign misbehavior during IBD; the peer is almost certainly
+        // an honest node serving a large catch-up. Just drop the batch.
+        if (!in_ibd) {
+            Misbehaving(peer, 20, "header rate limit exceeded");
+        }
         return false;
     }
 
