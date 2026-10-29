@@ -465,6 +465,11 @@ static uint32_t GetDualAlgoWorkRequired(const CBlockIndex* pindexLast,
 
     // Activation anchor: the last pre-activation block. Unreachable when
     // missing because the caller only dispatches here for next height >= act.
+    // The `nActHeight > 0` guard below is defensive: if someone reconfigures
+    // nDualAlgoActivationHeight = 0 then GetAncestor(-1) returns nullptr and
+    // we would silently fall back to powLimit (no difficulty). We assert here
+    // so such misconfiguration fails at startup rather than at runtime.
+    assert(nActHeight > 0);
     const CBlockIndex* pindexAnchor = pindexLast->GetAncestor(nActHeight - 1);
     if (!pindexAnchor) {
         return powLimit.GetCompact();
@@ -482,6 +487,12 @@ static uint32_t GetDualAlgoWorkRequired(const CBlockIndex* pindexLast,
     }
 
     // Special difficulty rule for testnet (mirrors the single-algo ASERT path).
+    // Deliberately keeps nPowTargetSpacing (not nDualAlgoTargetSpacing): this
+    // branch is a consensus rule on the chains where fPowAllowMinDifficultyBlocks
+    // is set (RCPU testnet/regtest), so changing the constant would make v1.3.8
+    // and later nodes disagree on the target for any block arriving between
+    // 2*nPowTargetSpacing and 2*nDualAlgoTargetSpacing after its parent. Do not
+    // "tidy" this into the dual-algo constant without a network-wide upgrade.
     if (params.fPowAllowMinDifficultyBlocks && pblock &&
         (pblock->GetBlockTime() >
          pindexLast->GetBlockTime() + 2 * params.nPowTargetSpacing)) {
