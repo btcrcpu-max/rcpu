@@ -24,6 +24,7 @@
 #include <netmessagemaker.h>
 #include <node/blockstorage.h>
 #include <node/txreconciliation.h>
+#include <pow.h>
 #include <policy/fees.h>
 #include <policy/policy.h>
 #include <policy/settings.h>
@@ -2594,10 +2595,25 @@ bool PeerManagerImpl::CheckHeadersPoW(const std::vector<CBlockHeader>& headers, 
         return false;
     }
 
-    // P1-1: charge the per-peer header PoW budget before HasValidProofOfWork.
+    // P1-1 + R1: charge the per-peer header PoW budget BEFORE HasValidProofOfWork.
     // A known/ancestor batch never reaches this function (the caller skips it),
     // so replaying public Etchash headers cannot burn hashimoto CPU.
-    if (!peer.ConsumeHeaderBudget(headers.size())) {
+    //
+    // Etchash is weighted 10× because every Etchash header in P2P forces a full
+    // HashimotoLight (~1-2 ms); RandomX/QHash only run cheap commitment checks.
+    // Without weighting a single peer can steady-state consume ~4 CPU cores
+    // (2000 headers/s × ~2 ms). Weighting at 10× drops Etchash-only sync to
+    // ~200 headers/s/peer while RandomX/QHash sync stays at 2000 headers/s.
+    // The weight threshold is heuristic; can be tuned by mainnet observations.
+    static constexpr int64_t HEADER_WEIGHT_ETCHASH{10};
+    int64_t weighted_cost = 0;
+    int64_t h = chain_start->nHeight + 1;
+    for (const auto& hdr : headers) {
+        const auto algo = GetPowAlgoForHeader(h, hdr.nVersion, consensusParams);
+        weighted_cost += (algo && *algo == PowAlgo::Etchash) ? HEADER_WEIGHT_ETCHASH : 1;
+        if (h >= 0) ++h;
+    }
+    if (!peer.ConsumeHeaderBudget(weighted_cost)) {
         Misbehaving(peer, 20, "header rate limit exceeded");
         return false;
     }
