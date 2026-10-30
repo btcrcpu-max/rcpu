@@ -263,6 +263,18 @@ if (g_con_elementsmode && fIsCT) {
             }
         }
 
+        // RCPU hardening (M-2), defense in depth: CheckTransaction() already
+        // rejects a non-null CTxIn::nValue, but a caller that skips it must
+        // not be able to relay a CT transaction whose txid can be mutated by a
+        // third party without invalidating any signature. See tx_check.cpp for
+        // the full rationale and the chain-scan evidence.
+        for (const CTxIn& txin : tx.vin) {
+            if (!txin.nValue.IsNull()) {
+                return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-txns-ct-input-value",
+                    "confidential input carries a non-null nValue");
+            }
+        }
+
         // CT mode: confidential value balance + range proof verification
         if (!VerifyAmounts(prevouts, tx, txfee)) {
             return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-txns-ct-balance",

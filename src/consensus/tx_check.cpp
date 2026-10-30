@@ -42,6 +42,25 @@ bool CheckTransaction(const CTransaction& tx, TxValidationState& state)
         }
     }
 
+    // RCPU hardening (M-2): a confidential transaction must not carry a
+    // non-null CTxIn::nValue. The field is part of the CT wire format, but no
+    // consensus rule reads it (only the input weight counts it) and no
+    // signature hash covers it: legacy SerializeInput, BIP143 and BIP341 all
+    // omit it. It is therefore third-party malleable -- rewriting it keeps
+    // every signature valid while changing the txid -- so requiring null
+    // closes the last unsigned non-witness field of a CT transaction.
+    // A full-chain scan of mainnet (blocks 0..20364 at the time of writing)
+    // found no transaction with a non-null value, so this is a tightening
+    // rule: soft-fork compatible, no historical block becomes invalid.
+    if (tx.nVersion == CT_VERSION) {
+        for (size_t i = 0; i < tx.vin.size(); ++i) {
+            if (!tx.vin[i].nValue.IsNull()) {
+                return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-txns-ct-input-value",
+                    strprintf("confidential transaction input %d carries a non-null nValue", static_cast<int>(i)));
+            }
+        }
+    }
+
     if (tx.vin.empty())
         return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-txns-vin-empty");
     if (tx.vout.empty())
