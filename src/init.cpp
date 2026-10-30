@@ -918,12 +918,13 @@ bool AppInitParameterInteraction(const ArgsManager& args)
 {
     const CChainParams& chainparams = Params();
     // RCPU: enable confidential-transactions mode.
-    // For RCPU networks, CT is enabled by default (consensus rule from CT_FORK_HEIGHT onward).
+    // For RCPU networks, CT is enabled by default (consensus rule active from
+    // genesis: Consensus::Params::nCTActivationHeight = 0).
     // For non-RCPU networks, CT is off by default and can be enabled with -ctmode.
 bool fDefaultCT = (chainparams.GetChainType() == ChainType::RCPUMAIN || chainparams.GetChainType() == ChainType::TESTNET || chainparams.GetChainType() == ChainType::RCPUTESTNET || chainparams.GetChainType() == ChainType::REGTEST || chainparams.GetChainType() == ChainType::RCPUREGTEST);
     g_con_elementsmode = args.GetBoolArg("-ctmode", fDefaultCT);
     // RCPU hardening (P0-3): CT is a consensus rule on RCPU mainnet and
-    // testnet (CT_FORK_HEIGHT onward), so -ctmode=0 must NOT be allowed to
+    // testnet (active from genesis), so -ctmode=0 must NOT be allowed to
     // disable it there; the flag remains a usable switch on regtest only.
     if (chainparams.GetChainType() == ChainType::RCPUMAIN || chainparams.GetChainType() == ChainType::RCPUTESTNET) {
         if (!g_con_elementsmode) {

@@ -17,8 +17,12 @@ static const unsigned int MAX_BLOCK_WEIGHT = 4000000;
 static const int64_t MAX_BLOCK_SIGOPS_COST = 80000;
 /** Coinbase transaction outputs can only be spent after this number of new blocks (network rule) */
 static const int COINBASE_MATURITY = 100;
-/** RCPU: block height at which confidential transactions (tx version == CT_VERSION) activate. */
-static const int CT_FORK_HEIGHT = 8000;
+// NOTE: there is no CT_FORK_HEIGHT. Confidential transactions are active from
+// genesis on every RCPU network (Consensus::Params::nCTActivationHeight = 0,
+// src/kernel/chainparams.cpp); the activation height is a per-network
+// consensus parameter, not a compile-time constant. A previous revision
+// defined an unused CT_FORK_HEIGHT = 8000, which contradicted the actual
+// activation height and only caused confusion.
 /** RCPU: maximum allowed range proof size in bytes for a confidential output. */
 static constexpr size_t MAX_RANGEPROOF_SIZE = 5134;
 
