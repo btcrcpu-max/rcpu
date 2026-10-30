@@ -171,6 +171,12 @@ bool CoinStatsIndex::CustomAppend(const interfaces::BlockInfo& block)
                     continue;
                 }
 
+                // RCPU CT: fee outputs (explicit value, empty scriptPubKey) never
+                // enter the UTXO set (see CCoinsViewCache::AddCoin), so the index
+                // must not count them either; doing so made total_amount disagree
+                // with the UTXO set by the cumulative fee amount.
+                if (coin.out.IsFee()) continue;
+
                 ApplyCoinHash(m_muhash, outpoint, coin);
 
                 if (tx->IsCoinBase()) {
@@ -382,6 +388,16 @@ bool CoinStatsIndex::CustomInit(const std::optional<interfaces::BlockKey>& block
     // instead of failing the whole index.
     m_confidential_outputs_known = m_db->Read(DB_CONFIDENTIAL_OUTPUTS, m_confidential_outputs);
 
+    // RCPU CT: an index built by an older binary also hashed fee outputs into
+    // its muhash and counted them in the amounts, so its stored state does not
+    // describe the UTXO set. Refuse to load it instead of reporting numbers that
+    // silently disagree with gettxoutsetinfo's non-index path; the index is
+    // derived data and is rebuilt by simply deleting it.
+    if (!m_confidential_outputs_known && m_db->Exists(DB_MUHASH)) {
+        return error("%s: coinstatsindex was built by an older version and is not CT-aware; "
+                     "delete the index directory (or -reindex) so it is rebuilt", __func__);
+    }
+
     if (block) {
         DBVal entry;
         if (!LookUpOne(*m_db, *block, entry)) {
@@ -471,6 +487,10 @@ bool CoinStatsIndex::ReverseBlock(const CBlock& block, const CBlockIndex* pindex
                 m_total_unspendables_scripts -= coin.out.nValue.GetAmount();
                 continue;
             }
+
+            // RCPU CT: fee outputs were never counted as UTXOs (see
+            // CustomAppend), so do not un-count them here either.
+            if (coin.out.IsFee()) continue;
 
             RemoveCoinHash(m_muhash, outpoint, coin);
 
