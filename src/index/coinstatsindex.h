@@ -28,6 +28,12 @@ private:
     uint64_t m_transaction_output_count{0};
     uint64_t m_bogo_size{0};
     CAmount m_total_amount{0};
+    // RCPU CT: number of confidential (Pedersen commitment) outputs currently
+    // in the UTXO set. Stored under its own DB key rather than inside DBVal so
+    // that index databases written before this field existed stay readable
+    // (the count is simply reported as unknown for them).
+    uint64_t m_confidential_outputs{0};
+    bool m_confidential_outputs_known{false};
     CAmount m_total_subsidy{0};
     CAmount m_total_unspendable_amount{0};
     CAmount m_total_prevout_spent_amount{0};

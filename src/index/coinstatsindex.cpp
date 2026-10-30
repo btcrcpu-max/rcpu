@@ -23,6 +23,10 @@ using kernel::RemoveCoinHash;
 static constexpr uint8_t DB_BLOCK_HASH{'s'};
 static constexpr uint8_t DB_BLOCK_HEIGHT{'t'};
 static constexpr uint8_t DB_MUHASH{'M'};
+// RCPU CT: number of confidential outputs in the UTXO set at the indexed tip.
+// A separate key keeps the DBVal layout unchanged, so databases written by
+// older binaries stay readable (the count is then reported as unknown).
+static constexpr uint8_t DB_CONFIDENTIAL_OUTPUTS{'C'};
 
 namespace {
 
@@ -177,6 +181,9 @@ bool CoinStatsIndex::CustomAppend(const interfaces::BlockInfo& block)
 
                 ++m_transaction_output_count;
                 m_total_amount += coin.out.nValue.GetAmount();
+                // RCPU CT: commitments contribute 0 to m_total_amount, so keep
+                // a separate count of the coins whose value is unknown.
+                if (!coin.out.nValue.IsExplicit()) ++m_confidential_outputs;
                 m_bogo_size += GetBogoSize(coin.out.scriptPubKey);
             }
 
@@ -194,6 +201,7 @@ bool CoinStatsIndex::CustomAppend(const interfaces::BlockInfo& block)
 
                     --m_transaction_output_count;
                     m_total_amount -= coin.out.nValue.GetAmount();
+                    if (!coin.out.nValue.IsExplicit()) --m_confidential_outputs;
                     m_bogo_size -= GetBogoSize(coin.out.scriptPubKey);
                 }
             }
@@ -343,6 +351,17 @@ std::optional<CCoinsStats> CoinStatsIndex::LookUpStats(const CBlockIndex& block_
     stats.total_unspendables_scripts = entry.total_unspendables_scripts;
     stats.total_unspendables_unclaimed_rewards = entry.total_unspendables_unclaimed_rewards;
 
+    // RCPU CT: an index built before DB_CONFIDENTIAL_OUTPUTS existed has no
+    // such key, in which case the count is unknown (amounts_complete must not
+    // be claimed in that case).
+    if (m_confidential_outputs_known) {
+        stats.confidential_outputs = m_confidential_outputs;
+        stats.amounts_complete = (m_confidential_outputs == 0);
+    } else {
+        stats.confidential_outputs = std::nullopt;
+        stats.amounts_complete = false;
+    }
+
     return stats;
 }
 
@@ -357,6 +376,11 @@ bool CoinStatsIndex::CustomInit(const std::optional<interfaces::BlockKey>& block
                          __func__, GetName());
         }
     }
+
+    // RCPU CT: optional key. Databases written before it existed simply do not
+    // have it; the confidential output count is then reported as unknown
+    // instead of failing the whole index.
+    m_confidential_outputs_known = m_db->Read(DB_CONFIDENTIAL_OUTPUTS, m_confidential_outputs);
 
     if (block) {
         DBVal entry;
@@ -394,6 +418,10 @@ bool CoinStatsIndex::CustomCommit(CDBBatch& batch)
     // DB_MUHASH should always be committed in a batch together with DB_BEST_BLOCK
     // to prevent an inconsistent state of the DB.
     batch.Write(DB_MUHASH, m_muhash);
+    // RCPU CT: separate key so that databases from older binaries (which lack
+    // it) remain readable; it is written from now on.
+    batch.Write(DB_CONFIDENTIAL_OUTPUTS, m_confidential_outputs);
+    m_confidential_outputs_known = true;
     return true;
 }
 
@@ -454,6 +482,9 @@ bool CoinStatsIndex::ReverseBlock(const CBlock& block, const CBlockIndex* pindex
 
             --m_transaction_output_count;
             m_total_amount -= coin.out.nValue.GetAmount();
+            // RCPU CT: un-apply the confidential output that ReverseBlock is
+            // removing from the UTXO set.
+            if (!coin.out.nValue.IsExplicit()) --m_confidential_outputs;
             m_bogo_size -= GetBogoSize(coin.out.scriptPubKey);
         }
 
@@ -471,6 +502,8 @@ bool CoinStatsIndex::ReverseBlock(const CBlock& block, const CBlockIndex* pindex
 
                 m_transaction_output_count++;
                 m_total_amount += coin.out.nValue.GetAmount();
+                // RCPU CT: the spent prevout is being put back into the UTXO set.
+                if (!coin.out.nValue.IsExplicit()) ++m_confidential_outputs;
                 m_bogo_size += GetBogoSize(coin.out.scriptPubKey);
             }
         }

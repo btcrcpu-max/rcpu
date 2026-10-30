@@ -104,8 +104,19 @@ static void ApplyStats(CCoinsStats& stats, const uint256& hash, const std::map<u
     stats.nTransactions++;
     for (auto it = outputs.begin(); it != outputs.end(); ++it) {
         stats.nTransactionOutputs++;
-        if (stats.total_amount.has_value()) {
-            stats.total_amount = CheckedAdd(*stats.total_amount, it->second.out.nValue.GetAmount());
+        if (it->second.out.nValue.IsExplicit()) {
+            if (stats.total_amount.has_value()) {
+                stats.total_amount = CheckedAdd(*stats.total_amount, it->second.out.nValue.GetAmount());
+            }
+        } else {
+            // RCPU CT: a Pedersen commitment hides its value and GetAmount()
+            // returns 0 for it, so it cannot be added to the total. Record that
+            // the total is partial and count the hidden outputs instead of
+            // silently treating them as zero-valued coins.
+            stats.amounts_complete = false;
+            if (stats.confidential_outputs.has_value()) {
+                ++*stats.confidential_outputs;
+            }
         }
         stats.nBogoSize += GetBogoSize(it->second.out.scriptPubKey);
     }
