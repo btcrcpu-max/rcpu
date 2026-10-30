@@ -36,11 +36,18 @@ PSBTAnalysis AnalyzePSBT(PartiallySignedTransaction psbtx)
         // Check for a UTXO
         CTxOut utxo;
         if (psbtx.GetInputUTXO(utxo, i)) {
-            if (!MoneyRange(utxo.nValue.GetAmount()) || !MoneyRange(in_amt + utxo.nValue.GetAmount())) {
+            // RCPU CT: a confidential UTXO hides its value behind a Pedersen
+            // commitment, and GetAmount() returns 0 for it. Adding that 0 and
+            // then subtracting the (visible) outputs yields a negative fee, so
+            // report the fee as unknown instead of wrong.
+            if (!utxo.nValue.IsExplicit()) {
+                calc_fee = false;
+            } else if (!MoneyRange(utxo.nValue.GetAmount()) || !MoneyRange(in_amt + utxo.nValue.GetAmount())) {
                 result.SetInvalid(strprintf("PSBT is not valid. Input %u has invalid value", i));
                 return result;
+            } else {
+                in_amt += utxo.nValue.GetAmount();
             }
-            in_amt += utxo.nValue.GetAmount();
             input_analysis.has_utxo = true;
         } else {
             if (input.non_witness_utxo && psbtx.tx->vin[i].prevout.n >= input.non_witness_utxo->vout.size()) {
@@ -96,6 +103,18 @@ PSBTAnalysis AnalyzePSBT(PartiallySignedTransaction psbtx)
     assert(result.next > PSBTRole::CREATOR);
 
     if (calc_fee) {
+        // RCPU CT: a confidential output also hides its value, so the total
+        // output amount (and therefore the fee) is unknown.
+        for (const CTxOut& txout : psbtx.tx->vout) {
+            if (!txout.nValue.IsExplicit()) {
+                calc_fee = false;
+                break;
+            }
+        }
+    }
+
+    CAmount fee{0};
+    if (calc_fee) {
         // Get the output amount
         CAmount out_amt = std::accumulate(psbtx.tx->vout.begin(), psbtx.tx->vout.end(), CAmount(0),
             [](CAmount a, const CTxOut& b) {
@@ -111,10 +130,14 @@ PSBTAnalysis AnalyzePSBT(PartiallySignedTransaction psbtx)
         }
 
         // Get the fee
-        CAmount fee = in_amt - out_amt;
+        fee = in_amt - out_amt;
         result.fee = fee;
+    }
 
-        // Estimate the size
+    // Estimate the size. This does not depend on the amounts, so it is computed
+    // even when the fee is unknown (confidential inputs and/or outputs); only
+    // the fee rate needs the fee.
+    {
         CMutableTransaction mtx(*psbtx.tx);
         CCoinsView view_dummy;
         CCoinsViewCache view(&view_dummy);
@@ -139,11 +162,10 @@ PSBTAnalysis AnalyzePSBT(PartiallySignedTransaction psbtx)
             CTransaction ctx = CTransaction(mtx);
             size_t size(GetVirtualTransactionSize(ctx, GetTransactionSigOpCost(ctx, view, STANDARD_SCRIPT_VERIFY_FLAGS), ::nBytesPerSigOp));
             result.estimated_vsize = size;
-            // Estimate fee rate
-            CFeeRate feerate(fee, size);
-            result.estimated_feerate = feerate;
+            if (calc_fee) {
+                result.estimated_feerate = CFeeRate(fee, size);
+            }
         }
-
     }
 
     return result;

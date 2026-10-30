@@ -843,7 +843,10 @@ const RPCResult decodepsbt_inputs{
             }},
             {RPCResult::Type::OBJ, "witness_utxo", /*optional=*/true, "Transaction output for witness UTXOs",
             {
-                {RPCResult::Type::NUM, "amount", "The value in " + CURRENCY_UNIT},
+                // !RCPU
+                {RPCResult::Type::NUM, "amount", /*optional=*/true, "The value in " + CURRENCY_UNIT + ". Omitted for a confidential output (see \"confidential\")"},
+                {RPCResult::Type::BOOL, "confidential", /*optional=*/true, "RCPU CT: the value is hidden behind a Pedersen commitment, so it cannot be reported as a number"},
+                // !RCPU END
                 {RPCResult::Type::OBJ, "scriptPubKey", "",
                 {
                     {RPCResult::Type::STR, "asm", "Disassembly of the public key script"},
@@ -1071,7 +1074,7 @@ static RPCHelpMan decodepsbt()
                         }},
                         decodepsbt_inputs,
                         decodepsbt_outputs,
-                        {RPCResult::Type::STR_AMOUNT, "fee", /*optional=*/true, "The transaction fee paid if all UTXOs slots in the PSBT have been filled."},
+                        {RPCResult::Type::STR_AMOUNT, "fee", /*optional=*/true, "The transaction fee paid if all UTXOs slots in the PSBT have been filled and no input or output is confidential."},
                     }
                 },
                 RPCExamples{
@@ -1149,7 +1152,14 @@ static RPCHelpMan decodepsbt()
             ScriptToUniv(txout.scriptPubKey, /*out=*/o, /*include_hex=*/true, /*include_address=*/true);
 
             UniValue out(UniValue::VOBJ);
-            out.pushKV("amount", ValueFromAmount(txout.nValue.GetAmount()));
+            // RCPU CT: GetAmount() returns 0 for a Pedersen commitment, which
+            // would read as "this UTXO is worth zero". Report it as
+            // confidential instead of inventing an amount.
+            if (txout.nValue.IsExplicit()) {
+                out.pushKV("amount", ValueFromAmount(txout.nValue.GetAmount()));
+            } else {
+                out.pushKV("confidential", true);
+            }
             out.pushKV("scriptPubKey", o);
 
             in.pushKV("witness_utxo", out);
@@ -1166,7 +1176,12 @@ static RPCHelpMan decodepsbt()
             have_a_utxo = true;
         }
         if (have_a_utxo) {
-            if (MoneyRange(txout.nValue.GetAmount()) && MoneyRange(total_in + txout.nValue.GetAmount())) {
+            // RCPU CT: a confidential UTXO cannot be summed without its
+            // blinding key. Treat the totals as incomplete (no fee shown)
+            // rather than adding a silent 0.
+            if (!txout.nValue.IsExplicit()) {
+                have_all_utxos = false;
+            } else if (MoneyRange(txout.nValue.GetAmount()) && MoneyRange(total_in + txout.nValue.GetAmount())) {
                 total_in += txout.nValue.GetAmount();
             } else {
                 // Hack to just not show fee later
@@ -1454,7 +1469,12 @@ static RPCHelpMan decodepsbt()
         outputs.push_back(out);
 
         // Fee calculation
-        if (MoneyRange(psbtx.tx->vout[i].nValue.GetAmount()) && MoneyRange(output_value + psbtx.tx->vout[i].nValue.GetAmount())) {
+        // RCPU CT: a confidential output hides its value behind a commitment;
+        // counting it as 0 would report a fee that is too high. Suppress the
+        // fee instead of guessing.
+        if (!psbtx.tx->vout[i].nValue.IsExplicit()) {
+            have_all_utxos = false;
+        } else if (MoneyRange(psbtx.tx->vout[i].nValue.GetAmount()) && MoneyRange(output_value + psbtx.tx->vout[i].nValue.GetAmount())) {
             output_value += psbtx.tx->vout[i].nValue.GetAmount();
         } else {
             // Hack to just not show fee later
@@ -1866,7 +1886,7 @@ static RPCHelpMan analyzepsbt()
                     }},
                     {RPCResult::Type::NUM, "estimated_vsize", /*optional=*/true, "Estimated vsize of the final signed transaction"},
                     {RPCResult::Type::STR_AMOUNT, "estimated_feerate", /*optional=*/true, "Estimated feerate of the final signed transaction in " + CURRENCY_UNIT + "/kvB. Shown only if all UTXO slots in the PSBT have been filled"},
-                    {RPCResult::Type::STR_AMOUNT, "fee", /*optional=*/true, "The transaction fee paid. Shown only if all UTXO slots in the PSBT have been filled"},
+                    {RPCResult::Type::STR_AMOUNT, "fee", /*optional=*/true, "The transaction fee paid. Shown only if all UTXO slots in the PSBT have been filled and no input or output is confidential"},
                     {RPCResult::Type::STR, "next", "Role of the next person that this psbt needs to go to"},
                     {RPCResult::Type::STR, "error", /*optional=*/true, "Error message (if there is one)"},
                 }
