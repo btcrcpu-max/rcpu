@@ -353,6 +353,59 @@ BOOST_AUTO_TEST_CASE(v3_explicit_spend_passes_verifyamounts)
     BOOST_CHECK_EQUAL(txfee, 400 * COIN);
 }
 
+// RCPU hardening (M-2): CTxIn::nValue is serialized for v3 transactions, but no
+// consensus rule reads it and no signature hash covers it (legacy
+// SerializeInput, BIP143 and BIP341 all omit it). A third party can therefore
+// rewrite it without invalidating any signature, changing the txid (non-witness
+// malleability). The wallet never sets the field, and a full-chain scan of
+// mainnet (blocks 0..20364) found no non-null value, so requiring null is a
+// tightening rule that cannot invalidate a historical block.
+BOOST_AUTO_TEST_CASE(ct_input_value_must_be_null)
+{
+    const COutPoint prevout{TxidFromString("0xbbbb"), 0};
+
+    CCoinsViewTest base;
+    base.Add(prevout, MakeExplicitCoin(1000 * COIN));
+
+    CCoinsViewCache view{&base};
+
+    // Legal shape: v3, null input nValue, explicit output + explicit fee output.
+    CMutableTransaction mtx = MakeLegacySpend({prevout}, 600 * COIN);
+    mtx.nVersion = CT_VERSION;
+    CTxOut fee_out;
+    fee_out.nValue.SetToAmount(400 * COIN);
+    mtx.vout.push_back(std::move(fee_out));
+
+    BOOST_REQUIRE(mtx.vin.at(0).nValue.IsNull());
+
+    TxValidationState state_ok;
+    BOOST_CHECK(CheckTransaction(CTransaction{mtx}, state_ok));
+    BOOST_CHECK(state_ok.IsValid());
+
+    // Any non-null encoding must be rejected at both consensus entry points.
+    mtx.vin[0].nValue.SetToAmount(1234 * COIN);
+    const CTransaction tx{mtx};
+
+    TxValidationState state_tx;
+    BOOST_CHECK(!CheckTransaction(tx, state_tx));
+    BOOST_CHECK(state_tx.IsInvalid());
+    BOOST_CHECK_EQUAL(state_tx.GetResult(), TxValidationResult::TX_CONSENSUS);
+    BOOST_CHECK_EQUAL(state_tx.GetRejectReason(), "bad-txns-ct-input-value");
+
+    // Defense in depth: a caller that skipped CheckTransaction() must not be
+    // able to relay it either.
+    TxValidationState state_inputs;
+    CAmount txfee = -1;
+    const bool old_ct_mode = g_con_elementsmode;
+    g_con_elementsmode = true;
+    BOOST_CHECK(!Consensus::CheckTxInputs(tx, state_inputs, view, /*nSpendHeight=*/200, txfee));
+    g_con_elementsmode = old_ct_mode;
+
+    BOOST_CHECK(state_inputs.IsInvalid());
+    BOOST_CHECK_EQUAL(state_inputs.GetResult(), TxValidationResult::TX_CONSENSUS);
+    BOOST_CHECK_EQUAL(state_inputs.GetRejectReason(), "bad-txns-ct-input-value");
+}
+
 // RCPU hardening (P1-2): from nBanPathAHeight onward the legacy path-A
 // plaintext-nonce encoding (33-byte CConfidentialNonce with 0x02 prefix,
 // leaking the rewind nonce on-chain) must be rejected at the consensus
