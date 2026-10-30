@@ -1430,7 +1430,18 @@ UniValue options = request.params[1];
         } else {
             ExtractDestination(tx_out.scriptPubKey, dest);
         }
-        destinations.emplace_back(dest, tx_out.nValue.IsExplicit() ? tx_out.nValue.GetAmount() : 0);
+        // RCPU CT: the value of a confidential output cannot be recovered from
+        // the transaction (only the commitment is on the wire, and the blinding
+        // key is not available for a foreign output). Treating it as 0 would
+        // silently under-state the outputs and pick the wrong coins/change, so
+        // fail closed instead. The usual flow is to pass explicit amounts and
+        // let the wallet blind the outputs itself.
+        if (!tx_out.nValue.IsExplicit()) {
+            throw JSONRPCError(RPC_INVALID_PARAMETER,
+                strprintf("fundrawtransaction: output %u is confidential, so its amount cannot be determined; "
+                          "build the transaction with explicit amounts instead", static_cast<unsigned int>(i)));
+        }
+        destinations.emplace_back(dest, tx_out.nValue.GetAmount());
     }
     std::vector<std::string> dummy(destinations.size(), "dummy");
     std::vector<CRecipient> recipients = CreateRecipients(
