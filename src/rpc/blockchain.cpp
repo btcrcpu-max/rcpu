@@ -905,7 +905,11 @@ static RPCHelpMan gettxoutsetinfo()
                         {RPCResult::Type::STR_HEX, "muhash", /*optional=*/true, "The serialized hash (only present if 'muhash' hash_type is chosen)"},
                         {RPCResult::Type::NUM, "transactions", /*optional=*/true, "The number of transactions with unspent outputs (not available when coinstatsindex is used)"},
                         {RPCResult::Type::NUM, "disk_size", /*optional=*/true, "The estimated size of the chainstate on disk (not available when coinstatsindex is used)"},
-                        {RPCResult::Type::STR_AMOUNT, "total_amount", "The total amount of coins in the UTXO set"},
+                        {RPCResult::Type::STR_AMOUNT, "total_amount", "The total amount of coins in the UTXO set. Confidential outputs are counted as 0, see \"amounts_complete\""},
+                        // !RCPU
+                        {RPCResult::Type::BOOL, "amounts_complete", "RCPU CT: false if the UTXO set contains outputs whose value is hidden behind a Pedersen commitment, in which case total_amount covers explicit outputs only"},
+                        {RPCResult::Type::NUM, "confidential_outputs", /*optional=*/true, "RCPU CT: number of unspent outputs with a hidden value (absent if the coinstatsindex database predates this field)"},
+                        // !RCPU END
                         {RPCResult::Type::STR_AMOUNT, "total_unspendable_amount", /*optional=*/true, "The total amount of coins permanently excluded from the UTXO set (only available if coinstatsindex is used)"},
                         {RPCResult::Type::OBJ, "block_info", /*optional=*/true, "Info on amounts in the block at this block height (only available if coinstatsindex is used)",
                         {
@@ -997,6 +1001,13 @@ static RPCHelpMan gettxoutsetinfo()
         }
         CHECK_NONFATAL(stats.total_amount.has_value());
         ret.pushKV("total_amount", ValueFromAmount(stats.total_amount.value()));
+        // RCPU CT: total_amount only covers explicit outputs. Say whether that
+        // is the whole supply and how many unspent outputs are hidden, instead
+        // of letting callers read a 20%-short number as "the supply".
+        ret.pushKV("amounts_complete", stats.amounts_complete);
+        if (stats.confidential_outputs.has_value()) {
+            ret.pushKV("confidential_outputs", (int64_t)*stats.confidential_outputs);
+        }
         if (!stats.index_used) {
             ret.pushKV("transactions", static_cast<int64_t>(stats.nTransactions));
             ret.pushKV("disk_size", stats.nDiskSize);
@@ -1049,7 +1060,10 @@ static RPCHelpMan gettxout()
             RPCResult{"Otherwise", RPCResult::Type::OBJ, "", "", {
                 {RPCResult::Type::STR_HEX, "bestblock", "The hash of the block at the tip of the chain"},
                 {RPCResult::Type::NUM, "confirmations", "The number of confirmations"},
-                {RPCResult::Type::STR_AMOUNT, "value", "The transaction value in " + CURRENCY_UNIT},
+                {RPCResult::Type::STR_AMOUNT, "value", /*optional=*/true, "The transaction value in " + CURRENCY_UNIT + ". Omitted for a confidential output (see \"confidential\")"},
+                // !RCPU
+                {RPCResult::Type::BOOL, "confidential", /*optional=*/true, "RCPU CT: the output value is hidden behind a Pedersen commitment"},
+                // !RCPU END
                 {RPCResult::Type::OBJ, "scriptPubKey", "", {
                     {RPCResult::Type::STR, "asm", "Disassembly of the public key script"},
                     {RPCResult::Type::STR, "desc", "Inferred descriptor for the output"},
@@ -1106,7 +1120,14 @@ static RPCHelpMan gettxout()
     } else {
         ret.pushKV("confirmations", (int64_t)(pindex->nHeight - coin.nHeight + 1));
     }
-    ret.pushKV("value", ValueFromAmount(coin.out.nValue.GetAmount()));
+    // RCPU CT: GetAmount() is 0 for a Pedersen commitment, so reporting a value
+    // of 0 would claim the output is worth nothing. Report it as confidential
+    // instead (same rule as decodepsbt and scantxoutset).
+    if (coin.out.nValue.IsExplicit()) {
+        ret.pushKV("value", ValueFromAmount(coin.out.nValue.GetAmount()));
+    } else {
+        ret.pushKV("confidential", true);
+    }
     UniValue o(UniValue::VOBJ);
     ScriptToUniv(coin.out.scriptPubKey, /*out=*/o, /*include_hex=*/true, /*include_address=*/true);
     ret.pushKV("scriptPubKey", o);
@@ -1804,7 +1825,10 @@ static RPCHelpMan getblockstats()
                 {RPCResult::Type::NUM, "swtotal_weight", /*optional=*/true, "Total weight of all segwit transactions"},
                 {RPCResult::Type::NUM, "swtxs", /*optional=*/true, "The number of segwit transactions"},
                 {RPCResult::Type::NUM, "time", /*optional=*/true, "The block time"},
-                {RPCResult::Type::NUM, "total_out", /*optional=*/true, "Total amount in all outputs (excluding coinbase and thus reward [ie subsidy + totalfee])"},
+                {RPCResult::Type::NUM, "total_out", /*optional=*/true, "Total amount in all outputs (excluding coinbase and thus reward [ie subsidy + totalfee]). Confidential outputs count as 0, see \"amounts_complete\""},
+                // !RCPU
+                {RPCResult::Type::BOOL, "amounts_complete", "RCPU CT: false if the block contains outputs whose value is hidden behind a Pedersen commitment, in which case the amount and fee fields cover explicit outputs only"},
+                // !RCPU END
                 {RPCResult::Type::NUM, "total_size", /*optional=*/true, "Total size of all non-coinbase transactions"},
                 {RPCResult::Type::NUM, "total_weight", /*optional=*/true, "Total weight of all non-coinbase transactions"},
                 {RPCResult::Type::NUM, "totalfee", /*optional=*/true, "The fee total"},
@@ -1855,6 +1879,20 @@ static RPCHelpMan getblockstats()
     CAmount minfeerate = MAX_MONEY;
     CAmount total_out = 0;
     CAmount totalfee = 0;
+    // RCPU CT: a confidential output's value is not available, so every amount
+    // derived from it (total_out, totalfee, fees, feerates) is explicit-only.
+    // Decide the flag up front so it is correct regardless of which fields the
+    // caller asked for.
+    bool amounts_complete = true;
+    for (const auto& tx : block.vtx) {
+        for (const auto& out : tx->vout) {
+            if (!out.nValue.IsExplicit()) {
+                amounts_complete = false;
+                break;
+            }
+        }
+        if (!amounts_complete) break;
+    }
     int64_t inputs = 0;
     int64_t maxtxsize = 0;
     int64_t mintxsize = MAX_BLOCK_SERIALIZED_SIZE;
@@ -1883,7 +1921,10 @@ for (const CTxOut& out : tx->vout) {
                 size_t out_size;
                 {
                     SizeComputer sc;
-                    out.Serialize(sc, false);
+                    // RCPU CT: serialize with the transaction's own mode, or a
+                    // commitment would be measured as a plain 8-byte amount
+                    // (off by ~2.6 kB per confidential output).
+                    out.Serialize(sc, tx->nVersion == CT_VERSION);
                     out_size = sc.size();
                 }
                 out_size += PER_UTXO_OVERHEAD;
@@ -1941,7 +1982,10 @@ const CTxOut& prevoutput = coin.out;
                 size_t prevout_size;
                 {
                     SizeComputer sc;
-                    prevoutput.Serialize(sc, false);
+                    // RCPU CT: a v3 spend can only consume confidential outputs
+                    // and a v2 spend only explicit ones (consensus rule), so the
+                    // spending transaction's mode also describes the prevout.
+                    prevoutput.Serialize(sc, tx->nVersion == CT_VERSION);
                     prevout_size = sc.size();
                 }
                 prevout_size += PER_UTXO_OVERHEAD;
@@ -2000,6 +2044,9 @@ const CTxOut& prevoutput = coin.out;
     ret_all.pushKV("swtxs", swtxs);
     ret_all.pushKV("time", pindex.GetBlockTime());
     ret_all.pushKV("total_out", total_out);
+    // RCPU CT: false when the block contains confidential outputs, in which
+    // case the amount fields above cover explicit outputs only.
+    ret_all.pushKV("amounts_complete", amounts_complete);
     ret_all.pushKV("total_size", total_size);
     ret_all.pushKV("total_weight", total_weight);
     ret_all.pushKV("totalfee", totalfee);
@@ -2161,12 +2208,19 @@ static RPCHelpMan scantxoutset()
                         {RPCResult::Type::NUM, "vout", "The vout value"},
                         {RPCResult::Type::STR_HEX, "scriptPubKey", "The script key"},
                         {RPCResult::Type::STR, "desc", "A specialized descriptor for the matched scriptPubKey"},
-                        {RPCResult::Type::STR_AMOUNT, "amount", "The total amount in " + CURRENCY_UNIT + " of the unspent output"},
+                        {RPCResult::Type::STR_AMOUNT, "amount", /*optional=*/true, "The amount in " + CURRENCY_UNIT + " of the unspent output. Omitted for a confidential output (see \"confidential\")"},
+                        // !RCPU
+                        {RPCResult::Type::BOOL, "confidential", /*optional=*/true, "RCPU CT: the output value is hidden behind a Pedersen commitment"},
+                        // !RCPU END
                         {RPCResult::Type::BOOL, "coinbase", "Whether this is a coinbase output"},
                         {RPCResult::Type::NUM, "height", "Height of the unspent transaction output"},
                     }},
                 }},
-                {RPCResult::Type::STR_AMOUNT, "total_amount", "The total amount of all found unspent outputs in " + CURRENCY_UNIT},
+                {RPCResult::Type::STR_AMOUNT, "total_amount", "The total amount of all found unspent outputs in " + CURRENCY_UNIT + ". Confidential outputs are counted as 0, see \"amounts_complete\""},
+                // !RCPU
+                {RPCResult::Type::BOOL, "amounts_complete", "RCPU CT: false if any matched output has a hidden value, in which case total_amount covers explicit outputs only"},
+                {RPCResult::Type::NUM, "confidential_outputs", "RCPU CT: number of matched outputs with a hidden value"},
+                // !RCPU END
             }},
             scan_result_abort,
             scan_result_status_some,
@@ -2213,6 +2267,7 @@ static RPCHelpMan scantxoutset()
         std::set<CScript> needles;
         std::map<CScript, std::string> descriptors;
         CAmount total_in = 0;
+        int64_t confidential_count = 0; // RCPU CT: matched outputs whose value is hidden
 
         // loop through the scan objects
         for (const UniValue& scanobject : request.params[1].get_array().getValues()) {
@@ -2253,14 +2308,25 @@ static RPCHelpMan scantxoutset()
             const Coin& coin = it.second;
             const CTxOut& txo = coin.out;
             input_txos.push_back(txo);
-            total_in += txo.nValue.GetAmount();
+            // RCPU CT: a commitment has no plaintext value. Count it and omit
+            // the amount rather than reporting a value of 0.
+            const bool is_explicit = txo.nValue.IsExplicit();
+            if (is_explicit) {
+                total_in += txo.nValue.GetAmount();
+            } else {
+                ++confidential_count;
+            }
 
             UniValue unspent(UniValue::VOBJ);
             unspent.pushKV("txid", outpoint.hash.GetHex());
             unspent.pushKV("vout", (int32_t)outpoint.n);
             unspent.pushKV("scriptPubKey", HexStr(txo.scriptPubKey));
             unspent.pushKV("desc", descriptors[txo.scriptPubKey]);
-            unspent.pushKV("amount", ValueFromAmount(txo.nValue.GetAmount()));
+            if (is_explicit) {
+                unspent.pushKV("amount", ValueFromAmount(txo.nValue.GetAmount()));
+            } else {
+                unspent.pushKV("confidential", true);
+            }
             unspent.pushKV("coinbase", coin.IsCoinBase());
             unspent.pushKV("height", (int32_t)coin.nHeight);
 
@@ -2268,6 +2334,10 @@ static RPCHelpMan scantxoutset()
         }
         result.pushKV("unspents", unspents);
         result.pushKV("total_amount", ValueFromAmount(total_in));
+        // RCPU CT: total_amount excludes confidential outputs; state that
+        // explicitly so it is not mistaken for the full scanned value.
+        result.pushKV("amounts_complete", confidential_count == 0);
+        result.pushKV("confidential_outputs", confidential_count);
     } else {
         throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("Invalid action '%s'", request.params[0].get_str()));
     }

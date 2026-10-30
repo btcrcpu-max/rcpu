@@ -46,6 +46,17 @@ struct CCoinsStats {
     //! Signals if the coinstatsindex was used to retrieve the statistics.
     bool index_used{false};
 
+    //! RCPU CT: number of unspent outputs whose value is hidden behind a
+    //! Pedersen commitment. Their value contributes 0 to total_amount, so
+    //! total_amount is only the explicit part of the supply. std::nullopt means
+    //! the caller could not determine the count (e.g. a coinstatsindex database
+    //! written by a binary that predates this field).
+    std::optional<uint64_t> confidential_outputs{0};
+    //! RCPU CT: false when at least one unspent output is confidential, i.e.
+    //! total_amount does not cover the whole supply and must not be used as a
+    //! supply metric on its own.
+    bool amounts_complete{true};
+
     // Following values are only available from coinstats index
 
     //! Total cumulative amount of block subsidies up to and including this block
