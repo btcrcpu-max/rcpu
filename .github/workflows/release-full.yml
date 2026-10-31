@@ -128,7 +128,7 @@ jobs:
           retention-days: 1
 
   build-linux:
-    needs: tag-guard, build-randomx-linux
+    needs: [tag-guard, build-randomx-linux]
     if: needs.tag-guard.outputs.ok == 'true'
     runs-on: ubuntu-22.04
     steps:
@@ -228,7 +228,7 @@ jobs:
             SHA256SUMS-linux.txt
 
   build-windows:
-    needs: tag-guard, build-randomx-windows
+    needs: [tag-guard, build-randomx-windows]
     if: needs.tag-guard.outputs.ok == 'true'
     runs-on: ubuntu-22.04
     steps:
