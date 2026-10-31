@@ -36,4 +36,9 @@ jobs:
           /tmp/actionlint --version
 
       - name: Lint workflows
-        run: /tmp/actionlint -color
+        # Shellcheck and pyflakes are deliberately disabled: runners ship
+        # shellcheck, and the existing workflows contain many pre-existing style
+        # warnings (SC2046, SC2012, ...). The point of this job is the Actions
+        # schema - expressions, `needs`, event filters, job graph - which is what
+        # silently breaks a workflow file.
+        run: /tmp/actionlint -color -shellcheck= -pyflakes=
