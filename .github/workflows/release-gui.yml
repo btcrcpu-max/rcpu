@@ -10,7 +10,35 @@ permissions:
   contents: write
 
 jobs:
+  # A bare `v*` tag is not enough to identify a node release: the miner line
+  # also uses v tags (v1.0.x). Building installers and a 700 MB AppImage for a
+  # miner tag wastes CI time and publishes the wrong artifacts. Gate every
+  # build on a real node release tag.
+  tag-guard:
+    name: Verify node release tag
+    runs-on: ubuntu-latest
+    outputs:
+      ok: ${{ steps.check.outputs.ok }}
+    steps:
+      - id: check
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          event="${GITHUB_EVENT_NAME}"
+          # Node releases: v<major>.<minor>.<build> with minor >= 1 (1.1.x, 1.2.x, 1.3.x, 1.4.x).
+          # Miner releases: 1.0.x, tagged `miner-v<version>`.
+          if [ "$event" = "workflow_dispatch" ]; then
+            ok=true
+          elif [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] && [[ ! "$tag" =~ ^v1\.0\. ]]; then
+            ok=true
+          else
+            ok=false
+            echo "::notice::'$tag' is not a node release tag (expected vX.Y.Z with minor >= 1); skipping node builds. Miner releases use miner-v*."
+          fi
+          echo "ok=$ok" >> "$GITHUB_OUTPUT"
   build-appimage:
+    needs: tag-guard
+    if: needs.tag-guard.outputs.ok == 'true'
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout source
