@@ -1,0 +1,39 @@
+name: Workflow Lint
+
+# actionlint validates the GitHub Actions schema, which plain YAML parsers do
+# not. A `needs:` written as "a, b" is valid YAML but is parsed as a single job
+# name, which silently invalidates the whole workflow file - that is exactly how
+# release-full.yml broke on 2026-10-31. This job runs on every workflow change.
+
+on:
+  push:
+    paths:
+      - '.github/workflows/**'
+  pull_request:
+    paths:
+      - '.github/workflows/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  actionlint:
+    name: actionlint
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Install actionlint
+        run: |
+          curl --fail --silent --show-error --location \
+            --output /tmp/actionlint.tar.gz \
+            "https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz"
+          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  /tmp/actionlint.tar.gz" \
+            | sha256sum --check --strict -
+          tar --extract --gzip --file /tmp/actionlint.tar.gz --directory /tmp actionlint
+          /tmp/actionlint --version
+
+      - name: Lint workflows
+        run: /tmp/actionlint -color
