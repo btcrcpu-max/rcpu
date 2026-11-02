@@ -11,12 +11,14 @@ dual-algo** mode alongside RandomX.
 
 **Repository**: https://github.com/btcrcpu-max/rcpu
 
-> **MANDATORY UPGRADE BEFORE BLOCK 21,000 — v1.3.7 or later.**
-> Etchash result comparison is **big-endian** from the first Etchash block.
-> v1.3.6 and earlier use the legacy little-endian rule and will reject/split
-> at 21,000. Every node, pool and miner that validates or mines bit-30 blocks
-> must upgrade; miners need `rcpuminer` 1.0.23+ and pools need the matching
-> Miningcore plugin. See [v1.3.7 release notes](doc/release-notes/v1.3.7.md).
+> **DUAL-ALGO ACTIVATED AT BLOCK 21,000 (2026-11-02).**
+> Mainnet now uses the **v1.4 Etchash hash domain**: `nNonce` is zeroed in
+> `header_hash` and passed to hashimoto separately as `nonce8`; the result is
+> compared big-endian from block 21,000. **Node v1.4.1 or later is required**:
+> v1.3.x nodes (including v1.3.10) use the old domain and will reject bit-30
+> blocks / fork off after 21,000.
+> Miners need `rcpuminer` **1.0.27+** (1.0.28 recommended); pools need the
+> matching Miningcore plugin with the v1.4 domain.
 
 | Parameter | Value |
 |---|---|
@@ -24,7 +26,7 @@ dual-algo** mode alongside RandomX.
 | RPC Port | **7337** |
 | CT Activation | Block **0** (genesis) |
 | ASERT Activation | Block **0** (genesis) |
-| Dual-Algo Activation | Block **21,000** |
+| Dual-Algo Activation | Block **21,000** (activated 2026-11-02) |
 | Etchash Epoch Length | **6000** blocks |
 | Etchash Result Byte Order | **big-endian** from block 21,000 |
 | Version Bit for Etchash | bit 30 (`0x40000000`) |
