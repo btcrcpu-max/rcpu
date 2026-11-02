@@ -583,8 +583,8 @@ public:
         consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT;
         consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].min_activation_height = 0; // No activation delay
 
-        consensus.nMinimumChainWork = uint256S("000000000000000000000000000000000000000000000000000000034aa6d42a9");  // height 19000 (2026-10-27 P2P header sync, verified chainwork@10000)
-        consensus.defaultAssumeValid = uint256S("aa1b914d6facacc0680404641a1ce75cc4a52ed85af00564cd6213022599b774");  // height 19000 (2026-10-27)
+        consensus.nMinimumChainWork = uint256S("0000000000000000000000000000000000000000000000000000004c8001cf40");  // height 21000 (2026-11-02, dual-algo activation)
+        consensus.defaultAssumeValid = uint256S("ab9e930cdac3c43d437e9a74adfb0b967e785cf11ac334bb8516cfaa6b7437ac");  // height 21000 (2026-11-02)
 
         // The half life for the ASERT DAA. For every (nASERTHalfLife) seconds behind schedule the blockchain gets,
         // difficulty is cut in half. Doubled if blocks are ahead of schedule.
@@ -687,6 +687,7 @@ bech32_hrp = "rcpu";
                 {15000, uint256S("08cbd45ae78d83f9b78484cec3a52a2dbb4eeab24626bfb105869a076e466d0e")},
                 {18000, uint256S("5b18530b4305f15b3d29699dbda57882a63e1083105dcc584ff6aa4b24631d88")},
                 {19000, uint256S("aa1b914d6facacc0680404641a1ce75cc4a52ed85af00564cd6213022599b774")},
+                {21000, uint256S("ab9e930cdac3c43d437e9a74adfb0b967e785cf11ac334bb8516cfaa6b7437ac")},
             }
         };
 
@@ -697,14 +698,11 @@ bech32_hrp = "rcpu";
         // node with: getchaintxstats 4096 <checkpoint_or_tip_hash>. Do not
         // invent values.
         chainTxData = ChainTxData{
-            // Data equivalent to RPC: getchaintxstats 4096 82103d7f92cb5ac901421fdf4ba96d01cf6d787df5ece136ad124408ab7b3d03
-            // (block 19423, 2026-10-27). nTxCount is nChainTx at that block from a fully synced
-            // node's UpdateTip log (RPC unavailable); the 4096-block window covers heights
-            // 15328..19423 (4691 txs over 823193s). Block hashes and times cross-checked
-            // against an independent full P2P header walk.
-            .nTime    = 1793082143,
-            .nTxCount = 26168,
-            .dTxRate  = 0.00569854214017855,
+            // Data from RPC: getchaintxstats 4096 ab9e930cdac3c43d437e9a74adfb0b967e785cf11ac334bb8516cfaa6b7437ac
+            // (block 21000, 2026-11-02, dual-algo activation block).
+            .nTime    = 1793589823,
+            .nTxCount = 28604,
+            .dTxRate  = 0.004603644006385125,
         };
     }
 };
