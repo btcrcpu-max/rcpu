@@ -1213,10 +1213,15 @@ return RPCHelpMan{"submitblock",
         "\nAttempts to submit new block to network.\n"
         "See https://en.bitcoin.it/wiki/BIP_0022 for full specification.\n"
         "\nRCPU: the serialized block header is 112 bytes (80-byte legacy header\n"
-        "plus the 32-byte hashRandomX field). The hashRandomX field must contain\n"
-        "the RandomX hash computed over the header with hashRandomX zeroed, and\n"
-        "the RandomX commitment of that header must satisfy the target returned\n"
-        "by getblocktemplate (see rx_pow_rule).\n",
+        "plus the 32-byte hashRandomX field). For RandomX blocks the hashRandomX\n"
+        "field must contain the RandomX hash computed over the header with\n"
+        "hashRandomX zeroed, and the RandomX commitment of that header must\n"
+        "satisfy the target returned by getblocktemplate (see rx_pow_rule).\n"
+        "From the dual-algo activation height, headers with BLOCK_VERSION_QHASH\n"
+        "(bit 30) set are Etchash blocks: hashRandomX carries the etchash result\n"
+        "keccak256(seed64||digest) of the nonce-independent header hash, compared\n"
+        "against the target in big-endian order (see etchash_pow_rule; pools must\n"
+        "use etchash_epoch/etchash_seed_hash from getblocktemplate).\n",
         {
             {"hexdata", RPCArg::Type::STR_HEX, RPCArg::Optional::NO, "the hex-encoded block data to submit"},
             {"dummy", RPCArg::Type::STR, RPCArg::DefaultHint{"ignored"}, "dummy value, for compatibility with BIP22. This value is ignored."},
