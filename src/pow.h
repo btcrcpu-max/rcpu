@@ -101,6 +101,11 @@ bool CheckProofOfWorkQHash(const CBlockHeader& block, const Consensus::Params& p
  * verification is impossible without height context. Callers without height
  * context must not attempt etchash verification.
  *
+ * POW_VERIFY_COMMITMENT_ONLY is the cheap context-free pre-check: it verifies
+ * only that the claimed result satisfies the target (respecting the
+ * nEtchashBigEndianHeight byte-order rule) and skips hashimoto entirely. Full
+ * verification runs exactly once per header in AcceptBlockHeader.
+ *
  * Semantics mirror CheckProofOfWorkQHash: in POW_VERIFY_MINING mode the
  * computed result is returned via outHash even when it misses the target, so
  * pool software can validate shares.

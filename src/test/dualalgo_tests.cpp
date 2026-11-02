@@ -26,6 +26,7 @@
 #include <memory>
 #include <algorithm>
 #include <cstring>
+#include <limits>
 #include <vector>
 
 BOOST_FIXTURE_TEST_SUITE(dualalgo_tests, BasicTestingSetup)
@@ -496,10 +497,84 @@ BOOST_AUTO_TEST_CASE(etchash_header_pow_precheck_is_height_aware)
     // Height unknown: deferred to AcceptBlockHeader, must not be rejected here.
     BOOST_CHECK(HasValidProofOfWork({header}, params, /*nStartHeight=*/-1));
 
-    // Tampering with the stored Etchash result must still be caught.
+    // A tampered claim that still satisfies the target passes the cheap
+    // pre-check (it is intentionally target-only so header relay stays fast);
+    // full verification in AcceptBlockHeader remains the authoritative gate.
     CBlockHeader tampered = header;
     *tampered.hashRandomX.begin() ^= 0x01;
-    BOOST_CHECK(!HasValidProofOfWork({tampered}, params, /*nStartHeight=*/150));
+    BOOST_CHECK(HasValidProofOfWork({tampered}, params, /*nStartHeight=*/150));
+    BOOST_CHECK(!CheckProofOfWorkEtchash(tampered, 150, params, POW_VERIFY_FULL));
+
+    // Over-target garbage is still rejected by the pre-check itself.
+    CBlockHeader garbage = header;
+    garbage.hashRandomX = uint256S("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
+    BOOST_CHECK(!HasValidProofOfWork({garbage}, params, /*nStartHeight=*/150));
+}
+
+// !RCPU (dual-algo etchash): POW_VERIFY_COMMITMENT_ONLY must be the cheap
+// target-only pre-check (no hashimoto), so CheckBlock plus the headers
+// pre-check no longer duplicate the full hashimoto run that AcceptBlockHeader
+// performs with POW_VERIFY_FULL.
+BOOST_AUTO_TEST_CASE(etchash_commitment_only_is_target_check)
+{
+    Consensus::Params params;
+    params.powLimit = uint256S("0x7fffffff00000000000000000000000000000000000000000000000000000000");
+    params.nDualAlgoActivationHeight = 150;
+    params.nEtchashEpochLength = 10;
+    params.fDualAlgoEtchash = true;
+    params.nEtchashBigEndianHeight = 150; // big-endian comparison active
+
+    CBlockHeader block;
+    block.nVersion = 1 | BLOCK_VERSION_QHASH;
+    block.hashPrevBlock = uint256S("0x0000000000000000000000000000000000000000000000000000000000000001");
+    block.hashMerkleRoot = uint256S("0x0000000000000000000000000000000000000000000000000000000000000002");
+    block.nTime = 1710000000;
+    block.nBits = 0x207fffff;
+
+    uint256 solved;
+    bool found = false;
+    for (uint32_t nonce = 0; nonce < 1000; ++nonce) {
+        block.nNonce = nonce;
+        if (CheckProofOfWorkEtchash(block, 150, params, POW_VERIFY_MINING, &solved)) {
+            found = true;
+            break;
+        }
+    }
+    BOOST_REQUIRE(found);
+    block.hashRandomX = solved;
+
+    // The real solution passes both the cheap pre-check and full verification.
+    BOOST_CHECK(CheckProofOfWorkEtchash(block, 150, params, POW_VERIFY_COMMITMENT_ONLY));
+    BOOST_CHECK(CheckProofOfWorkEtchash(block, 150, params, POW_VERIFY_FULL));
+
+    // A fabricated claim that satisfies the target but is not the hashimoto
+    // result passes the cheap pre-check (big-endian value 1) yet fails full
+    // verification: that split is what removes the duplicate hashimoto run.
+    CBlockHeader forged = block;
+    forged.hashRandomX.SetNull();
+    *forged.hashRandomX.begin() = 0x01;
+    BOOST_CHECK(CheckProofOfWorkEtchash(forged, 150, params, POW_VERIFY_COMMITMENT_ONLY));
+    BOOST_CHECK(!CheckProofOfWorkEtchash(forged, 150, params, POW_VERIFY_FULL));
+
+    // A null claim and an over-target claim are both rejected by the pre-check.
+    CBlockHeader null_claim = block;
+    null_claim.hashRandomX.SetNull();
+    BOOST_CHECK(!CheckProofOfWorkEtchash(null_claim, 150, params, POW_VERIFY_COMMITMENT_ONLY));
+    CBlockHeader over_target = block;
+    over_target.hashRandomX = uint256S("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
+    BOOST_CHECK(!CheckProofOfWorkEtchash(over_target, 150, params, POW_VERIFY_COMMITMENT_ONLY));
+
+    // The legacy little-endian branch (pre-nEtchashBigEndianHeight semantics)
+    // compares the stored uint256 directly.
+    Consensus::Params params_le = params;
+    params_le.nEtchashBigEndianHeight = std::numeric_limits<int>::max();
+    BOOST_CHECK(CheckProofOfWorkEtchash(forged, 150, params_le, POW_VERIFY_COMMITMENT_ONLY));
+    BOOST_CHECK(!CheckProofOfWorkEtchash(over_target, 150, params_le, POW_VERIFY_COMMITMENT_ONLY));
+
+    // Mining mode still computes the full hashimoto and exposes the result.
+    uint256 mined;
+    BOOST_CHECK(CheckProofOfWorkEtchash(block, 150, params, POW_VERIFY_MINING, &mined));
+    BOOST_CHECK(mined == block.hashRandomX);
 }
 
 // !RCPU (dual-algo etchash): a valid Etchash block whose parent is unknown must

@@ -1249,6 +1249,29 @@ bool CheckProofOfWorkEtchash(const CBlockHeader& block, int64_t nHeight, const C
         return false;
     }
 
+    if (verifyMode == POW_VERIFY_COMMITMENT_ONLY) {
+        // Cheap context-free pre-check (the analogue of the RandomX commitment
+        // check): only verify that the claimed result satisfies the target.
+        // Etchash has no separate commitment, so the expensive hashimoto-light
+        // recomputation is skipped here; it runs exactly once per header in
+        // AcceptBlockHeader (POW_VERIFY_FULL). CheckBlock and the headers
+        // precheck (HasValidProofOfWork) both call this mode, so without this
+        // fast path every Etchash block pays for up to three full hashimoto
+        // runs before entering the block index.
+        if (block.hashRandomX.IsNull()) {
+            LogPrintf("Error: proof of work failed: etchash block=%s has null hashRandomX field\n",
+                      block.GetHash().GetHex());
+            return false;
+        }
+        if (nHeight >= params.nEtchashBigEndianHeight) {
+            // P2-7: the claim is compared big-endian, matching the full path.
+            uint256 big_endian_claim;
+            std::reverse_copy(block.hashRandomX.begin(), block.hashRandomX.end(), big_endian_claim.begin());
+            return UintToArith256(big_endian_claim) <= bnTarget;
+        }
+        return UintToArith256(block.hashRandomX) <= bnTarget;
+    }
+
     const uint256 seed = etchash::SeedForEpoch(uint64_t(epoch));
     std::shared_ptr<EtchashCacheEntry> cache = GetEtchashCache(epoch, seed);
 
