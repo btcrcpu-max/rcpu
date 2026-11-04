@@ -74,14 +74,16 @@ static size_t EstimatedRangeProofSize(CAmount value)
 }
 
 /** Net vsize added when an explicit output is blinded: the 8-byte legacy
- *  value counted by SizeComputer is replaced by a 33-byte Pedersen
- *  commitment, a 33-byte nonce, the CompactSize-prefixed range proof and the
- *  one-byte explicit-value prefix.
+ *  value counted by SizeComputer is replaced by a 34-byte (1-byte prefix +
+ *  33-byte point) Pedersen commitment, a 34-byte nonce commitment, and the
+ *  CompactSize-prefixed Borromean range proof. Both CConfidentialValue and
+ *  CConfidentialNonce are version-prefixed (never CompactSize-prefixed), so
+ *  blind delta = (34 + 34) - 8 + CompactSize(proof_len) + proof_len.
  */
 static int EstimatedBlindedOutputDelta(CAmount value)
 {
     const size_t proof{EstimatedRangeProofSize(value)};
-    return static_cast<int>(33 + 33 - 8 + GetSizeOfCompactSize(proof) + proof);
+    return static_cast<int>(34 + 34 - 8 + GetSizeOfCompactSize(proof) + proof);
 }
 
 // Heuristic per-output overhead used only to price *creating* change in the
@@ -211,9 +213,19 @@ TxSize CalculateMaximumSignedTxSize(const CTransaction &tx, const CWallet *walle
         txo.Serialize(sc, fCT);
         weight += sc.size() * WITNESS_SCALE_FACTOR;
     }
-    // CT inputs also carry a confidential value field (null for wallet-built
-    // inputs, i.e. a one-byte prefix).
-    if (fCT) weight += tx.vin.size() * WITNESS_SCALE_FACTOR;
+    // CT inputs also carry a confidential value field: CConfidentialValue
+    // serializes as [version byte][payload], so we weight each variant
+    // explicitly instead of guessing. The pre-signed input weight from
+    // GetSignedTxinWeight is the legacy format that does not include nValue.
+    if (fCT) {
+        for (const auto& txin : tx.vin) {
+            size_t nv_bytes{0};
+            if (txin.nValue.IsNull()) nv_bytes = 1;           // version=0 only
+            else if (txin.nValue.IsExplicit()) nv_bytes = 1 + 8;   // 1 + 8-byte BE
+            else nv_bytes = 1 + 33;                            // version + Pedersen
+            weight += nv_bytes * WITNESS_SCALE_FACTOR;
+        }
+    }
 
     // Add the size of the transaction inputs as if they were signed.
     for (uint32_t i = 0; i < txouts.size(); i++) {
@@ -1797,11 +1809,24 @@ std::vector<std::optional<CPubKey>> recipient_keys;
                     if (paid_fee > 0) tx_measured.vout.emplace_back(CTxOut(paid_fee, CScript()));
                     measured = CalculateMaximumSignedTxSize(CTransaction(tx_measured), &wallet, &coin_control);
                 }
+                {
+                    std::string out_desc;
+                    for (size_t vi = 0; vi < txNew.vout.size(); ++vi) {
+                        out_desc += strprintf("[%u] amt=%lld proof=%zu ", (unsigned)vi,
+                            (long long)vout_amounts[vi], txNew.vout[vi].vchRangeproof.size());
+                    }
+                    LogPrintf("CT fee round %zu: vsize=%lld paid_fee=%lld sat feerate=%s inputs=%zu outs=%zu %s\n",
+                        round, (long long)measured.vsize, (long long)paid_fee,
+                        coin_selection_params.m_effective_feerate.ToString(),
+                        txNew.vin.size(), txNew.vout.size(), out_desc);
+                }
                 if (measured.vsize == -1) {
                     return util::Error{_("Missing solving data for estimating transaction size")};
                 }
                 const CAmount fee_needed_blinded =
                     coin_selection_params.m_effective_feerate.GetFee(measured.vsize) + result.GetTotalBumpFees();
+                LogPrintf("CT fee round %zu: fee_needed_blinded=%lld bump=%lld\n",
+                    round, (long long)fee_needed_blinded, (long long)result.GetTotalBumpFees());
                 tx_sizes = measured;
                 nBytes = measured.vsize;
                 current_fee = paid_fee;
