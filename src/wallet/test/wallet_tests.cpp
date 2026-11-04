@@ -34,6 +34,14 @@
 
 using node::MAX_BLOCKFILE_SIZE;
 
+// RCPU pays 50 RCPU for the genesis block and 5,000 RCPU from height 1 on, so
+// tests must derive the per-block reward from the schedule instead of
+// assuming Bitcoin's 50 COIN.
+static CAmount MinedBlockSubsidy(const ChainstateManager& chainman)
+{
+    return GetBlockSubsidy(/*nHeight=*/1, chainman.GetParams().GetConsensus());
+}
+
 namespace wallet {
 RPCHelpMan importmulti();
 RPCHelpMan dumpwallet();
@@ -126,7 +134,7 @@ BOOST_FIXTURE_TEST_CASE(scan_for_wallet_transactions, TestChain100Setup)
         BOOST_CHECK(result.last_failed_block.IsNull());
         BOOST_CHECK_EQUAL(result.last_scanned_block, newTip->GetBlockHash());
         BOOST_CHECK_EQUAL(*result.last_scanned_height, newTip->nHeight);
-        BOOST_CHECK_EQUAL(GetBalance(wallet).m_mine_immature, 100 * COIN);
+        BOOST_CHECK_EQUAL(GetBalance(wallet).m_mine_immature, 2 * MinedBlockSubsidy(*m_node.chainman));
 
         {
             CBlockLocator locator;
@@ -162,7 +170,7 @@ BOOST_FIXTURE_TEST_CASE(scan_for_wallet_transactions, TestChain100Setup)
         BOOST_CHECK_EQUAL(result.last_failed_block, oldTip->GetBlockHash());
         BOOST_CHECK_EQUAL(result.last_scanned_block, newTip->GetBlockHash());
         BOOST_CHECK_EQUAL(*result.last_scanned_height, newTip->nHeight);
-        BOOST_CHECK_EQUAL(GetBalance(wallet).m_mine_immature, 50 * COIN);
+        BOOST_CHECK_EQUAL(GetBalance(wallet).m_mine_immature, MinedBlockSubsidy(*m_node.chainman));
     }
 
     // Prune the remaining block file.
@@ -355,7 +363,7 @@ BOOST_FIXTURE_TEST_CASE(coin_mark_dirty_immature_credit, TestChain100Setup)
     // credit amount is calculated.
     wtx.MarkDirty();
     AddKey(wallet, coinbaseKey);
-    BOOST_CHECK_EQUAL(CachedTxGetImmatureCredit(wallet, wtx, ISMINE_SPENDABLE), 50*COIN);
+    BOOST_CHECK_EQUAL(CachedTxGetImmatureCredit(wallet, wtx, ISMINE_SPENDABLE), MinedBlockSubsidy(*m_node.chainman));
 }
 
 static int64_t AddTx(ChainstateManager& chainman, CWallet& wallet, uint32_t lockTime, int64_t mockTime, int64_t blockTime)
@@ -602,7 +610,7 @@ BOOST_FIXTURE_TEST_CASE(ListCoinsTest, ListCoinsTestingSetup)
     BOOST_CHECK_EQUAL(list.begin()->second.size(), 1U);
 
     // Check initial balance from one mature coinbase transaction.
-    BOOST_CHECK_EQUAL(50 * COIN, WITH_LOCK(wallet->cs_wallet, return AvailableCoins(*wallet).GetTotalAmount()));
+    BOOST_CHECK_EQUAL(MinedBlockSubsidy(*m_node.chainman), WITH_LOCK(wallet->cs_wallet, return AvailableCoins(*wallet).GetTotalAmount()));
 
     // Add a transaction creating a change address, and confirm ListCoins still
     // returns the coin associated with the change address underneath the
