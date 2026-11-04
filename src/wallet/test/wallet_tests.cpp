@@ -688,13 +688,13 @@ BOOST_FIXTURE_TEST_CASE(BasicOutputTypesTest, ListCoinsTest)
     for (const auto& out_type : OUTPUT_TYPES) {
         if (out_type == OutputType::UNKNOWN) continue;
         // AvailableCoins() buckets by *script* type (GetOutputType(Solver(...))).
-        // A confidential address (rcpux1...) is a plain P2WPKH script on chain,
-        // and test_bitcoin runs with CT mode off (g_con_elementsmode == false),
-        // so the transfer below produces an explicit output with no commitment
-        // or nonce that could be classified as CONFIDENTIAL. The bucket is
-        // still asserted to stay empty by the loop over expected_coins_sizes;
-        // the confidential send/receive path is covered by
-        // test/functional/wallet_confidential.py.
+        // A confidential address (rcpux1...) is a plain P2WPKH script on chain.
+        // CT mode is enabled by default for regtest setups (see
+        // AppInitParameterInteraction), so the transfer below is blinded; the
+        // output is still classified by its P2WPKH script and no code path
+        // yields OutputType::CONFIDENTIAL. The bucket is still asserted to stay
+        // empty by the loop over expected_coins_sizes; the confidential
+        // send/receive path is covered by test/functional/wallet_confidential.py.
         if (out_type == OutputType::CONFIDENTIAL) continue;
         expected_coins_sizes[out_type] = 2U;
         TestCoinsResult(*this, out_type, 1 * COIN, expected_coins_sizes);
