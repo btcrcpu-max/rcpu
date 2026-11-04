@@ -250,16 +250,36 @@ if (g_con_elementsmode && fIsCT) {
                     "bad-txns-rangeproof-too-large",
                     strprintf("rangeproof too large (%d > %d)", out.vchRangeproof.size(), MAX_RANGEPROOF_SIZE));
             }
-            // RCPU hardening (P1-2): from nBanPathAHeight onward reject the
-            // legacy path-A plaintext-nonce encoding (0x02 || 32-byte nonce).
-            // Path A stores the rewind nonce on-chain, leaking amount and
-            // blinding factor. The check mirrors IsLegacyNonceCommit() in
-            // blind.cpp but must live here (consensus layer) as a soft-fork
-            // rule, independent of the wallet.
-            if (nSpendHeight >= nBanPathAHeight &&
-                out.nNonce.vchCommitment.size() == 33 && out.nNonce.vchCommitment[0] == 0x02) {
-                return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-ct-legacy-nonce",
-                    "legacy path-A plaintext CT nonce banned at this height");
+            // RCPU hardening (P1-2): from nBanPathAHeight onward the nonce
+            // field of a confidential output is restricted to two valid
+            // shapes:
+            //   1) nNonce.IsNull()       for fee outputs (explicit value +
+            //                            empty scriptPubKey, never spent) and
+            //                            plaintext outputs created in a v3 tx;
+            //   2) 33 bytes with prefix 0x03 (path B ECDH) or 0x04 (path C
+            //                            HKDF). These are the only nonces the
+            //                            wallet produces and the only ones
+            //                            UnblindConfidentialOutput accepts.
+            //
+            // Any other 33-byte prefix (0x00, 0x01, 0x02 legacy path A, 0xFF,
+            // or anything else) is rejected. Previously these malformed
+            // nonces passed consensus because VerifyAmounts does not look at
+            // nNonce; the wallet then silently failed to unblind and counted
+            // the output as zero credit, allowing a payer to construct a
+            // "consensus-valid" CT output the recipient can never spend and
+            // whose balance their wallet would display as 0 -- a stealthy
+            // burn + payment-forgery primitive. Tightening here makes the
+            // soft-fork rule cover all invalid nonces in one go, rather than
+            // only the 0x02 prefix. The same activation height as path-A
+            // banning is re-used so no further buried deployment is needed;
+            // pre-activation behavior is unchanged (backward-compatible).
+            if (nSpendHeight >= nBanPathAHeight && !out.nNonce.IsNull()) {
+                const auto& nc = out.nNonce.vchCommitment;
+                if (nc.size() != 33 || (nc[0] != 0x03 && nc[0] != 0x04)) {
+                    return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-ct-legacy-nonce",
+                        strprintf("confidential output nonce has invalid shape (size=%u, prefix=0x%02x)",
+                            nc.size(), nc.empty() ? 0 : nc[0]));
+                }
             }
         }
 
