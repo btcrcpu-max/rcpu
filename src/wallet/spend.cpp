@@ -1123,7 +1123,8 @@ static util::Result<CreatedTransactionResult> CreateTransactionInternal(
             return;
         }
         // Rebuild ConfidentialKeyHash{WitnessV0KeyHash(keyid), pk}
-        // from the descriptor-derived public key when this wallet owns it.
+        // from the descriptor-derived public key when this wallet owns the
+        // resulting P2WPKH script.
         const CKeyID keyid = [&]() -> CKeyID {
             if (const auto* wit = std::get_if<WitnessV0KeyHash>(&dest))
                 return ToKeyID(*wit);
@@ -1138,10 +1139,21 @@ static util::Result<CreatedTransactionResult> CreateTransactionInternal(
             CPubKey pk;
             if (provider && provider->GetPubKey(keyid, pk) && pk.IsCompressed() && pk.IsValid()) {
                 if (PKHash(pk) == PKHash(keyid)) {
-                    dest = ConfidentialKeyHash(WitnessV0KeyHash(keyid), pk);
-                    change_key_dest = dest;
-                    change_key = pk;
-                    return;
+                    const CTxDestination confidential_dest{ConfidentialKeyHash(WitnessV0KeyHash(keyid), pk)};
+                    // Converting a PKHash change to ConfidentialKeyHash also
+                    // changes its script from pkh(key) to wpkh(key). A
+                    // descriptor wallet's legacy spkman derives only pkh(key),
+                    // so adopting the confidential form unconditionally would
+                    // send the change to a script this wallet cannot spend.
+                    // A legacy (keystore) wallet owns wpkh(key) as well, so the
+                    // ownership check keeps the confidential form where it is
+                    // safe and leaves an explicit P2PKH change otherwise.
+                    if (wallet.IsMine(GetScriptForDestination(confidential_dest)) != ISMINE_NO) {
+                        dest = confidential_dest;
+                        change_key_dest = dest;
+                        change_key = pk;
+                        return;
+                    }
                 }
             }
         }
