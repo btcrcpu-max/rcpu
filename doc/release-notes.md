@@ -2,8 +2,7 @@
 
 RCPU Core release notes live in [doc/release-notes/](release-notes/):
 
-- [v1.4.4](release-notes/v1.4.4.md) — Wallet: descriptor-wallet legacy change outputs stay spendable under confidential transactions (they are no longer rewritten to an unspendable `wpkh(key)` script); `wallet_tests` joins the CI unit gate. No consensus change.
-- v1.4.3 — release build / version bump and packaged artifacts. No consensus changes; no dedicated notes file.
+- [v1.4.3](release-notes/v1.4.3.md) — Wallet: descriptor-wallet legacy change outputs stay spendable under confidential transactions (they are no longer rewritten to an unspendable `wpkh(key)` script); `wallet_tests` joins the CI unit gate. No consensus change.
 - [v1.4.2](release-notes/v1.4.2.md) — post-activation chain anchors at block 21,000; cheaper Etchash header/block verification. No consensus changes.
 - [v1.4.1](release-notes/v1.4.1.md) — consensus tightening: confidential inputs must not carry a value, plus RPC/statistics fixes and an index rebuild. Read Compatibility before upgrading.
 - [v1.4.0](release-notes/v1.4.0.md) — **MANDATORY before block 21,000**: standard Etchash hash domain (nonce excluded from the header hash); GPU miners can mine RCPU's second algorithm. RandomX and historical blocks unchanged.
