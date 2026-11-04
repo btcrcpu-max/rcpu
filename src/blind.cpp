@@ -16,10 +16,32 @@
 #include <secp256k1_ecdh.h>
 #include <secp256k1_generator.h>
 #include <secp256k1_rangeproof.h>
+#include <serialize.h>
 
 #include <cassert>
 #include <cstring>
 #include <optional>
+
+size_t EstimatedRangeProofSize(CAmount value)
+{
+    size_t mantissa{1};
+    for (uint64_t v = value > 0 ? static_cast<uint64_t>(value) : 0; v > 1; v >>= 1) {
+        ++mantissa;
+    }
+    const size_t rings{(mantissa + 1) / 2};
+    const size_t npub{4 * (rings - 1) + ((mantissa % 2) ? 2 : 4)};
+    // The header byte is always present; the mantissa byte follows whenever the
+    // first ring has more than one possible digit, which is the case for every
+    // value the wallet commits to (rsizes[0] is 2 or 4, never 1).
+    const size_t header{2};
+    return header + ((rings + 6) >> 3) + 32 * (rings - 1) + 32 + 32 * npub;
+}
+
+int EstimatedBlindedOutputDelta(CAmount value)
+{
+    const size_t proof{EstimatedRangeProofSize(value)};
+    return static_cast<int>(33 + 33 - 8 + GetSizeOfCompactSize(proof) + proof);
+}
 
 // !RCPU FIX H-1: secp256k1_ecdh hash callback. Copies x32 directly to output
 // (no SHA256) to match the original nonce derivation for backward compatibility.

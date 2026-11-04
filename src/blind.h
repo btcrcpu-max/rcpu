@@ -29,6 +29,36 @@ class CKey;
 bool ComputeECDHNonce(const CKey& privkey, const CPubKey& pubkey, uint256& nonce_out);
 
 /**
+ * Exact serialized length of the range-proof body that secp256k1_rangeproof_sign
+ * (min_bits=0, exp=0, min_value=0 -- the parameters BlindTransaction uses)
+ * produces for a committed value. It depends only on the bit length of the
+ * value:
+ *   mantissa m = bitlen(value)                       (>= 1)
+ *   rings    r = ceil(m / 2)                         (radix-4 digits)
+ *   npub       = 4*(r-1) + (m odd ? 2 : 4)
+ *   header     = 2 bytes (type byte + mantissa byte)
+ *   length     = header + ((r + 6) >> 3) + 32*(r-1) + 32 + 32*npub
+ * (secp256k1_range_proveparams / secp256k1_rangeproof_sign_impl in
+ * src/secp256k1/src/modules/rangeproof/). For RCPU amounts (0..MAX_MONEY,
+ * ~51 bits) that is 2.1-4.1 kB per output, roughly twice the old
+ * "(2 + bits)*32" approximation, so a single constant could both overpay
+ * small outputs and underpay large ones. These helpers steer coin selection
+ * only: the fee actually paid is re-derived from the really blinded
+ * transaction in CreateTransactionInternal. blind_tests cross-checks them
+ * against genuinely signed proofs so the model cannot drift silently.
+ */
+size_t EstimatedRangeProofSize(CAmount value);
+
+/** Net vsize added when an explicit output is blinded: the 8-byte legacy value
+ *  is replaced by a 33-byte Pedersen commitment, a 33-byte nonce commitment,
+ *  and the CompactSize-prefixed Borromean range proof. CConfidentialCommitment
+ *  serializes its stored version byte followed by the remaining bytes, so a
+ *  commitment is exactly its 33-byte payload (never CompactSize-prefixed), and
+ *  blind delta = (33 + 33) - 8 + CompactSize(proof_len) + proof_len.
+ */
+int EstimatedBlindedOutputDelta(CAmount value);
+
+/**
  * Blind a single output: generate a blinding factor and a nonce, create the
  * Pedersen value commitment, store the nonce commitment, and produce the
  * range proof. The output amount remains recoverable by the holder of the

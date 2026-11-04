@@ -43,49 +43,9 @@ namespace wallet {
 static constexpr size_t OUTPUT_GROUP_MAX_ENTRIES{100};
 
 // !RCPU
-// Range-proof size model for a blinded output. secp256k1_rangeproof_sign
-// (min_bits=0, exp=0, min_value=0 -- the parameters BlindTransaction uses)
-// emits a proof whose length depends only on the bit length of the committed
-// value:
-//   mantissa m = bitlen(value)                       (>= 1)
-//   rings    r = ceil(m / 2)                         (radix-4 digits)
-//   npub       = 4*(r-1) + (m odd ? 2 : 4)
-//   header     = 1 (only value 0/1) or 2 bytes
-//   length     = header + ((r + 6) >> 3) + 32*(r-1) + 32 + 32*npub
-// (secp256k1_range_proveparams / secp256k1_rangeproof_sign_impl in
-// src/secp256k1/src/modules/rangeproof/). For RCPU amounts (0..MAX_MONEY,
-// ~51 bits) that is 2.1-4.1 kB per output, roughly twice the old
-// "(2 + bits)*32" approximation, so a single constant could both overpay
-// small outputs and underpay large ones. These helpers steer coin selection
-// only: the fee actually paid is re-derived from the really blinded
-// transaction in CreateTransactionInternal.
-static size_t EstimatedRangeProofSize(CAmount value)
-{
-    size_t mantissa{1};
-    for (uint64_t v = value > 0 ? static_cast<uint64_t>(value) : 0; v > 1; v >>= 1) {
-        ++mantissa;
-    }
-    const size_t rings{(mantissa + 1) / 2};
-    const size_t npub{4 * (rings - 1) + ((mantissa % 2) ? 2 : 4)};
-    // The mantissa byte is only written when the first ring encodes more
-    // than a single possible value; value 0/1 is the only such case.
-    const size_t header{(rings == 1 && (mantissa % 2)) ? size_t{1} : size_t{2}};
-    return header + ((rings + 6) >> 3) + 32 * (rings - 1) + 32 + 32 * npub;
-}
-
-/** Net vsize added when an explicit output is blinded: the 8-byte legacy
- *  value counted by SizeComputer is replaced by a 34-byte (1-byte prefix +
- *  33-byte point) Pedersen commitment, a 34-byte nonce commitment, and the
- *  CompactSize-prefixed Borromean range proof. Both CConfidentialValue and
- *  CConfidentialNonce are version-prefixed (never CompactSize-prefixed), so
- *  blind delta = (34 + 34) - 8 + CompactSize(proof_len) + proof_len.
- */
-static int EstimatedBlindedOutputDelta(CAmount value)
-{
-    const size_t proof{EstimatedRangeProofSize(value)};
-    return static_cast<int>(34 + 34 - 8 + GetSizeOfCompactSize(proof) + proof);
-}
-
+// Range-proof / blinded-output size model: EstimatedRangeProofSize() and
+// EstimatedBlindedOutputDelta() live in blind.h so the coin-selection estimate
+// here and the unit tests in test/blind_tests.cpp share one definition.
 // Heuristic per-output overhead used only to price *creating* change in the
 // coin-selection cost-of-change calculation (the change amount is unknown
 // before selection). It never reaches the network: the paid fee is measured
@@ -222,7 +182,7 @@ TxSize CalculateMaximumSignedTxSize(const CTransaction &tx, const CWallet *walle
             size_t nv_bytes{0};
             if (txin.nValue.IsNull()) nv_bytes = 1;           // version=0 only
             else if (txin.nValue.IsExplicit()) nv_bytes = 1 + 8;   // 1 + 8-byte BE
-            else nv_bytes = 1 + 33;                            // version + Pedersen
+            else nv_bytes = 33;                                // version byte + 32-byte point
             weight += nv_bytes * WITNESS_SCALE_FACTOR;
         }
     }

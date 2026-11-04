@@ -1185,4 +1185,47 @@ BOOST_AUTO_TEST_CASE(blind_tx_all_path_a_when_no_keys)
     }
 }
 
+// The wallet sizes transactions from EstimatedRangeProofSize() /
+// EstimatedBlindedOutputDelta() rather than decorating and measuring every
+// candidate. Cross-check those formulas against genuinely signed proofs so a
+// drift in the secp256k1 proof layout (rings, npub, header byte) shows up here
+// instead of as "Change output too small to cover CT fee overhead" in a
+// spend, where it is far harder to diagnose.
+BOOST_AUTO_TEST_CASE(estimated_blinded_size_matches_signature)
+{
+    const CScript spk = CScript() << OP_TRUE;
+
+    // 0/1 is the degenerate case (single ring, one-byte header); the others
+    // straddle ring boundaries and cover real RCPU amounts up to MAX_MONEY.
+    const std::vector<CAmount> amounts{
+        0, 1, 2, 3, 4, 7, 8, 15, 16, 255, 256,
+        294, 2134, 6400, 100000000, 500000000, MAX_MONEY};
+
+    for (const CAmount amount : amounts) {
+        CConfidentialValue conf_value;
+        CConfidentialNonce nonce_commit;
+        std::vector<unsigned char> rangeproof;
+        uint256 blind;
+        uint256 nonce;
+        BOOST_REQUIRE(BlindOutput(conf_value, nonce_commit, rangeproof, blind, nonce, amount));
+
+        BOOST_CHECK_EQUAL(rangeproof.size(), EstimatedRangeProofSize(amount));
+
+        CTxOut plain(amount, spk);
+        BOOST_REQUIRE(plain.nValue.IsExplicit());
+        CTxOut blinded;
+        blinded.nValue = conf_value;
+        blinded.nNonce = nonce_commit;
+        blinded.vchRangeproof = rangeproof;
+        blinded.scriptPubKey = spk;
+
+        DataStream plain_stream;
+        DataStream blinded_stream;
+        plain.Serialize(plain_stream, /*fCT=*/false);
+        blinded.Serialize(blinded_stream, /*fCT=*/true);
+        BOOST_CHECK_EQUAL(static_cast<int>(blinded_stream.size()) - static_cast<int>(plain_stream.size()),
+                          EstimatedBlindedOutputDelta(amount));
+    }
+}
+
 BOOST_AUTO_TEST_SUITE_END()
