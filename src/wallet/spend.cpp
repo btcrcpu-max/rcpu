@@ -69,7 +69,7 @@ static size_t EstimatedRangeProofSize(CAmount value)
     const size_t npub{4 * (rings - 1) + ((mantissa % 2) ? 2 : 4)};
     // The mantissa byte is only written when the first ring encodes more
     // than a single possible value; value 0/1 is the only such case.
-    const size_t header{rings == 1 && (mantissa % 2) ? 1 : 2};
+    const size_t header{(rings == 1 && (mantissa % 2)) ? size_t{1} : size_t{2}};
     return header + ((rings + 6) >> 3) + 32 * (rings - 1) + 32 + 32 * npub;
 }
 
@@ -1562,6 +1562,14 @@ CTxOut txout(recipient.nAmount, GetScriptForDestination(recipient.dest));
     // coin selection (see below). Kept alongside reservedest on success;
     // destructor returns the destination to the pool on early error.
     std::unique_ptr<ReserveDestination> inj_reservedest;
+    // RCPU CT: when a dust-sized balancing change output was injected, this
+    // holds the vout index of the recipient output that funded it. The fee
+    // rebalancing loop must then leave the dust change untouched and settle
+    // the CT fee against this output instead: the change is far smaller than
+    // the confidential fee, so adjusting it only makes its range-proof length
+    // oscillate (fee up -> proof grows -> fee up ...) and the transaction
+    // either diverges or the change goes negative.
+    std::optional<size_t> injected_change_funding_pos;
 
 // RCPU CT: blind outputs when confidential-transactions mode is enabled.
     std::map<unsigned int, std::string> vout_addr; // vout -> encoded recipient dest (rcpux1...)
@@ -1642,6 +1650,9 @@ CTxOut txout(recipient.nAmount, GetScriptForDestination(recipient.dest));
                         const unsigned int pos = rng_fast.randrange(txNew.vout.size() + 1);
                         txNew.vout.insert(txNew.vout.begin() + pos, CTxOut(out_dust, scriptChange));
                         change_pos = pos;
+                        // Track where the reduced payee ended up: inserting at
+                        // pos shifts every output from pos onwards by one.
+                        injected_change_funding_pos = (pos <= oi) ? oi + 1 : oi;
                         current_fee = result.GetSelectedValue() - CalculateOutputValue(txNew);
                         funded = true;
                         break;
@@ -1809,24 +1820,11 @@ std::vector<std::optional<CPubKey>> recipient_keys;
                     if (paid_fee > 0) tx_measured.vout.emplace_back(CTxOut(paid_fee, CScript()));
                     measured = CalculateMaximumSignedTxSize(CTransaction(tx_measured), &wallet, &coin_control);
                 }
-                {
-                    std::string out_desc;
-                    for (size_t vi = 0; vi < txNew.vout.size(); ++vi) {
-                        out_desc += strprintf("[%u] amt=%lld proof=%zu ", (unsigned)vi,
-                            (long long)vout_amounts[vi], txNew.vout[vi].vchRangeproof.size());
-                    }
-                    LogPrintf("CT fee round %zu: vsize=%lld paid_fee=%lld sat feerate=%s inputs=%zu outs=%zu %s\n",
-                        round, (long long)measured.vsize, (long long)paid_fee,
-                        coin_selection_params.m_effective_feerate.ToString(),
-                        txNew.vin.size(), txNew.vout.size(), out_desc);
-                }
                 if (measured.vsize == -1) {
                     return util::Error{_("Missing solving data for estimating transaction size")};
                 }
                 const CAmount fee_needed_blinded =
                     coin_selection_params.m_effective_feerate.GetFee(measured.vsize) + result.GetTotalBumpFees();
-                LogPrintf("CT fee round %zu: fee_needed_blinded=%lld bump=%lld\n",
-                    round, (long long)fee_needed_blinded, (long long)result.GetTotalBumpFees());
                 tx_sizes = measured;
                 nBytes = measured.vsize;
                 current_fee = paid_fee;
@@ -1842,7 +1840,22 @@ std::vector<std::optional<CPubKey>> recipient_keys;
                     break;
                 }
                 const CAmount fee_diff{paid_fee - fee_needed_blinded}; // >0: refund, <0: need more
-                if (change_pos) {
+                if (injected_change_funding_pos) {
+                    // RCPU CT: the balancing change injected after coin
+                    // selection is dust-sized, so it can never absorb the
+                    // confidential fee overhead. Adjusting it makes its
+                    // range-proof length (and thus the fee) oscillate, so keep
+                    // it fixed and settle the difference on the recipient
+                    // output that funded it.
+                    CAmount& funding = vout_amounts[*injected_change_funding_pos];
+                    funding += fee_diff;
+                    if (funding < 0) {
+                        return util::Error{_("The transaction amount is too small to pay the fee")};
+                    }
+                    if (IsDust(CTxOut(funding, txNew.vout[*injected_change_funding_pos].scriptPubKey), wallet.chain().relayDustFee())) {
+                        return util::Error{_("The transaction amount is too small to send after the fee has been deducted")};
+                    }
+                } else if (change_pos) {
                     vout_amounts[*change_pos] += fee_diff;
                     if (vout_amounts[*change_pos] < 0) {
                         return util::Error{_("Change output too small to cover CT fee overhead")};
