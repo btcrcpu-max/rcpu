@@ -4078,7 +4078,26 @@ bool HasValidProofOfWork(const std::vector<CBlockHeader>& headers, const Consens
             // Height unknown + bit-30 set: Etchash epoch unknowable. Defer.
         } else switch (*pow_algo) {
         case PowAlgo::Etchash:
-            if (!CheckProofOfWorkEtchash(header, nHeight, consensusParams, POW_VERIFY_COMMITMENT_ONLY)) {
+            // RCPU hardening (P2-2): Unlike RandomX/QHash, the Etchash
+            // "commitment-only" fast path is structurally untrustworthy.
+            // CheckProofOfWorkEtchash(POW_VERIFY_COMMITMENT_ONLY) only
+            // compares the attacker-supplied block.hashRandomX field against
+            // the target; it never derives that value from the header. A
+            // peer that crafts a header with hashRandomX = 0x0000...0001
+            // passes the pre-check with a 150-byte message and would then
+            // proceed to AcceptBlockHeader where POW_VERIFY_FULL runs a
+            // full 10-30 ms HashimotoLight in cs_main -- a ~10^5 CPU
+            // amplification per header. RandomX and QHash do not have this
+            // problem because their commitment is computed from the header
+            // (GetRandomXCommitment / GetQHashCommitment) and cannot be
+            // forged without solving the PoW.
+            //
+            // Running POW_VERIFY_FULL here filters forged headers outside
+            // cs_main so they cannot block validation. The cost is one
+            // HashimotoLight per header at pre-check time; AcceptBlockHeader
+            // re-runs it once, but the per-call cost is tiny and attackers
+            // are rejected before reaching the lock path.
+            if (!CheckProofOfWorkEtchash(header, nHeight, consensusParams, POW_VERIFY_FULL)) {
                 return false;
             }
             break;

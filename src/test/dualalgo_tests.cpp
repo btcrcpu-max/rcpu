@@ -497,12 +497,16 @@ BOOST_AUTO_TEST_CASE(etchash_header_pow_precheck_is_height_aware)
     // Height unknown: deferred to AcceptBlockHeader, must not be rejected here.
     BOOST_CHECK(HasValidProofOfWork({header}, params, /*nStartHeight=*/-1));
 
-    // A tampered claim that still satisfies the target passes the cheap
-    // pre-check (it is intentionally target-only so header relay stays fast);
-    // full verification in AcceptBlockHeader remains the authoritative gate.
+    // !RCPU (dual-algo etchash security): a tampered claim that merely
+    // satisfies the target must NOT pass the header pre-check. Etchash has no
+    // header-derived commitment (unlike RandomX/QHash where hashRandomX is
+    // recomputed from the header), so a target-only pre-check is forgeable:
+    // a peer can pick an arbitrary hashRandomX just under target. The pre-check
+    // therefore runs POW_VERIFY_FULL for Etchash, so the forgery is rejected
+    // before it ever reaches cs_main / AcceptBlockHeader.
     CBlockHeader tampered = header;
     *tampered.hashRandomX.begin() ^= 0x01;
-    BOOST_CHECK(HasValidProofOfWork({tampered}, params, /*nStartHeight=*/150));
+    BOOST_CHECK(!HasValidProofOfWork({tampered}, params, /*nStartHeight=*/150));
     BOOST_CHECK(!CheckProofOfWorkEtchash(tampered, 150, params, POW_VERIFY_FULL));
 
     // Over-target garbage is still rejected by the pre-check itself.
