@@ -5,6 +5,7 @@
 #include <wallet/wallet.h>
 
 #include <future>
+#include <iostream>
 #include <memory>
 #include <stdint.h>
 #include <vector>
@@ -20,6 +21,7 @@
 #include <test/util/random.h>
 #include <test/util/setup_common.h>
 #include <util/translation.h>
+#include <util/strencodings.h>
 #include <validation.h>
 #include <validationinterface.h>
 #include <wallet/coincontrol.h>
@@ -660,6 +662,29 @@ void TestCoinsResult(ListCoinsTest& context, OutputType out_type, CAmount amount
     CoinFilterParams filter;
     filter.skip_locked = false;
     CoinsResult available_coins = AvailableCoins(*context.wallet, nullptr, std::nullopt, filter);
+    // TEMP DIAG (remove before merging)
+    std::cerr << "DIAG round=" << FormatOutputType(out_type)
+              << " total=" << available_coins.Size()
+              << " vouts=" << wtx.tx->vout.size() << "\n";
+    for (const auto& [t, v] : available_coins.coins) {
+        std::cerr << "DIAG   bucket=" << FormatOutputType(t) << " n=" << v.size() << "\n";
+    }
+    for (size_t i = 0; i < wtx.tx->vout.size(); ++i) {
+        const CTxOut& o = wtx.tx->vout[i];
+        std::cerr << "DIAG   vout " << i
+                  << " explicit=" << o.nValue.IsExplicit()
+                  << " value=" << (o.nValue.IsExplicit() ? o.nValue.GetAmount() : -1)
+                  << " mine=" << static_cast<int>(context.wallet->IsMine(o))
+                  << " script=" << HexStr(o.scriptPubKey) << "\n";
+    }
+    for (const auto& c : available_coins.All()) {
+        std::cerr << "DIAG   coin=" << c.outpoint.ToString()
+                  << " depth=" << c.depth
+                  << " spendable=" << c.spendable
+                  << " value=" << (c.txout.nValue.IsExplicit() ? c.txout.nValue.GetAmount() : -1)
+                  << " script=" << HexStr(c.txout.scriptPubKey) << "\n";
+    }
+    // END TEMP DIAG
     // Lock outputs so they are not spent in follow-up transactions
     for (uint32_t i = 0; i < wtx.tx->vout.size(); i++) context.wallet->LockCoin({wtx.GetHash(), i});
     for (const auto& [type, size] : expected_coins_sizes) BOOST_CHECK_EQUAL(size, available_coins.coins[type].size());
