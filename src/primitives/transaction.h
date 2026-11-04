@@ -8,6 +8,7 @@
 
 #include <attributes.h>
 #include <consensus/amount.h>
+#include <consensus/consensus.h>
 #include <script/script.h>
 #include <primitives/confidential.h>
 #include <serialize.h>
@@ -246,6 +247,23 @@ public:
             s >> nValue;
             s >> nNonce;
             s >> vchRangeproof;
+            // RCPU hardening (A-3): reject range proofs larger than
+            // MAX_RANGEPROOF_SIZE (5134) at the deserialization boundary.
+            // Previously the CompactSize-declared vector was fully allocated
+            // before any size check ran; with serialize.h::MAX_SIZE = 33.5 MiB
+            // an attacker could declare ~19 proofs of ~1.75 MiB each in a
+            // single transaction before the mempool/consensus check at
+            // tx_verify.cpp ran. Rejecting here keeps the P2P/script/UTXO
+            // callers from even seeing oversized proofs, and the stream-level
+            // throw propagates cleanly up to each protocol handler. This is
+            // a hardening guard; correctness already has a duplicate check in
+            // CheckTxInputs / VerifyAmounts.
+            if (vchRangeproof.size() > MAX_RANGEPROOF_SIZE) {
+                throw std::ios_base::failure(
+                    std::string{"rangeproof too large ("} +
+                    std::to_string(vchRangeproof.size()) + " > " +
+                    std::to_string(MAX_RANGEPROOF_SIZE) + ")");
+            }
         } else {
             CAmount value;
             s >> value;
