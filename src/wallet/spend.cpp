@@ -43,16 +43,52 @@ namespace wallet {
 static constexpr size_t OUTPUT_GROUP_MAX_ENTRIES{100};
 
 // !RCPU
-// Per-confidential-output serialized size overhead for fee estimation.
-// Blinding replaces the 9-byte explicit value with a 33-byte Pedersen
-// commitment, adds a 33-byte ECDH nonce and appends a Borromean range proof
-// whose size scales with the value's bit length (secp256k1_rangeproof_sign
-// with min_bits=0), up to MAX_RANGEPROOF_SIZE. This is NOT a ~675-byte
-// Bulletproof. The range proof is only materialized inside BlindTransaction()
-// AFTER the fee is computed, so an underestimate here is unrecoverable and
-// the signed transaction fails minrelay checks. Use the conservative upper
-// bound; the slight overpayment is negligible at typical feerates.
-static constexpr int CT_OUTPUT_SIZE_OVERHEAD{MAX_RANGEPROOF_SIZE + 100};
+// Range-proof size model for a blinded output. secp256k1_rangeproof_sign
+// (min_bits=0, exp=0, min_value=0 -- the parameters BlindTransaction uses)
+// emits a proof whose length depends only on the bit length of the committed
+// value:
+//   mantissa m = bitlen(value)                       (>= 1)
+//   rings    r = ceil(m / 2)                         (radix-4 digits)
+//   npub       = 4*(r-1) + (m odd ? 2 : 4)
+//   header     = 1 (only value 0/1) or 2 bytes
+//   length     = header + ((r + 6) >> 3) + 32*(r-1) + 32 + 32*npub
+// (secp256k1_range_proveparams / secp256k1_rangeproof_sign_impl in
+// src/secp256k1/src/modules/rangeproof/). For RCPU amounts (0..MAX_MONEY,
+// ~51 bits) that is 2.1-4.1 kB per output, roughly twice the old
+// "(2 + bits)*32" approximation, so a single constant could both overpay
+// small outputs and underpay large ones. These helpers steer coin selection
+// only: the fee actually paid is re-derived from the really blinded
+// transaction in CreateTransactionInternal.
+static size_t EstimatedRangeProofSize(CAmount value)
+{
+    size_t mantissa{1};
+    for (uint64_t v = value > 0 ? static_cast<uint64_t>(value) : 0; v > 1; v >>= 1) {
+        ++mantissa;
+    }
+    const size_t rings{(mantissa + 1) / 2};
+    const size_t npub{4 * (rings - 1) + ((mantissa % 2) ? 2 : 4)};
+    // The mantissa byte is only written when the first ring encodes more
+    // than a single possible value; value 0/1 is the only such case.
+    const size_t header{rings == 1 && (mantissa % 2) ? 1 : 2};
+    return header + ((rings + 6) >> 3) + 32 * (rings - 1) + 32 + 32 * npub;
+}
+
+/** Net vsize added when an explicit output is blinded: the 8-byte legacy
+ *  value counted by SizeComputer is replaced by a 33-byte Pedersen
+ *  commitment, a 33-byte nonce, the CompactSize-prefixed range proof and the
+ *  one-byte explicit-value prefix.
+ */
+static int EstimatedBlindedOutputDelta(CAmount value)
+{
+    const size_t proof{EstimatedRangeProofSize(value)};
+    return static_cast<int>(33 + 33 - 8 + GetSizeOfCompactSize(proof) + proof);
+}
+
+// Heuristic per-output overhead used only to price *creating* change in the
+// coin-selection cost-of-change calculation (the change amount is unknown
+// before selection). It never reaches the network: the paid fee is measured
+// on the blinded transaction.
+static constexpr int CT_CHANGE_SIZE_HEURISTIC{1750};
 // !RCPU END
 
 /** Whether the descriptor represents, directly or not, a witness program. */
@@ -166,11 +202,18 @@ TxSize CalculateMaximumSignedTxSize(const CTransaction &tx, const CWallet *walle
     if (is_segwit) weight += 2;
 
     // Add the size of the transaction outputs.
+    // RCPU CT: outputs are serialized in CT mode (commitment + nonce + range
+    // proof) exactly when the transaction itself is a CT transaction; the
+    // legacy 8-byte value would silently drop the range proofs.
+    const bool fCT = tx.nVersion == CT_VERSION;
     for (const auto& txo : tx.vout) {
         SizeComputer sc;
-        txo.Serialize(sc, false);
+        txo.Serialize(sc, fCT);
         weight += sc.size() * WITNESS_SCALE_FACTOR;
     }
+    // CT inputs also carry a confidential value field (null for wallet-built
+    // inputs, i.e. a one-byte prefix).
+    if (fCT) weight += tx.vin.size() * WITNESS_SCALE_FACTOR;
 
     // Add the size of the transaction inputs as if they were signed.
     for (uint32_t i = 0; i < txouts.size(); i++) {
@@ -1172,9 +1215,10 @@ CHECK_NONFATAL(IsValidDestination(dest) != scriptChange.empty());
         change_prototype_txout.Serialize(sc, false);
         coin_selection_params.change_output_size = sc.size();
     }
-    // RCPU CT: add CT output overhead to change output size
+    // RCPU CT: price creating a blinded change output in the cost-of-change
+    // heuristic (the change value is not known yet, so use a fixed estimate).
     if (g_con_elementsmode) {
-        coin_selection_params.change_output_size += CT_OUTPUT_SIZE_OVERHEAD;
+        coin_selection_params.change_output_size += CT_CHANGE_SIZE_HEURISTIC;
     }
 
     // Get size of spending the change output
@@ -1247,13 +1291,15 @@ CTxOut txout(recipient.nAmount, GetScriptForDestination(recipient.dest));
         txNew.vout.push_back(txout);
     }
 
-    // RCPU CT: confidential outputs add a Borromean range proof (up to
-    // MAX_RANGEPROOF_SIZE, scaling with the value's bit length), a Pedersen
-    // commitment, an ECDH nonce and a value prefix byte.
-    // Add this overhead to tx_noinputs_size so coin selection accounts for it.
-    // Also account for the explicit fee output that is added after blinding.
+    // RCPU CT: only outputs that will actually be blinded (rcpux1 /
+    // ConfidentialKeyHash recipients) grow; plaintext recipients keep their
+    // explicit output and must not be charged CT overhead.
     if (g_con_elementsmode) {
-        coin_selection_params.tx_noinputs_size += static_cast<int>(txNew.vout.size()) * CT_OUTPUT_SIZE_OVERHEAD;
+        for (const auto& recipient : vecSend) {
+            if (std::get_if<ConfidentialKeyHash>(&recipient.dest) != nullptr) {
+                coin_selection_params.tx_noinputs_size += EstimatedBlindedOutputDelta(recipient.nAmount);
+            }
+        }
         // Fee output: explicit amount (9 bytes max) + empty scriptPubKey (1 byte) = ~10 bytes
         coin_selection_params.tx_noinputs_size += 10;
     }
@@ -1331,11 +1377,6 @@ CTxOut txout(recipient.nAmount, GetScriptForDestination(recipient.dest));
            result.GetSelectedValue());
 
     const CAmount change_amount = result.GetChange(coin_selection_params.min_viable_change, coin_selection_params.m_change_fee);
-    // RCPU CT: mutable copy of the change value used for the sender-side
-    // vout_amount record. Normally identical to change_amount; updated when
-    // the confidential balancing-output injection below creates a change
-    // output that coin selection did not plan for (exact-spend case).
-    CAmount change_output_amount = change_amount;
     if (change_amount > 0) {
         CTxOut newTxOut(change_amount, scriptChange);
         if (!change_pos) {
@@ -1412,14 +1453,21 @@ CTxOut txout(recipient.nAmount, GetScriptForDestination(recipient.dest));
     if (nBytes == -1) {
         return util::Error{_("Missing solving data for estimating transaction size")};
     }
-    // RCPU CT: confidential outputs add a Borromean range proof (up to
-    // MAX_RANGEPROOF_SIZE, scaling with the value's bit length), a Pedersen
-    // commitment, an ECDH nonce and a value prefix byte. Account for that
-    // overhead so the fee meets the minimum relay fee after blinding
-    // (otherwise the transaction is too large for its fee and is never
-    // broadcast).
+    // RCPU CT: account for the range proof / commitment / nonce that blinding
+    // adds to each confidential output, using the value-derived proof length.
+    // Plaintext outputs keep their explicit size. The fee that is finally
+    // paid is recomputed on the blinded transaction below.
     if (g_con_elementsmode) {
-        nBytes += static_cast<int>(txNew.vout.size()) * CT_OUTPUT_SIZE_OVERHEAD;
+        for (const auto& recipient : vecSend) {
+            if (std::get_if<ConfidentialKeyHash>(&recipient.dest) != nullptr) {
+                nBytes += EstimatedBlindedOutputDelta(recipient.nAmount);
+            }
+        }
+        if (change_pos && change_key_dest) {
+            nBytes += EstimatedBlindedOutputDelta(txNew.vout[*change_pos].nValue.GetAmount());
+        }
+        // Explicit fee output appended after blinding (value + empty script).
+        nBytes += 10;
     }
     CAmount fee_needed = coin_selection_params.m_effective_feerate.GetFee(nBytes) + result.GetTotalBumpFees();
     const CAmount output_value = CalculateOutputValue(txNew);
@@ -1558,13 +1606,10 @@ CTxOut txout(recipient.nAmount, GetScriptForDestination(recipient.dest));
                 }
                 if (change_key && !scriptChange.empty()) {
                     const CTxOut proto(0, scriptChange);
-                    int out_size;
-                    {
-                        SizeComputer sc;
-                        proto.Serialize(sc, false);
-                        out_size = sc.size() + CT_OUTPUT_SIZE_OVERHEAD;
-                    }
                     const CAmount out_dust = GetDustThreshold(proto, wallet.chain().relayDustFee());
+                    SizeComputer sc;
+                    proto.Serialize(sc, false);
+                    const int out_size = sc.size() + EstimatedBlindedOutputDelta(out_dust);
                     const CAmount out_fee = coin_selection_params.m_effective_feerate.GetFee(out_size);
                     const CAmount reduction = out_dust + out_fee;
                     // Fund from the largest recipient output that stays above
@@ -1585,7 +1630,6 @@ CTxOut txout(recipient.nAmount, GetScriptForDestination(recipient.dest));
                         const unsigned int pos = rng_fast.randrange(txNew.vout.size() + 1);
                         txNew.vout.insert(txNew.vout.begin() + pos, CTxOut(out_dust, scriptChange));
                         change_pos = pos;
-                        change_output_amount = out_dust;
                         current_fee = result.GetSelectedValue() - CalculateOutputValue(txNew);
                         funded = true;
                         break;
@@ -1650,10 +1694,6 @@ std::vector<std::optional<CPubKey>> recipient_keys;
                     if (change_key_dest) {
                         pubkey = change_key;
                         vout_addr[vi] = EncodeDestination(*change_key_dest);
-                        // RCPU CT: persist change amount. change_output_amount
-                        // mirrors the change output's value, including the
-                        // injected balancing output of the exact-spend case.
-                        vout_amount[vi] = change_output_amount;
                     }
                 } else {
                     const size_t ri = vi - (change_pos && *change_pos < vi ? 1 : 0);
@@ -1668,7 +1708,6 @@ std::vector<std::optional<CPubKey>> recipient_keys;
                             }
                             pubkey = blinding;
                             vout_addr[vi] = EncodeDestination(vecSend[ri].dest);
-                            vout_amount[vi] = vecSend[ri].nAmount;  // RCPU CT: persist send amount
                         }
                     }
                 }
@@ -1714,10 +1753,109 @@ std::vector<std::optional<CPubKey>> recipient_keys;
                 wallet.GetLastBlockHeight() >= Params().GetConsensus().nBanPathAHeight) {
                 return util::Error{_("Path-A (plaintext-nonce) outputs are banned at this height; use a confidential rcpux1... address instead of -ctlegacy")};
             }
-            if (!BlindTransaction(input_blinds, txNew, output_blinds, output_nonces, recipient_keys,
-                                  explicit_outputs.empty() ? nullptr : &explicit_outputs,
-                                  /*use_path_c=*/true)) {
-                return util::Error{_("Confidential transaction blinding failed")};
+            // RCPU CT: the fee estimated above is only a coin-selection
+            // target. The real serialized size of a CT transaction depends on
+            // the range proofs, which only BlindTransaction produces and whose
+            // length varies with each value's bit length. So: blind, measure
+            // the real vsize (including the explicit fee output appended
+            // afterwards), and give the difference back to the change output
+            // (or to the subtract-fee recipients). Any value change
+            // invalidates its range proof, hence every adjustment is followed
+            // by a fresh BlindTransaction.
+            std::vector<CAmount> vout_amounts(txNew.vout.size());
+            for (size_t vi = 0; vi < txNew.vout.size(); ++vi) {
+                if (!txNew.vout[vi].nValue.IsExplicit()) {
+                    return util::Error{_("Confidential fee calculation requires explicit output amounts before blinding")};
+                }
+                vout_amounts[vi] = txNew.vout[vi].nValue.GetAmount();
+            }
+            const auto total_output_value = [&]() {
+                return std::accumulate(vout_amounts.begin(), vout_amounts.end(), CAmount{0});
+            };
+            static constexpr size_t MAX_CT_FEE_ROUNDS{4};
+            for (size_t round = 0;; ++round) {
+                if (round > 0) {
+                    // Undo the previous blinding before re-blinding with the
+                    // rebalanced amounts.
+                    for (size_t vi = 0; vi < txNew.vout.size(); ++vi) {
+                        txNew.vout[vi].nValue.SetToAmount(vout_amounts[vi]);
+                        txNew.vout[vi].nNonce.SetNull();
+                        txNew.vout[vi].vchRangeproof.clear();
+                    }
+                }
+                if (!BlindTransaction(input_blinds, txNew, output_blinds, output_nonces, recipient_keys,
+                                      explicit_outputs.empty() ? nullptr : &explicit_outputs,
+                                      /*use_path_c=*/true)) {
+                    return util::Error{_("Confidential transaction blinding failed")};
+                }
+                const CAmount paid_fee = result.GetSelectedValue() - total_output_value();
+                TxSize measured;
+                {
+                    // The explicit fee output is appended after blinding but is
+                    // part of the relayed transaction, so size it here too.
+                    CMutableTransaction tx_measured = txNew;
+                    if (paid_fee > 0) tx_measured.vout.emplace_back(CTxOut(paid_fee, CScript()));
+                    measured = CalculateMaximumSignedTxSize(CTransaction(tx_measured), &wallet, &coin_control);
+                }
+                if (measured.vsize == -1) {
+                    return util::Error{_("Missing solving data for estimating transaction size")};
+                }
+                const CAmount fee_needed_blinded =
+                    coin_selection_params.m_effective_feerate.GetFee(measured.vsize) + result.GetTotalBumpFees();
+                tx_sizes = measured;
+                nBytes = measured.vsize;
+                current_fee = paid_fee;
+                if (paid_fee == fee_needed_blinded) break;
+                if (round + 1 >= MAX_CT_FEE_ROUNDS) {
+                    // Out of adjustment rounds: an overpayment is acceptable
+                    // (the surplus can only go to the miners when there is no
+                    // change output), an underpayment would not relay.
+                    if (paid_fee < fee_needed_blinded) {
+                        return util::Error{strprintf(_("Confidential outputs need a fee of %s but the selected inputs only provide %s"),
+                                                     FormatMoney(fee_needed_blinded), FormatMoney(paid_fee))};
+                    }
+                    break;
+                }
+                const CAmount fee_diff{paid_fee - fee_needed_blinded}; // >0: refund, <0: need more
+                if (change_pos) {
+                    vout_amounts[*change_pos] += fee_diff;
+                    if (vout_amounts[*change_pos] < 0) {
+                        return util::Error{_("Change output too small to cover CT fee overhead")};
+                    }
+                } else if (coin_selection_params.m_subtract_fee_outputs && outputs_to_subtract_fee_from > 0) {
+                    const CAmount per_output{fee_diff / static_cast<CAmount>(outputs_to_subtract_fee_from)};
+                    CAmount remainder{fee_diff % static_cast<CAmount>(outputs_to_subtract_fee_from)};
+                    size_t vi{0};
+                    for (const auto& recipient : vecSend) {
+                        if (recipient.fSubtractFeeFromAmount) {
+                            CAmount delta{per_output};
+                            if (remainder != 0) {
+                                delta += remainder;
+                                remainder = 0;
+                            }
+                            vout_amounts[vi] += delta;
+                            if (vout_amounts[vi] < 0) {
+                                return util::Error{_("The transaction amount is too small to pay the fee")};
+                            }
+                            if (IsDust(CTxOut(vout_amounts[vi], txNew.vout[vi].scriptPubKey), wallet.chain().relayDustFee())) {
+                                return util::Error{_("The transaction amount is too small to send after the fee has been deducted")};
+                            }
+                        }
+                        ++vi;
+                    }
+                } else {
+                    // No change output and nothing to rebalance against.
+                    if (fee_diff < 0) {
+                        return util::Error{_("Confidential outputs need more fee than the selected inputs can provide")};
+                    }
+                    break;
+                }
+            }
+            // RCPU CT: record the final amounts for the sender-side vout
+            // records (the fee rebalancing may have changed the change or
+            // subtract-fee outputs after the maps above were built).
+            for (const auto& entry : vout_addr) {
+                vout_amount[entry.first] = vout_amounts[entry.first];
             }
             // Add an explicit fee output (empty, unspendable scriptPubKey).
             if (current_fee > 0) {

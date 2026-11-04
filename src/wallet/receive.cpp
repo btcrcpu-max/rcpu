@@ -8,6 +8,7 @@
 #include <consensus/consensus.h>
 #include <key.h>
 #include <key_io.h>
+#include <logging.h>
 #include <script/signingprovider.h>
 #include <script/solver.h>
 #include <util/strencodings.h>
@@ -346,11 +347,23 @@ CAmount CachedTxGetCredit(const CWallet& wallet, const CWalletTx& wtx, const ism
                     if (!UnblindConfidentialOutput(wallet, txout, value, blind)) {
                         // P2-4: locked wallet; use the value cached while it
                         // was unlocked, otherwise this output is unknown.
-                        value = 0;
+                        //
+                        // RCPU hardening (P1-2): Do not silently swallow a
+                        // failed unblind. Before the nBanPathAHeight soft-fork
+                        // the consensus layer did not reject malformed
+                        // nonces, so a payer could construct a commitment
+                        // whose nonce is neither 0x03 nor 0x04 and which
+                        // therefore unblinds to 0 for this wallet. Log once
+                        // per failure so operators can detect a peer minting
+                        // stealthily-burnt payments or a wallet-side bug, even
+                        // when the cached fallback value is used. The UI keeps
+                        // falling back to 0/cached for compatibility.
                         const auto unblind_it = wtx.mapValue.find("ct_unblind_" + std::to_string(i));
                         if (unblind_it != wtx.mapValue.end()) {
                             value = LocaleIndependentAtoi<CAmount>(unblind_it->second);
                         }
+                        LogPrintf("Warning: wallet unblind failed for output %u of tx %s (amount unknown, using %d)\n",
+                            i, wtx.GetHash().ToString(), value);
                     }
                 }
                 computed += value;
