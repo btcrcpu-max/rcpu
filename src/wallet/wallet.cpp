@@ -2268,12 +2268,15 @@ OutputType CWallet::TransactionChangeType(const std::optional<OutputType>& chang
         return OutputType::LEGACY;
     }
 
-bool any_tr{false};
+    bool any_tr{false};
     bool any_wpkh{false};
     bool any_sh{false};
     bool any_pkh{false};
-    bool any_conf{false};
 
+    // A ConfidentialKeyHash recipient deliberately sets no flag here:
+    // confidential change is gated on the wallet-wide has_conf_utxo check
+    // below (a blinded change output needs a blinded input to balance
+    // against), not on the recipient type.
     for (const auto& recipient : vecSend) {
         if (std::get_if<WitnessV1Taproot>(&recipient.dest)) {
             any_tr = true;
@@ -2283,8 +2286,6 @@ bool any_tr{false};
             any_sh = true;
         } else if (std::get_if<PKHash>(&recipient.dest)) {
             any_pkh = true;
-        } else if (std::get_if<ConfidentialKeyHash>(&recipient.dest)) {
-            any_conf = true;
         }
     }
 
