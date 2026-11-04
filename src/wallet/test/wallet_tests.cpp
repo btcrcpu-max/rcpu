@@ -680,12 +680,22 @@ BOOST_FIXTURE_TEST_CASE(BasicOutputTypesTest, ListCoinsTest)
     // We will create a self transfer for each of the OutputTypes and
     // verify it is put in the correct bucket after running GetAvailablecoins
     //
-    // For each OutputType, We expect 2 UTXOs in our wallet following the self transfer:
+    // For each script-based OutputType, we expect 2 UTXOs in our wallet
+    // following the self transfer:
     //   1. One UTXO as the recipient
     //   2. One UTXO from the change, due to payment address matching logic
 
     for (const auto& out_type : OUTPUT_TYPES) {
         if (out_type == OutputType::UNKNOWN) continue;
+        // AvailableCoins() buckets by *script* type (GetOutputType(Solver(...))).
+        // A confidential address (rcpux1...) is a plain P2WPKH script on chain,
+        // and test_bitcoin runs with CT mode off (g_con_elementsmode == false),
+        // so the transfer below produces an explicit output with no commitment
+        // or nonce that could be classified as CONFIDENTIAL. The bucket is
+        // still asserted to stay empty by the loop over expected_coins_sizes;
+        // the confidential send/receive path is covered by
+        // test/functional/wallet_confidential.py.
+        if (out_type == OutputType::CONFIDENTIAL) continue;
         expected_coins_sizes[out_type] = 2U;
         TestCoinsResult(*this, out_type, 1 * COIN, expected_coins_sizes);
     }
