@@ -142,7 +142,7 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y build-essential libtool autotools-dev \
             automake pkg-config bsdmainutils python3 cmake curl
-      - name: Repair depends tree
+      - name: Verify depends tree
         run: |
           sed -i 's/\r$//' depends/gen_id 2>/dev/null || true
           chmod +x depends/gen_id depends/config.guess depends/config.sub 2>/dev/null || true
@@ -151,19 +151,16 @@ jobs:
             ls -la depends/gen_id || true
             exit 1
           fi
-          if [ ! -f depends/config.guess ]; then
-            curl --fail -L -o depends/config.guess \
-              https://raw.githubusercontent.com/bitcoin/bitcoin/v27.0/depends/config.guess
-          fi
-          if [ ! -f depends/config.sub ]; then
-            curl --fail -L -o depends/config.sub \
-              https://raw.githubusercontent.com/bitcoin/bitcoin/v27.0/depends/config.sub
-          fi
-          if [ ! -f depends/patches/qt/mac-qmake.conf ]; then
-            mkdir -p depends/patches/qt
-            curl --fail -L -o depends/patches/qt/mac-qmake.conf \
-              https://raw.githubusercontent.com/bitcoin/bitcoin/v27.0/depends/patches/qt/mac-qmake.conf
-          fi
+          # These files are vendored in depends/. Fetching them at build time
+          # from raw.githubusercontent.com would be an unverified download in
+          # the release pipeline, so fail closed if one is missing instead.
+          for f in depends/config.guess depends/config.sub \
+                   depends/patches/qt/mac-qmake.conf; do
+            if [ ! -f "$f" ]; then
+              echo "ERROR: $f is missing; depends/ is vendored, do not fetch it at build time"
+              exit 1
+            fi
+          done
           chmod +x depends/gen_id depends/config.guess depends/config.sub
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
@@ -246,7 +243,7 @@ jobs:
             g++-mingw-w64-x86-64-posix nsis zip osslsigncode
           sudo update-alternatives --set x86_64-w64-mingw32-g++ \
             /usr/bin/x86_64-w64-mingw32-g++-posix
-      - name: Repair depends tree
+      - name: Verify depends tree
         run: |
           sed -i 's/\r$//' depends/gen_id 2>/dev/null || true
           chmod +x depends/gen_id depends/config.guess depends/config.sub 2>/dev/null || true
@@ -255,19 +252,16 @@ jobs:
             ls -la depends/gen_id || true
             exit 1
           fi
-          if [ ! -f depends/config.guess ]; then
-            curl --fail -L -o depends/config.guess \
-              https://raw.githubusercontent.com/bitcoin/bitcoin/v27.0/depends/config.guess
-          fi
-          if [ ! -f depends/config.sub ]; then
-            curl --fail -L -o depends/config.sub \
-              https://raw.githubusercontent.com/bitcoin/bitcoin/v27.0/depends/config.sub
-          fi
-          if [ ! -f depends/patches/qt/mac-qmake.conf ]; then
-            mkdir -p depends/patches/qt
-            curl --fail -L -o depends/patches/qt/mac-qmake.conf \
-              https://raw.githubusercontent.com/bitcoin/bitcoin/v27.0/depends/patches/qt/mac-qmake.conf
-          fi
+          # These files are vendored in depends/. Fetching them at build time
+          # from raw.githubusercontent.com would be an unverified download in
+          # the release pipeline, so fail closed if one is missing instead.
+          for f in depends/config.guess depends/config.sub \
+                   depends/patches/qt/mac-qmake.conf; do
+            if [ ! -f "$f" ]; then
+              echo "ERROR: $f is missing; depends/ is vendored, do not fetch it at build time"
+              exit 1
+            fi
+          done
           chmod +x depends/gen_id depends/config.guess depends/config.sub
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
