@@ -6,8 +6,11 @@ on:
       - 'v*'
   workflow_dispatch:
 
+# Least privilege: the build jobs only read the repository. The `release` job
+# below re-grants contents:write, because publishing the release is the only
+# step that needs it.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   # A bare `v*` tag is not enough to identify a node release: the miner line
@@ -139,7 +142,7 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y build-essential libtool autotools-dev \
             automake pkg-config bsdmainutils python3 cmake curl
-      - name: Repair depends tree
+      - name: Verify depends tree
         run: |
           sed -i 's/\r$//' depends/gen_id 2>/dev/null || true
           chmod +x depends/gen_id depends/config.guess depends/config.sub 2>/dev/null || true
@@ -148,19 +151,16 @@ jobs:
             ls -la depends/gen_id || true
             exit 1
           fi
-          if [ ! -f depends/config.guess ]; then
-            curl --fail -L -o depends/config.guess \
-              https://raw.githubusercontent.com/bitcoin/bitcoin/v27.0/depends/config.guess
-          fi
-          if [ ! -f depends/config.sub ]; then
-            curl --fail -L -o depends/config.sub \
-              https://raw.githubusercontent.com/bitcoin/bitcoin/v27.0/depends/config.sub
-          fi
-          if [ ! -f depends/patches/qt/mac-qmake.conf ]; then
-            mkdir -p depends/patches/qt
-            curl --fail -L -o depends/patches/qt/mac-qmake.conf \
-              https://raw.githubusercontent.com/bitcoin/bitcoin/v27.0/depends/patches/qt/mac-qmake.conf
-          fi
+          # These files are vendored in depends/. Fetching them at build time
+          # from raw.githubusercontent.com would be an unverified download in
+          # the release pipeline, so fail closed if one is missing instead.
+          for f in depends/config.guess depends/config.sub \
+                   depends/patches/qt/mac-qmake.conf; do
+            if [ ! -f "$f" ]; then
+              echo "ERROR: $f is missing; depends/ is vendored, do not fetch it at build time"
+              exit 1
+            fi
+          done
           chmod +x depends/gen_id depends/config.guess depends/config.sub
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
@@ -187,17 +187,31 @@ jobs:
           CPPFLAGS="-I$PREFIX/include" \
           LDFLAGS="-L$PREFIX/lib" \
           ./configure --prefix="$PREFIX" \
-            --disable-bench --disable-tests \
+            --disable-bench \
             --with-gui=qt5
           make -j$(nproc)
           make install
-      - name: Consensus gate - explicit coinbase symbol (Linux)
+      - name: Consensus gate - unit suites (Linux)
         run: |
-          BIN="$PWD/depends/x86_64-pc-linux-gnu/bin/rcpud"
-          test -x "$BIN" || { echo "ERROR: $BIN missing"; exit 1; }
-          strings "$BIN" | grep -q "bad-cb-confidential" ||             { echo "ERROR: rcpud missing bad-cb-confidential"; exit 1; }
-          strings "$BIN" | grep -q "CheckCoinbaseOutputsExplicit" ||             { echo "ERROR: rcpud missing CheckCoinbaseOutputsExplicit symbol"; exit 1; }
-          echo "OK: Linux rcpud enforces explicit-coinbase rule"
+          # Replaces a `strings | grep` check: a symbol being present in the
+          # binary does not prove the rule runs on every code path. Build with
+          # tests enabled and execute the CT consensus suites for real.
+          test -x src/test/test_bitcoin || {
+            echo "ERROR: src/test/test_bitcoin missing (was the build configured with --disable-tests?)"
+            exit 1
+          }
+          set -o pipefail
+          ./src/test/test_bitcoin --log_level=test_suite \
+            --run_test=coinbase_confidential_tests,confidential_validation_tests,tx_verify_tests \
+            2>&1 | tee /tmp/rcpu-consensus.log
+          # Fail closed if a suite name is typo'd or silently skipped.
+          for suite in coinbase_confidential_tests confidential_validation_tests tx_verify_tests; do
+            grep -q "$suite" /tmp/rcpu-consensus.log || {
+              echo "suite not executed: $suite"
+              exit 1
+            }
+          done
+          echo "OK: CT consensus suites passed on the release build"
       - name: Package Linux
         run: |
           PREFIX=$PWD/depends/x86_64-pc-linux-gnu
@@ -219,7 +233,9 @@ jobs:
           tar -C "$(dirname "$STAGE")" -czf \
             "rcpu-${PKGVER}-x86_64-linux-gnu.tgz" \
             "$(basename "$STAGE")"
-          sha256sum *.tgz > SHA256SUMS-linux.txt
+          # Explicit filename: a bare *.tgz glob would also pick up any stray
+          # archive left in the workspace and sign it into the checksum file.
+          sha256sum "rcpu-${PKGVER}-x86_64-linux-gnu.tgz" > SHA256SUMS-linux.txt
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: linux-package
@@ -241,7 +257,7 @@ jobs:
             g++-mingw-w64-x86-64-posix nsis zip osslsigncode
           sudo update-alternatives --set x86_64-w64-mingw32-g++ \
             /usr/bin/x86_64-w64-mingw32-g++-posix
-      - name: Repair depends tree
+      - name: Verify depends tree
         run: |
           sed -i 's/\r$//' depends/gen_id 2>/dev/null || true
           chmod +x depends/gen_id depends/config.guess depends/config.sub 2>/dev/null || true
@@ -250,19 +266,16 @@ jobs:
             ls -la depends/gen_id || true
             exit 1
           fi
-          if [ ! -f depends/config.guess ]; then
-            curl --fail -L -o depends/config.guess \
-              https://raw.githubusercontent.com/bitcoin/bitcoin/v27.0/depends/config.guess
-          fi
-          if [ ! -f depends/config.sub ]; then
-            curl --fail -L -o depends/config.sub \
-              https://raw.githubusercontent.com/bitcoin/bitcoin/v27.0/depends/config.sub
-          fi
-          if [ ! -f depends/patches/qt/mac-qmake.conf ]; then
-            mkdir -p depends/patches/qt
-            curl --fail -L -o depends/patches/qt/mac-qmake.conf \
-              https://raw.githubusercontent.com/bitcoin/bitcoin/v27.0/depends/patches/qt/mac-qmake.conf
-          fi
+          # These files are vendored in depends/. Fetching them at build time
+          # from raw.githubusercontent.com would be an unverified download in
+          # the release pipeline, so fail closed if one is missing instead.
+          for f in depends/config.guess depends/config.sub \
+                   depends/patches/qt/mac-qmake.conf; do
+            if [ ! -f "$f" ]; then
+              echo "ERROR: $f is missing; depends/ is vendored, do not fetch it at build time"
+              exit 1
+            fi
+          done
           chmod +x depends/gen_id depends/config.guess depends/config.sub
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
@@ -298,16 +311,16 @@ jobs:
             --with-gui=qt5
           make -j$(nproc)
           make deploy
-      - name: Consensus gate - explicit coinbase symbol (Windows)
+      - name: Verify Windows binary was produced
         run: |
-          # v1.0.9 rule: coinbase outputs must be explicit. The published
-          # Windows binary must carry the enforcement; otherwise the release
-          # is blocked.
+          # The consensus behaviour of this build is gated by the Linux job's
+          # unit suites for the same commit above, and by ci.yml on the same
+          # commit. `strings | grep` only proved a symbol was linked in, not
+          # that the rule executed, so it is not repeated here.
           BIN=$(ls -1t src/rcpud.exe 2>/dev/null | head -1)
-          test -n "$BIN" && test -x "$BIN" ||             { echo "ERROR: src/rcpud.exe missing"; exit 1; }
-          strings "$BIN" | grep -q "bad-cb-confidential" ||             { echo "ERROR: rcpud.exe missing bad-cb-confidential (consensus rule not enforced)"; exit 1; }
-          strings "$BIN" | grep -q "CheckCoinbaseOutputsExplicit" ||             { echo "ERROR: rcpud.exe missing CheckCoinbaseOutputsExplicit symbol"; exit 1; }
-          echo "OK: Windows rcpud.exe enforces explicit-coinbase rule"
+          test -n "$BIN" && test -x "$BIN" || { echo "ERROR: src/rcpud.exe missing"; exit 1; }
+          ls -l "$BIN"
+          echo "OK: Windows rcpud.exe produced"
       - name: Package Windows
         env:
           WINDOWS_SIGNING_CERT: ${{ secrets.WINDOWS_SIGNING_CERT }}
@@ -351,7 +364,7 @@ jobs:
               osslsigncode sign -pkcs12 /tmp/rcpu-sign.pfx \
                 -pass "${WINDOWS_SIGNING_PASSWORD}" \
                 -n "RCPU Core" -i "https://rcpu.top" \
-                -t "http://timestamp.digicert.com" \
+                -t "https://timestamp.digicert.com" \
                 -in "$EXE" -out "${EXE}.signed"
               mv "${EXE}.signed" "$EXE"
               osslsigncode verify -in "$EXE"
@@ -386,6 +399,9 @@ jobs:
     needs: [build-linux, build-windows]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-22.04
+    # The only job that needs to publish; everything else stays read-only.
+    permissions:
+      contents: write
     steps:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:

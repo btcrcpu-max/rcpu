@@ -6,8 +6,9 @@ on:
     tags:
       - "v*"
 
+# Least privilege: only the `release` job needs to publish.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   # A bare `v*` tag is not enough to identify a node release: the miner line
@@ -124,6 +125,13 @@ jobs:
         run: |
           VER="${GITHUB_REF#refs/tags/}"
           VER="${VER#v}"
+          # The tag name becomes a filename and is later written into
+          # $GITHUB_ENV and a shell heredoc. Restrict it to characters that are
+          # inert in both, so a tag can never inject shell metacharacters.
+          if ! printf '%s' "$VER" | grep -Eq '^[0-9A-Za-z._-]+$'; then
+            echo "ERROR: unsafe tag name '${GITHUB_REF_NAME}'"
+            exit 1
+          fi
           ASSET="rcpu-qt-${VER}-x86_64.AppImage"
           mv *.AppImage "$ASSET"
           echo "APPIMAGE_ASSET=$ASSET" >> "$GITHUB_ENV"
@@ -138,22 +146,53 @@ jobs:
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
         run: |
           # P2 E-1: without a GPG key we must NOT publish an empty .asc
-          # placeholder (a broken signature). The file list below therefore
-          # only includes the .asc when one was actually produced.
+          # placeholder (a broken signature).
+          if [ -n "$GPG_PRIVATE_KEY" ]; then
+            echo "$GPG_PRIVATE_KEY" | gpg --batch --yes --import
+            echo "$GPG_PASSPHRASE" | gpg --batch --yes --passphrase-fd 0 \
+              --pinentry-mode loopback \
+              --output "$APPIMAGE_ASSET.asc" \
+              --detach-sig "$APPIMAGE_ASSET"
+          else
+            echo "No GPG key configured, skipping signature"
+          fi
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: appimage
+          path: |
+            *.AppImage
+            *.AppImage.sha256
+            *.AppImage.asc
+          if-no-files-found: error
+          retention-days: 1
+
+  # Publishing is isolated in its own job so the build job (which downloads and
+  # runs third-party AppImage tooling) never holds a write token.
+  release:
+    needs: [tag-guard, build-appimage]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: appimage
+          path: dist/
+
+      - name: Collect release files
+        run: |
+          cd dist
+          ls -la
+          # The release action runs from the workspace root, so keep the dist/
+          # prefix on every path.
           {
             echo "RELEASE_FILES<<EOF"
-            echo "${{ env.APPIMAGE_ASSET }}"
-            echo "${{ env.APPIMAGE_ASSET }}.sha256"
-            if [ -n "$GPG_PRIVATE_KEY" ]; then
-              echo "$GPG_PRIVATE_KEY" | gpg --batch --yes --import
-              echo "$GPG_PASSPHRASE" | gpg --batch --yes --passphrase-fd 0 \
-                --pinentry-mode loopback \
-                --output "${{ env.APPIMAGE_ASSET }}.asc" \
-                --detach-sig "${{ env.APPIMAGE_ASSET }}"
-              echo "${{ env.APPIMAGE_ASSET }}.asc"
-            else
-              echo "No GPG key configured, skipping signature"
-            fi
+            for f in *.AppImage *.AppImage.sha256; do printf 'dist/%s\n' "$f"; done
+            # Only include the signature when one was actually produced.
+            for f in *.AppImage.asc; do [ -e "$f" ] && printf 'dist/%s\n' "$f"; done
             echo "EOF"
           } >> "$GITHUB_ENV"
 
