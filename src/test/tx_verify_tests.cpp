@@ -489,4 +489,39 @@ BOOST_AUTO_TEST_CASE(path_b_nonce_allowed_after_height)
     g_con_elementsmode = old_ct_mode;
 }
 
+// RCPU M-2 activation: an explicit zero output is rejected before
+// nCTStrictRulesHeight (historical ExplicitCommit(0) behavior) and accepted
+// as the Pedersen identity from that height onward.
+BOOST_AUTO_TEST_CASE(explicit_zero_gated_by_strict_height)
+{
+    const COutPoint prevout{TxidFromString("0xeeee"), 0};
+
+    CCoinsViewTest base;
+    base.Add(prevout, MakeExplicitCoin(1000 * COIN));
+    CCoinsViewCache view{&base};
+
+    CMutableTransaction mtx = MakeLegacySpend({prevout}, 1000 * COIN);
+    mtx.nVersion = CT_VERSION;
+    mtx.vout.emplace_back(0, CScript() << OP_RETURN);
+
+    const CTransaction tx{mtx};
+    const bool old_ct_mode = g_con_elementsmode;
+    g_con_elementsmode = true;
+
+    TxValidationState before;
+    CAmount fee_before = -1;
+    BOOST_CHECK(!Consensus::CheckTxInputs(tx, before, view, /*nSpendHeight=*/199, fee_before,
+        /*nCTActivationHeight=*/0, /*nBanPathAHeight=*/0, /*nCTStrictRulesHeight=*/200));
+    BOOST_CHECK_EQUAL(before.GetRejectReason(), "bad-txns-ct-balance");
+
+    TxValidationState at_height;
+    CAmount fee_at = -1;
+    BOOST_CHECK(Consensus::CheckTxInputs(tx, at_height, view, /*nSpendHeight=*/200, fee_at,
+        /*nCTActivationHeight=*/0, /*nBanPathAHeight=*/0, /*nCTStrictRulesHeight=*/200));
+    BOOST_CHECK(at_height.IsValid());
+    BOOST_CHECK_EQUAL(fee_at, 0);
+
+    g_con_elementsmode = old_ct_mode;
+}
+
 BOOST_AUTO_TEST_SUITE_END()
