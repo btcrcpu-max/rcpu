@@ -25,7 +25,7 @@ They are listed here so other docs have one place to copy from.
 | Tail emission after height 2,100,000 | ~105,120 RCPU / year | 1 RCPU * 288 blocks/day * 365 |
 | CT activation height | **0** (genesis) | `src/kernel/chainparams.cpp` (`nCTActivationHeight`) |
 | Path A (legacy nonce) ban height | **12748** (mainnet, v1.1.10); testnet: 0; regtest: `INT_MAX` | `src/kernel/chainparams.cpp` (`nBanPathAHeight`) |
-| CT strict rules height (M-1/M-2) | **27326** (frozen from observed tip 25,310 on 2026-11-08 + 2016; ~7 days, indicative 2026-11-15; re-check before tag); testnet: 0; regtest: 0; other chains: `INT_MAX` | `src/kernel/chainparams.cpp` (`nCTStrictRulesHeight`) |
+| CT strict rules height (M-1/M-2) | **27326** (frozen from tip 25,310 + 2016; observed tip 25,362 on 2026-11-08, remaining 1,964 blocks ~6.8 days, indicative 2026-11-15; re-check before tag); testnet: 0; regtest: 0; other chains: `INT_MAX` | `src/kernel/chainparams.cpp` (`nCTStrictRulesHeight`) |
 | v3 `SIGHASH_SINGLE` | **rejected immediately** (all heights, v1.4.5) | `src/script/interpreter.cpp` (`SignatureHashSchnorr`) |
 | ASERT activation height | **0** (genesis) | `src/kernel/chainparams.cpp` (`nASERTActivationHeight`) |
 | ASERT anchor block | 0 (genesis) | `src/kernel/chainparams.cpp` (`asertAnchorParams`) |
@@ -54,13 +54,13 @@ They are listed here so other docs have one place to copy from.
   output nonces must be non-null and on-curve) and M-2 (explicit zero is the
   Pedersen identity). Before that height, M-1 keeps the historical
   `0x03`/`0x04` shape check and M-2 keeps rejecting explicit zero via
-  `ExplicitCommit(0)`. The mainnet value `27326` was frozen from observed tip
-  **25,310** on 2026-11-08 using `tip + 2016` (2,016 blocks / ~7 days at
-  5 min/block, indicative activation **2026-11-15**). Before tagging, check
-  `getblockcount` again on a synced node; if the tip has moved, recompute
-  `final_tip + 2016` (or `final_tip + 2880` for a longer window) and update
-  this table, `src/kernel/chainparams.cpp` and the release notes in the same
-  commit. Record the tip at freeze time and the formula used.
+  `ExplicitCommit(0)`. The mainnet value `27326` was frozen from tip **25,310**
+  on 2026-11-08 using `tip + 2016`; the later observed tip **25,362** leaves
+  **1,964 blocks / ~6.8 days** (indicative activation **2026-11-15**). Before
+  tagging, check `getblockcount` again on a synced node; if the tip has moved,
+  recompute `final_tip + 2016` (or `final_tip + 2880` for a longer window) and
+  update this table, `src/kernel/chainparams.cpp` and the release notes in the
+  same commit. Record the tip at freeze time and the formula used.
   H-1 is separate and **immediate**: v3 `SIGHASH_SINGLE` and
   `SIGHASH_SINGLE|ANYONECANPAY` are rejected at all heights in v1.4.5.
 
