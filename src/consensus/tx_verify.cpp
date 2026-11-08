@@ -166,7 +166,7 @@ int64_t GetTransactionSigOpCost(const CTransaction& tx, const CCoinsViewCache& i
     return nSigOps;
 }
 
-bool Consensus::CheckTxInputs(const CTransaction& tx, TxValidationState& state, const CCoinsViewCache& inputs, int nSpendHeight, CAmount& txfee, int nCTActivationHeight, int nBanPathAHeight)
+bool Consensus::CheckTxInputs(const CTransaction& tx, TxValidationState& state, const CCoinsViewCache& inputs, int nSpendHeight, CAmount& txfee, int nCTActivationHeight, int nBanPathAHeight, int nCTStrictRulesHeight)
 {
     // RCPU: single predicate for "is this a confidential transaction". The
     // serialization format keys off nVersion == CT_VERSION, so the consensus
@@ -250,30 +250,36 @@ if (g_con_elementsmode && fIsCT) {
                     "bad-txns-rangeproof-too-large",
                     strprintf("rangeproof too large (%d > %d)", out.vchRangeproof.size(), MAX_RANGEPROOF_SIZE));
             }
-            // RCPU hardening (P1-2): from nBanPathAHeight onward the nonce
-            // field of a confidential output is restricted to two valid
-            // shapes:
-            //   1) nNonce.IsNull()       for fee outputs (explicit value +
-            //                            empty scriptPubKey, never spent) and
-            //                            plaintext outputs created in a v3 tx;
-            //   2) 33 bytes with prefix 0x03 (path B ECDH) or 0x04 (path C
-            //                            HKDF). These are the only nonces the
-            //                            wallet produces and the only ones
-            //                            UnblindConfidentialOutput accepts.
+            // RCPU hardening (P1-2): from nBanPathAHeight onward, confidential
+            // outputs must carry a nonce that the recipient wallet can actually
+            // parse and rewind:
+            //   - commitment output: non-null, 33-byte 0x03/0x04 and a valid
+            //     curve point (0x03 = compressed pubkey, 0x04 = x-only key);
+            //   - explicit/fee output: null is allowed; a non-null nonce keeps
+            //     the historical 0x03/0x04 shape rule so old Path-A encodings
+            //     stay rejected.
             //
-            // Any other 33-byte prefix (0x00, 0x01, 0x02 legacy path A, 0xFF,
-            // or anything else) is rejected. Previously these malformed
-            // nonces passed consensus because VerifyAmounts does not look at
-            // nNonce; the wallet then silently failed to unblind and counted
-            // the output as zero credit, allowing a payer to construct a
-            // "consensus-valid" CT output the recipient can never spend and
-            // whose balance their wallet would display as 0 -- a stealthy
-            // burn + payment-forgery primitive. Tightening here makes the
-            // soft-fork rule cover all invalid nonces in one go, rather than
-            // only the 0x02 prefix. The same activation height as path-A
-            // banning is re-used so no further buried deployment is needed;
-            // pre-activation behavior is unchanged (backward-compatible).
-            if (nSpendHeight >= nBanPathAHeight && !out.nNonce.IsNull()) {
+            // Previously only the shape of non-null nonces was checked. A null
+            // nonce (or a 0x03/0x04 prefix with an off-curve X) passed
+            // consensus, but UnblindConfidentialOutput() cannot rewind it: the
+            // recipient's wallet reports zero while the payer, who knows the
+            // blind factor, can reclaim the output. That is a payment-forgery
+            // primitive; reject it at the consensus layer.
+            const bool fStrictRules = nSpendHeight >= nCTStrictRulesHeight;
+            if (fStrictRules && out.nValue.IsCommitment()) {
+                const auto& nc = out.nNonce.vchCommitment;
+                if (out.nNonce.IsNull()) {
+                    return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-ct-nonce-missing",
+                        "confidential output has a null nonce");
+                }
+                if (!IsValidConfidentialNonce(out.nNonce)) {
+                    return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-ct-nonce-point",
+                        strprintf("confidential output nonce is not a valid curve point (prefix=0x%02x)",
+                            nc.empty() ? 0 : nc[0]));
+                }
+            } else if (nSpendHeight >= nBanPathAHeight && !out.nNonce.IsNull()) {
+                // Legacy shape-only rule (path-A/ban height). The stricter
+                // on-curve/null checks above apply from nCTStrictRulesHeight.
                 const auto& nc = out.nNonce.vchCommitment;
                 if (nc.size() != 33 || (nc[0] != 0x03 && nc[0] != 0x04)) {
                     return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-ct-legacy-nonce",
@@ -295,8 +301,10 @@ if (g_con_elementsmode && fIsCT) {
             }
         }
 
-        // CT mode: confidential value balance + range proof verification
-        if (!VerifyAmounts(prevouts, tx, txfee)) {
+        // CT mode: confidential value balance + range proof verification.
+        // M-2 is a relaxation; only allow explicit zero from the scheduled
+        // strict-rules height onward.
+        if (!VerifyAmounts(prevouts, tx, txfee, nSpendHeight >= nCTStrictRulesHeight)) {
             return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-txns-ct-balance",
                 "confidential value balance or range proof failed");
         }

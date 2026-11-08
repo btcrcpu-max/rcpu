@@ -23,8 +23,8 @@ COPY . /build/rcpu
 # ci.yml does - sha256-verified tarball, the patched variant from
 # depends/patches/randomx (custom PoW configuration), shared CMake build,
 # then install system-wide so the RCPU build can link against it.
-RUN curl --fail -L -o /tmp/randomx-src.tar.gz \
-        https://github.com/tevador/RandomX/archive/refs/tags/v1.2.1.tar.gz \
+RUN curl --fail --retry 6 --retry-delay 5 --retry-all-errors -L -o /tmp/randomx-src.tar.gz \
+        https://codeload.github.com/tevador/RandomX/tar.gz/refs/tags/v1.2.1 \
     && echo "2e6dd3bed96479332c4c8e4cab2505699ade418a07797f64ee0d4fa394555032  /tmp/randomx-src.tar.gz" | sha256sum -c - \
     && tar -xf /tmp/randomx-src.tar.gz -C /tmp \
     && cd /tmp/RandomX-1.2.1 \

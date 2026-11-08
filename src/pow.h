@@ -161,6 +161,18 @@ DataStream SerializeRandomXHeader(const CBlockHeader& hdr);
 uint256 GetRandomXCommitment(const CBlockHeader& block, uint256 *inHash = nullptr);
 
 /**
+ * Verify that the linked RandomX library was built with the RCPU
+ * configuration (RANDOMX_ARGON_SALT "RandomX-RCPU\x01").
+ *
+ * A stock librandomx has the same ABI and symbols, so configure/AC_CHECK_LIB
+ * cannot distinguish it; a node using a stock library computes different PoW
+ * hashes and splits from the network. This routine replays the fixed vectors
+ * from contrib/devtools/rx_parity_gate.cpp against the linked library. It is
+ * called once during startup and is also available to unit tests.
+ */
+bool RandomXParityCheck();
+
+/**
  * Bitcoin cash's difficulty adjustment mechanism.
  */
 class arith_uint256;

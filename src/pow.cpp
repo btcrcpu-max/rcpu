@@ -19,6 +19,7 @@
 #include <crypto/keccak.h>
 #include <crypto/qhash.h>
 #include <crypto/sha256.h>
+#include <util/strencodings.h>
 #include <limits>
 #include <randomx.h>
 #include <logging.h>
@@ -906,6 +907,50 @@ uint256 rx_hash = inHash==nullptr ? block.hashRandomX : *inHash;
     const DataStream rx_input = SerializeRandomXHeader(block);
     randomx_calculate_commitment(rx_input.data(), rx_input.size(), rx_hash.data(), rx_cm);
     return uint256(std::vector<unsigned char>(rx_cm, rx_cm + sizeof(rx_cm)));
+}
+
+// RCPU M-6: replay the A2000 vector from contrib/devtools/rx_parity_gate.cpp
+// against the linked RandomX library. The RCPU build is distinguished from a
+// stock librandomx only by RANDOMX_ARGON_SALT in its custom_configuration.patch,
+// which configure's AC_CHECK_LIB cannot detect. A mismatch means this node's
+// PoW domain differs from the network, so fail at startup instead of silently
+// rejecting every RandomX block.
+bool RandomXParityCheck()
+{
+    const std::vector<unsigned char> input = ParseHex(
+        "000000209cfcc00fb7cd9edcf11b731c2861a49265d5a72aebb3d97e98773c361a633a127e0b913e4dcf88c76686c72ea3f645e95971b1eaabff26f67b34117aa1a115a5d2fb9c6affd7081e60022b870000000000000000000000000000000000000000000000000000000000000000");
+    const std::vector<unsigned char> seed = ParseHex(
+        "169a4b98b46cdc27a8cb04d1c6049c535bce5c198472e646c2eaa3f47c53d583");
+    if (input.size() != 112 || seed.size() != 32) return false;
+
+    const uint256 expected_hash = uint256S("1a351ad5985948097a918c0a334420d20b3220d212d9dc2091f0eb57c739dd9b");
+    const uint256 expected_commit = uint256S("000004fc216d42ca09da5c98fbd10d43ccb0c6911dfa2b8df22c5dabb9d02b90");
+
+    randomx_flags flags = randomx_get_flags();
+    randomx_cache* cache = randomx_alloc_cache(flags);
+    if (cache == nullptr) {
+        LogPrintf("RandomX parity: randomx_alloc_cache failed\n");
+        return false;
+    }
+    randomx_init_cache(cache, seed.data(), seed.size());
+    randomx_vm* vm = randomx_create_vm(flags, cache, nullptr);
+    if (vm == nullptr) {
+        randomx_release_cache(cache);
+        LogPrintf("RandomX parity: randomx_create_vm failed\n");
+        return false;
+    }
+
+    unsigned char hash[RANDOMX_HASH_SIZE];
+    unsigned char commit[RANDOMX_HASH_SIZE];
+    randomx_calculate_hash(vm, input.data(), input.size(), hash);
+    randomx_calculate_commitment(input.data(), input.size(), expected_hash.begin(), commit);
+
+    const bool ok = std::memcmp(hash, expected_hash.begin(), RANDOMX_HASH_SIZE) == 0 &&
+                    std::memcmp(commit, expected_commit.begin(), RANDOMX_HASH_SIZE) == 0;
+
+    randomx_destroy_vm(vm);
+    randomx_release_cache(cache);
+    return ok;
 }
 
 

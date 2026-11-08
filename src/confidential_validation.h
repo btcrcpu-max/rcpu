@@ -25,8 +25,27 @@
  * @param inputs the previous outputs being spent (size == tx.vin.size())
  * @param tx     the transaction being validated (not a coinbase)
  * @param[out] txfee_out the explicit fee (explicit_in_sum - explicit_out_sum)
+ * @param allow_zero_explicit from nCTStrictRulesHeight onward, explicit zero
+ *        inputs/outputs are accepted as the Pedersen identity (M-2). Before
+ *        that height they keep the historical reject behavior.
  * @return true if the value balance and all range proofs are valid
  */
-bool VerifyAmounts(const std::vector<CTxOut>& inputs, const CTransaction& tx, CAmount& txfee_out);
+bool VerifyAmounts(const std::vector<CTxOut>& inputs, const CTransaction& tx, CAmount& txfee_out,
+                   bool allow_zero_explicit = false);
+
+/**
+ * Validate the nonce commitment of a confidential output.
+ *
+ * Accepted shapes (from nBanPathAHeight onward, see CheckTxInputs):
+ *   - 0x03 || X: a compressed ephemeral public key; X must be on the curve.
+ *   - 0x04 || X: an x-only ephemeral key (Path C); either 02||X or 03||X must
+ *     parse as a compressed public key.
+ *
+ * A null nonce, 0x02 (legacy Path A plaintext nonce), or an off-curve X is
+ * rejected.  The point is not required to belong to the recipient: binding a
+ * nonce to a script is a wallet/payment-protocol concern; consensus only
+ * enforces that the encoding can be unblinded at all.
+ */
+bool IsValidConfidentialNonce(const CConfidentialNonce& nonce);
 
 #endif // BITCOIN_CONFIDENTIAL_VALIDATION_H

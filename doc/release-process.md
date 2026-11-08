@@ -128,4 +128,9 @@ the Bitcoin Core build process can adapt the Guix configuration for RCPU.
       SHA256SUMS-linux.txt.asc
 7. [ ] Release notes added to `doc/release-notes/`
 8. [ ] `doc/consensus-params.md` matches `chainparams.cpp` (chainwork / assumevalid / checkpoints)
-9. [ ] Announcement on Telegram
+9. [ ] For CT strict-rules releases: re-read `getblockcount` from the release
+       node, freeze `nCTStrictRulesHeight` (recommended `final_tip + 2016`,
+       or `+ 2880` for a longer window), update `chainparams.cpp`,
+       `doc/consensus-params.md` and the release notes together, and record
+       the tip/formula/estimated activation date in the notes.
+10. [ ] Announcement on Telegram

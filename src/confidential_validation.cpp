@@ -79,7 +79,35 @@ bool VerifyRangeProof(const CTxOut& out)
 
 } // namespace
 
-bool VerifyAmounts(const std::vector<CTxOut>& inputs, const CTransaction& tx, CAmount& txfee_out)
+bool IsValidConfidentialNonce(const CConfidentialNonce& nonce)
+{
+    const auto& nc = nonce.vchCommitment;
+    if (nc.size() != 33) return false;
+
+    secp256k1_context* ctx = GetCTContext();
+    secp256k1_pubkey pk;
+
+    if (nc[0] == 0x03) {
+        // Path B: full compressed ephemeral pubkey.
+        return secp256k1_ec_pubkey_parse(ctx, &pk, nc.data(), 33) == 1;
+    }
+    if (nc[0] == 0x04) {
+        // Path C: 0x04 || X. Reconstruct the compressed point by trying both
+        // y parities; at least one must be a valid curve point.
+        unsigned char ser[33];
+        ser[0] = 0x02;
+        std::memcpy(&ser[1], &nc[1], 32);
+        if (secp256k1_ec_pubkey_parse(ctx, &pk, ser, sizeof(ser)) == 1) return true;
+        ser[0] = 0x03;
+        return secp256k1_ec_pubkey_parse(ctx, &pk, ser, sizeof(ser)) == 1;
+    }
+    // 0x00 (null/shape), 0x01 (explicit), 0x02 (legacy Path A plaintext
+    // nonce) and anything else are not acceptable confidential nonces.
+    return false;
+}
+
+bool VerifyAmounts(const std::vector<CTxOut>& inputs, const CTransaction& tx, CAmount& txfee_out,
+                   bool allow_zero_explicit)
 {
     assert(!tx.IsCoinBase());
     assert(inputs.size() == tx.vin.size());
@@ -101,6 +129,13 @@ bool VerifyAmounts(const std::vector<CTxOut>& inputs, const CTransaction& tx, CA
         if (val.IsExplicit()) {
             if (!MoneyRange(val.GetAmount())) {
                 return false;
+            }
+            // RCPU M-2: an explicit zero contributes the identity point to the
+            // Pedersen tally. secp256k1_pedersen_commit() returns 0 for the
+            // point at infinity. From nCTStrictRulesHeight onward skip it;
+            // before activation keep the historical reject behavior.
+            if (allow_zero_explicit && val.GetAmount() == 0) {
+                continue;
             }
             if (!ExplicitCommit(vDataIn[i], val.GetAmount())) {
                 return false;
@@ -137,7 +172,12 @@ bool VerifyAmounts(const std::vector<CTxOut>& inputs, const CTransaction& tx, CA
             if (!MoneyRange(val.GetAmount())) {
                 return false;
             }
-            if (!ExplicitCommit(vDataOut[i], val.GetAmount())) {
+            // RCPU M-2: see the input loop. Explicit zero is the identity and
+            // must not be fed to ExplicitCommit(0), which cannot represent the
+            // point at infinity. Fee outputs are handled above and must stay
+            // strictly positive. Only skip the identity after activation.
+            if ((!allow_zero_explicit || val.GetAmount() != 0) &&
+                !ExplicitCommit(vDataOut[i], val.GetAmount())) {
                 return false;
             }
         } else if (val.IsCommitment()) {
@@ -149,6 +189,9 @@ bool VerifyAmounts(const std::vector<CTxOut>& inputs, const CTransaction& tx, CA
             }
         } else {
             return false;
+        }
+        if (allow_zero_explicit && val.IsExplicit() && val.GetAmount() == 0) {
+            continue; // identity point; do not include in the tally
         }
         vpOut.push_back(&vDataOut[i]);
     }

@@ -132,4 +132,62 @@ BOOST_AUTO_TEST_CASE(committed_output_bad_rangeproof_rejected)
     BOOST_CHECK(!VerifyAmounts(inputs, tx, txfee));
 }
 
+BOOST_AUTO_TEST_CASE(explicit_zero_output_is_identity)
+{
+    CTxOut input;
+    input.nValue = 1000;
+    input.scriptPubKey = CScript() << OP_TRUE;
+
+    CMutableTransaction mtx;
+    mtx.nVersion = CT_VERSION;
+    mtx.vin.emplace_back(CTxIn(COutPoint(TxidFromString("0x5555"), 0), CScript(), 0xffffffff));
+    mtx.vout.emplace_back(1000, CScript() << OP_TRUE);
+    mtx.vout.emplace_back(0, CScript() << OP_RETURN); // e.g. a 0-value data output
+
+    const CTransaction tx(mtx);
+    const std::vector<CTxOut> inputs{input};
+
+    CAmount txfee = -1;
+    BOOST_CHECK(VerifyAmounts(inputs, tx, txfee, /*allow_zero_explicit=*/true));
+    BOOST_CHECK_EQUAL(txfee, CAmount(0));
+}
+
+BOOST_AUTO_TEST_CASE(explicit_zero_input_and_output_are_identity)
+{
+    CTxOut input;
+    input.nValue = 0;
+    input.scriptPubKey = CScript() << OP_TRUE;
+
+    CMutableTransaction mtx;
+    mtx.nVersion = CT_VERSION;
+    mtx.vin.emplace_back(CTxIn(COutPoint(TxidFromString("0x6666"), 0), CScript(), 0xffffffff));
+    mtx.vout.emplace_back(0, CScript() << OP_TRUE);
+
+    const CTransaction tx(mtx);
+    const std::vector<CTxOut> inputs{input};
+
+    CAmount txfee = -1;
+    BOOST_CHECK(VerifyAmounts(inputs, tx, txfee, /*allow_zero_explicit=*/true));
+    BOOST_CHECK_EQUAL(txfee, CAmount(0));
+}
+
+BOOST_AUTO_TEST_CASE(zero_fee_output_still_rejected)
+{
+    CTxOut input;
+    input.nValue = 1000;
+    input.scriptPubKey = CScript() << OP_TRUE;
+
+    CMutableTransaction mtx;
+    mtx.nVersion = CT_VERSION;
+    mtx.vin.emplace_back(CTxIn(COutPoint(TxidFromString("0x7777"), 0), CScript(), 0xffffffff));
+    mtx.vout.emplace_back(1000, CScript() << OP_TRUE);
+    mtx.vout.emplace_back(0, CScript()); // fee-shaped and zero
+
+    const CTransaction tx(mtx);
+    const std::vector<CTxOut> inputs{input};
+
+    CAmount txfee = -1;
+    BOOST_CHECK(!VerifyAmounts(inputs, tx, txfee, /*allow_zero_explicit=*/true));
+}
+
 BOOST_AUTO_TEST_SUITE_END()

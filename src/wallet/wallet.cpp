@@ -2399,6 +2399,13 @@ DBErrors CWallet::LoadWallet()
         assert(m_internal_spk_managers.empty());
     }
 
+    // M-5: purge legacy plaintext CT amount metadata even if the wallet starts
+    // locked. Waiting for the first Unlock() would leave the leak on disk
+    // indefinitely for a node that only loads the wallet read-only.
+    if (IsCrypted()) {
+        PurgeCTPlaintextMetadata();
+    }
+
     return nLoadWalletRet;
 }
 
@@ -3552,6 +3559,21 @@ bool CWallet::Lock()
 void CWallet::CacheCTUnblindedAmounts()
 {
     LOCK(cs_wallet);
+    // M-5: wallet encryption protects keys, not mapValue. Persisting CT
+    // amounts in an encrypted wallet would leak every confidential amount to
+    // anyone who obtains wallet.dat. Legacy entries are removed here; while
+    // unlocked, UnblindConfidentialOutput() recomputes values on demand.
+    if (IsCrypted()) {
+        PurgeCTPlaintextMetadata();
+        // M-5: no plaintext cache exists, so the in-memory amount caches must
+        // be invalidated on every lock/unlock. Otherwise a locked wallet can
+        // keep a stale 0 (or a value from the previous unlocked session) after
+        // unlock, because CWalletTx::m_amounts would not be recomputed.
+        for (auto& item : mapWallet) {
+            item.second.MarkDirty();
+        }
+        return;
+    }
     WalletBatch batch(GetDatabase());
     for (auto& [txid, wtx] : mapWallet) {
         bool changed = false;
@@ -3568,8 +3590,8 @@ void CWallet::CacheCTUnblindedAmounts()
             if (!MoneyRange(value)) continue;
 
             // Persist the plaintext amount so a later lock/restart can still
-            // value this output. This is the same per-vout mapValue cache that
-            // AvailableCoins already consults.
+            // value this output. This is only allowed for unencrypted wallets;
+            // encrypted wallets already returned above.
             wtx.mapValue[key] = std::to_string(value);
             changed = true;
         }
@@ -3577,6 +3599,33 @@ void CWallet::CacheCTUnblindedAmounts()
             wtx.MarkDirty();
             if (!batch.WriteTx(wtx)) {
                 WalletLogPrintf("%s: Failed to persist ct_unblind_ cache for %s\n", __func__, txid.ToString());
+            }
+        }
+    }
+}
+
+void CWallet::PurgeCTPlaintextMetadata()
+{
+    LOCK(cs_wallet);
+    WalletBatch batch(GetDatabase());
+    for (auto& item : mapWallet) {
+        CWalletTx& wtx = item.second;
+        bool changed = false;
+        for (auto it = wtx.mapValue.begin(); it != wtx.mapValue.end();) {
+            const bool sensitive = it->first.rfind("ct_unblind_", 0) == 0 ||
+                                   it->first.rfind("vout_amount_", 0) == 0;
+            if (sensitive) {
+                it = wtx.mapValue.erase(it);
+                changed = true;
+            } else {
+                ++it;
+            }
+        }
+        if (changed) {
+            wtx.MarkDirty();
+            if (!batch.WriteTx(wtx)) {
+                WalletLogPrintf("%s: Failed to purge plaintext CT metadata for %s\n",
+                                __func__, item.first.ToString());
             }
         }
     }

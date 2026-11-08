@@ -857,7 +857,7 @@ bool MemPoolAccept::PreChecks(ATMPArgs& args, Workspace& ws)
     }
 
 // The mempool holds txs for the next block, so pass height+1 to CheckTxInputs
-    if (!Consensus::CheckTxInputs(tx, state, m_view, m_active_chainstate.m_chain.Height() + 1, ws.m_base_fees, m_active_chainstate.m_chainman.GetParams().GetConsensus().nCTActivationHeight, m_active_chainstate.m_chainman.GetParams().GetConsensus().nBanPathAHeight)) {
+    if (!Consensus::CheckTxInputs(tx, state, m_view, m_active_chainstate.m_chain.Height() + 1, ws.m_base_fees, m_active_chainstate.m_chainman.GetParams().GetConsensus().nCTActivationHeight, m_active_chainstate.m_chainman.GetParams().GetConsensus().nBanPathAHeight, m_active_chainstate.m_chainman.GetParams().GetConsensus().nCTStrictRulesHeight)) {
         return false; // state filled in by CheckTxInputs
     }
 
@@ -1998,17 +1998,29 @@ bool CheckInputScripts(const CTransaction& tx, TxValidationState& state,
         if (pvChecks) {
             pvChecks->emplace_back(std::move(check));
         } else if (!check()) {
-            // Tx failures never trigger disconnections/bans.
-            // This is so that network splits aren't triggered
-            // either due to non-consensus relay policies (such as
-            // non-standard DER encodings or non-null dummy
-            // arguments) or due to new consensus rules introduced in
-            // soft forks.
             if (flags & STANDARD_NOT_MANDATORY_VERIFY_FLAGS) {
-                return state.Invalid(TxValidationResult::TX_NOT_STANDARD, strprintf("mempool-script-verify-flag-failed (%s)", ScriptErrorString(check.GetScriptError())));
-            } else {
-                return state.Invalid(TxValidationResult::TX_CONSENSUS, strprintf("mandatory-script-verify-flag-failed (%s)", ScriptErrorString(check.GetScriptError())));
+                // Check whether the failure was caused by a non-mandatory
+                // script verification check, such as non-standard DER
+                // encodings or non-null dummy arguments; if so, ensure we
+                // return NOT_STANDARD instead of CONSENSUS to avoid
+                // downstream users splitting the network between upgraded and
+                // non-upgraded nodes by banning CONSENSUS-failing data
+                // providers. Do not classify *mandatory* failures as
+                // NOT_STANDARD merely because the mempool flags also contain
+                // non-mandatory checks (M-4): retry with those checks removed.
+                CScriptCheck check2(txdata.m_spent_outputs[i], tx, i,
+                        flags & ~STANDARD_NOT_MANDATORY_VERIFY_FLAGS, cacheSigStore, &txdata);
+                if (check2()) {
+                    return state.Invalid(TxValidationResult::TX_NOT_STANDARD,
+                        strprintf("non-mandatory-script-verify-flag (%s)", ScriptErrorString(check.GetScriptError())));
+                }
             }
+            // MANDATORY flag failures correspond to
+            // TxValidationResult::TX_CONSENSUS. Because CONSENSUS failures are
+            // the most serious case of validation failures, callers may decide
+            // to ban the peer that supplied the transaction.
+            return state.Invalid(TxValidationResult::TX_CONSENSUS,
+                strprintf("mandatory-script-verify-flag-failed (%s)", ScriptErrorString(check.GetScriptError())));
         }
     }
 
@@ -2456,7 +2468,7 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
         {
             CAmount txfee = 0;
             TxValidationState tx_state;
-            if (!Consensus::CheckTxInputs(tx, tx_state, view, pindex->nHeight, txfee, m_chainman.GetParams().GetConsensus().nCTActivationHeight, m_chainman.GetParams().GetConsensus().nBanPathAHeight)) {
+            if (!Consensus::CheckTxInputs(tx, tx_state, view, pindex->nHeight, txfee, m_chainman.GetParams().GetConsensus().nCTActivationHeight, m_chainman.GetParams().GetConsensus().nBanPathAHeight, m_chainman.GetParams().GetConsensus().nCTStrictRulesHeight)) {
                 // Any transaction validation failure in ConnectBlock is a block consensus failure
                 state.Invalid(BlockValidationResult::BLOCK_CONSENSUS,
                             tx_state.GetRejectReason(), tx_state.GetDebugMessage());
@@ -3275,7 +3287,8 @@ bool Chainstate::ActivateBestChainStep(BlockValidationState& state, CBlockIndex*
         // any disconnected transactions back to the mempool.
         MaybeUpdateMempoolForReorg(disconnectpool, true);
     }
-    if (m_mempool) m_mempool->check(this->CoinsTip(), this->m_chain.Height() + 1);
+    if (m_mempool) m_mempool->check(this->CoinsTip(), this->m_chain.Height() + 1,
+        m_chainman.GetParams().GetConsensus().nCTStrictRulesHeight);
 
     CheckForkWarningConditions();
 
@@ -3910,7 +3923,7 @@ bool CheckBlock(const CBlock& block, BlockValidationState& state, const Consensu
 // Check that the header is valid (particularly PoW).  This is mostly
     // redundant with the call in AcceptBlockHeader.
     // !RCPU
-    // On RandomX chains the full PoW check is only performed in
+    // On RandomX chains the full PoW check is normally performed in
     // AcceptBlockHeader with the prev-block timestamp (see P0-2): it selects
     // the RandomX epoch from min(block.nTime, prevBlockTime +
     // MAX_FUTURE_BLOCK_TIME) so mining and validation agree. Here, inside the
@@ -3919,6 +3932,14 @@ bool CheckBlock(const CBlock& block, BlockValidationState& state, const Consensu
     // full RandomX verification here would pick the epoch from block.nTime
     // alone, which on regtest (genesis timestamp 2011 vs. current time 2026)
     // disagrees with the epoch used at mining time and rejects valid blocks.
+    //
+    // Etchash is different: its epoch is derived from the block height, which
+    // is known here, and its commitment-only check is trivially forgeable
+    // (it only compares the attacker-supplied hashRandomX field against the
+    // target). A peer could therefore use a forged bit-30 block to force a
+    // complete 4 MB CheckBlock before AcceptBlockHeader rejects the PoW. Run
+    // the full HashimotoLight check for Etchash here (M-3); it is cheap
+    // compared with the transaction/merkle work that follows.
     // !RCPU END
     if (g_isRandomX) {
         // !RCPU (dual-algo): bit-30 blocks are verified with the second
@@ -3939,7 +3960,7 @@ bool CheckBlock(const CBlock& block, BlockValidationState& state, const Consensu
                 // !RCPU (dual-algo etchash): bit-30 blocks are Etchash when
                 // the flag is set (height known), legacy qhash otherwise.
                 const bool fAlgoOk = pow_algo == PowAlgo::Etchash
-                    ? CheckProofOfWorkEtchash(block, nHeight, consensusParams, POW_VERIFY_COMMITMENT_ONLY)
+                    ? CheckProofOfWorkEtchash(block, nHeight, consensusParams, POW_VERIFY_FULL)
                     : CheckProofOfWorkQHash(block, consensusParams, POW_VERIFY_COMMITMENT_ONLY);
                 if (!fAlgoOk)
                     return state.Invalid(BlockValidationResult::BLOCK_INVALID_HEADER, "high-hash", "proof of work failed");
@@ -4646,7 +4667,8 @@ MempoolAcceptResult ChainstateManager::ProcessTransaction(const CTransactionRef&
         return MempoolAcceptResult::Failure(state);
     }
     auto result = AcceptToMemoryPool(active_chainstate, tx, GetTime(), /*bypass_limits=*/ false, test_accept);
-    active_chainstate.GetMempool()->check(active_chainstate.CoinsTip(), active_chainstate.m_chain.Height() + 1);
+    active_chainstate.GetMempool()->check(active_chainstate.CoinsTip(), active_chainstate.m_chain.Height() + 1,
+        active_chainstate.m_chainman.GetParams().GetConsensus().nCTStrictRulesHeight);
     return result;
 }
 

@@ -7,15 +7,18 @@
 #include <test/util/setup_common.h>
 
 #include <addresstype.h>
+#include <blind.h>
 #include <checkqueue.h>
 #include <clientversion.h>
 #include <consensus/amount.h>
 #include <consensus/tx_check.h>
 #include <consensus/validation.h>
+#include <confidential_validation.h>
 #include <core_io.h>
 #include <key.h>
 #include <policy/policy.h>
 #include <policy/settings.h>
+#include <script/interpreter.h>
 #include <script/script.h>
 #include <script/script_error.h>
 #include <script/sign.h>
@@ -1137,6 +1140,92 @@ BOOST_AUTO_TEST_CASE(spends_witness_program)
         tx_spend.vin[0].scriptSig.clear();
         BOOST_CHECK(!::SpendsWitnessProgram(CTransaction{tx_spend}, coins));
     }
+}
+
+BOOST_AUTO_TEST_CASE(ct_taproot_sighash_single_is_rejected)
+{
+    CKey key;
+    key.MakeNewKey(true);
+    const CScript script = GetScriptForDestination(WitnessV0KeyHash(key.GetPubKey()));
+
+    // A confidential v3 SIGHASH_SINGLE output must be rejected until the
+    // properly-bound sighash is activated; otherwise the signature would not
+    // cover the commitment/nonce/rangeproof.
+    CConfidentialValue conf_value;
+    CConfidentialNonce conf_nonce;
+    std::vector<unsigned char> rangeproof;
+    uint256 blind, nonce;
+    BOOST_REQUIRE(BlindOutput(conf_value, conf_nonce, rangeproof, blind, nonce, 1 * COIN));
+
+    CMutableTransaction tx_conf;
+    tx_conf.nVersion = CT_VERSION;
+    tx_conf.vin.emplace_back(COutPoint(Txid::FromUint256(uint256::ONE), 0));
+    tx_conf.vout.emplace_back(1 * COIN, script);
+    tx_conf.vout[0].nValue = conf_value;
+    tx_conf.vout[0].nNonce = conf_nonce;
+    tx_conf.vout[0].vchRangeproof = rangeproof;
+    const CTransaction tx_conf_const(tx_conf);
+
+    std::vector<CTxOut> spent_conf{tx_conf.vout[0]};
+    PrecomputedTransactionData txdata_conf;
+    txdata_conf.Init(tx_conf_const, std::move(spent_conf), /*force=*/true);
+
+    ScriptExecutionData execdata;
+    execdata.m_annex_init = true;
+    execdata.m_annex_present = false;
+    uint256 sighash;
+    BOOST_CHECK(!SignatureHashSchnorr(sighash, execdata, tx_conf_const, 0, SIGHASH_SINGLE,
+                                      SigVersion::TAPROOT, txdata_conf, MissingDataBehavior::FAIL));
+    // SIGHASH_ALL still binds the complete CT output set and remains valid.
+    BOOST_CHECK(SignatureHashSchnorr(sighash, execdata, tx_conf_const, 0, SIGHASH_ALL,
+                                     SigVersion::TAPROOT, txdata_conf, MissingDataBehavior::FAIL));
+
+    // Explicit v3 SINGLE is rejected too: the other outputs of a v3 tx may be
+    // confidential and are not covered by SINGLE.
+    CMutableTransaction tx_explicit;
+    tx_explicit.nVersion = CT_VERSION;
+    tx_explicit.vin.emplace_back(COutPoint(Txid::FromUint256(uint256::ONE), 1));
+    tx_explicit.vout.emplace_back(1 * COIN, script);
+    const CTransaction tx_explicit_const(tx_explicit);
+    std::vector<CTxOut> spent_explicit{tx_explicit.vout[0]};
+    PrecomputedTransactionData txdata_explicit;
+    txdata_explicit.Init(tx_explicit_const, std::move(spent_explicit), /*force=*/true);
+    BOOST_CHECK(!SignatureHashSchnorr(sighash, execdata, tx_explicit_const, 0, SIGHASH_SINGLE,
+                                      SigVersion::TAPROOT, txdata_explicit, MissingDataBehavior::FAIL));
+}
+
+BOOST_AUTO_TEST_CASE(ct_nonce_shape_validation)
+{
+    CKey key;
+    key.MakeNewKey(true);
+    const CPubKey pub = key.GetPubKey();
+
+    CConfidentialNonce compressed;
+    compressed.vchCommitment.assign(pub.begin(), pub.end());
+    // Path B requires the 0x03 compressed form. If the test key has even Y,
+    // flip only the prefix: the same X with odd Y is still a valid point.
+    compressed.vchCommitment[0] = 0x03;
+    BOOST_CHECK(IsValidConfidentialNonce(compressed));
+
+    CConfidentialNonce null_nonce;
+    BOOST_CHECK(!IsValidConfidentialNonce(null_nonce));
+
+    CConfidentialNonce legacy;
+    legacy.vchCommitment.assign(33, 0x02);
+    BOOST_CHECK(!IsValidConfidentialNonce(legacy));
+
+    // Path C carries X only; the helper must reconstruct either y parity.
+    CConfidentialNonce xonly;
+    xonly.vchCommitment.resize(33);
+    xonly.vchCommitment[0] = 0x04;
+    std::copy(pub.begin() + 1, pub.end(), xonly.vchCommitment.begin() + 1);
+    BOOST_CHECK(IsValidConfidentialNonce(xonly));
+
+    // 0x03 with an off-curve X must not pass.
+    CConfidentialNonce off_curve;
+    off_curve.vchCommitment.assign(33, 0xff);
+    off_curve.vchCommitment[0] = 0x03;
+    BOOST_CHECK(!IsValidConfidentialNonce(off_curve));
 }
 
 BOOST_AUTO_TEST_SUITE_END()

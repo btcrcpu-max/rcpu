@@ -1,4 +1,4 @@
-﻿name: CI
+name: CI
 
 on:
   push:
@@ -36,7 +36,7 @@ jobs:
           bash test/lint/lint-cve-52911-connectblock.sh
       - name: Build RandomX dependency
         run: |
-          curl --fail -L -o /tmp/randomx-src.tar.gz https://github.com/tevador/RandomX/archive/refs/tags/v1.2.1.tar.gz
+          curl --fail --retry 6 --retry-delay 5 --retry-all-errors -L -o /tmp/randomx-src.tar.gz https://codeload.github.com/tevador/RandomX/tar.gz/refs/tags/v1.2.1
           # Pin the exact tarball to make historical CI builds reproducible and
           # detect silent supply-chain modification before it is compiled.
           echo "2e6dd3bed96479332c4c8e4cab2505699ade418a07797f64ee0d4fa394555032  /tmp/randomx-src.tar.gz" | sha256sum -c -
@@ -68,8 +68,11 @@ jobs:
           # (serialize_tests), plus argsman_tests adapted to the RCPU chain
           # name/params. dualalgo_tests covers the Etchash/qhash/RandomX
           # dispatch, including the height-aware headers pre-check regression.
+          # transaction_tests carries the H-1 SIGHASH_SINGLE and M-1 nonce
+          # regressions. Run only those cases: the full suite has unrelated
+          # legacy/RCPU failures and is not a release gate yet.
           ./src/test/test_bitcoin --log_level=test_suite \
-            --run_test=blind_tests,confidential_validation_tests,randomx_tests,dualalgo_tests,logging_tests,coinbase_confidential_tests,group_outputs_tests,pow_tests,argsman_tests,tx_verify_tests,validation_block_tests,serialize_tests,wallet_tests
+            --run_test=blind_tests,confidential_validation_tests,randomx_tests,dualalgo_tests,logging_tests,coinbase_confidential_tests,group_outputs_tests,pow_tests,argsman_tests,tx_verify_tests,transaction_tests/ct_taproot_sighash_single_is_rejected:transaction_tests/ct_nonce_shape_validation,validation_block_tests,serialize_tests,wallet_tests
       - name: Consensus gate - explicit coinbase symbol
         run: |
           # v1.0.9 rule: every coinbase output must be explicit. The published
@@ -107,7 +110,7 @@ jobs:
             libminiupnpc-dev
       - name: Build RandomX dependency
         run: |
-          curl --fail -L -o /tmp/randomx-src.tar.gz https://github.com/tevador/RandomX/archive/refs/tags/v1.2.1.tar.gz
+          curl --fail --retry 6 --retry-delay 5 --retry-all-errors -L -o /tmp/randomx-src.tar.gz https://codeload.github.com/tevador/RandomX/tar.gz/refs/tags/v1.2.1
           echo "2e6dd3bed96479332c4c8e4cab2505699ade418a07797f64ee0d4fa394555032  /tmp/randomx-src.tar.gz" | sha256sum -c -
           tar -xf /tmp/randomx-src.tar.gz -C /tmp
           cd /tmp/RandomX-1.2.1
@@ -146,7 +149,7 @@ jobs:
           sudo apt-get install -y build-essential libtool autotools-dev automake             pkg-config bsdmainutils python3 autoconf-archive cmake             libssl-dev libevent-dev libboost-all-dev             libsqlite3-dev libdb-dev libdb++-dev
       - name: Build RandomX dependency
         run: |
-          curl --fail -L -o /tmp/randomx-src.tar.gz https://github.com/tevador/RandomX/archive/refs/tags/v1.2.1.tar.gz
+          curl --fail --retry 6 --retry-delay 5 --retry-all-errors -L -o /tmp/randomx-src.tar.gz https://codeload.github.com/tevador/RandomX/tar.gz/refs/tags/v1.2.1
           echo "2e6dd3bed96479332c4c8e4cab2505699ade418a07797f64ee0d4fa394555032  /tmp/randomx-src.tar.gz" | sha256sum -c -
           tar -xf /tmp/randomx-src.tar.gz -C /tmp
           cd /tmp/RandomX-1.2.1
@@ -176,13 +179,14 @@ jobs:
           # doc/release-process.md).
           set -o pipefail
           ./src/test/test_bitcoin --log_level=test_suite \
-            --run_test=blind_tests,confidential_validation_tests,randomx_tests,dualalgo_tests,logging_tests,coinbase_confidential_tests,group_outputs_tests,pow_tests,argsman_tests,tx_verify_tests,validation_block_tests,serialize_tests,wallet_tests 2>&1 | tee /tmp/rcpu-unit.log
-          # Fail closed: assert all thirteen scoped suites actually ran. Guards
+            --run_test=blind_tests,confidential_validation_tests,randomx_tests,dualalgo_tests,logging_tests,coinbase_confidential_tests,group_outputs_tests,pow_tests,argsman_tests,tx_verify_tests,transaction_tests/ct_taproot_sighash_single_is_rejected:transaction_tests/ct_nonce_shape_validation,validation_block_tests,serialize_tests,wallet_tests 2>&1 | tee /tmp/rcpu-unit.log
+          # Fail closed: assert all fifteen scoped entries actually ran. Guards
           # against a --run_test typo or a silently dropped suite after the
           # scoped list changes.
           for suite in blind_tests confidential_validation_tests randomx_tests \
                        dualalgo_tests logging_tests coinbase_confidential_tests group_outputs_tests \
                        pow_tests argsman_tests tx_verify_tests \
+                       ct_taproot_sighash_single_is_rejected ct_nonce_shape_validation \
                        validation_block_tests serialize_tests wallet_tests; do
             grep -q "${suite}" /tmp/rcpu-unit.log || { echo "suite not executed: ${suite}"; exit 1; }
           done
@@ -204,7 +208,7 @@ jobs:
             libsqlite3-dev libdb-dev libdb++-dev
       - name: Build RandomX dependency
         run: |
-          curl --fail -L -o /tmp/randomx-src.tar.gz https://github.com/tevador/RandomX/archive/refs/tags/v1.2.1.tar.gz
+          curl --fail --retry 6 --retry-delay 5 --retry-all-errors -L -o /tmp/randomx-src.tar.gz https://codeload.github.com/tevador/RandomX/tar.gz/refs/tags/v1.2.1
           echo "2e6dd3bed96479332c4c8e4cab2505699ade418a07797f64ee0d4fa394555032  /tmp/randomx-src.tar.gz" | sha256sum -c -
           tar -xf /tmp/randomx-src.tar.gz -C /tmp
           cd /tmp/RandomX-1.2.1

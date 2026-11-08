@@ -216,6 +216,18 @@ struct Params {
     int nBanPathAHeight{std::numeric_limits<int>::max()};
 
     /**
+     * RCPU: block height at which the stricter CT rules activate:
+     *   - M-1: commitment outputs require a non-null, on-curve 0x03/0x04 nonce;
+     *   - M-2: explicit zero-value inputs/outputs are accepted as the Pedersen
+     *     identity instead of being rejected by ExplicitCommit(0).
+     *
+     * This is a consensus change (M-1 is a tightening, M-2 is a relaxation),
+     * so it must not be activated before the network has upgraded. Default is
+     * "never"; networks that ship the change set a concrete height.
+     */
+    int nCTStrictRulesHeight{std::numeric_limits<int>::max()};
+
+    /**
      * RCPU: block height from which the canonical 112-byte hash domain
      * (serialized header including hashRandomX) is used for RandomX inputs and
      * block-header hashing. The canonical serialization is byte-identical to

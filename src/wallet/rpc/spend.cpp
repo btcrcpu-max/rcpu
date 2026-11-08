@@ -214,8 +214,12 @@ const CTransactionRef& tx = res->tx;
     // can display the outgoing amount even though they cannot unblind a
     // foreign Path-B output. Stored as satoshis (plain integer) to match the
     // read side (LocaleIndependentAtoi<CAmount>) in transactionrecord.cpp.
-    for (const auto& [vout_idx, amount] : res->vout_amount) {
-        map_value[std::string("vout_amount_") + std::to_string(vout_idx)] = std::to_string(amount);
+    // M-5: do not persist CT amounts in an encrypted wallet; encryption only
+    // protects keys and mapValue is plaintext on disk.
+    if (!wallet.IsCrypted()) {
+        for (const auto& [vout_idx, amount] : res->vout_amount) {
+            map_value[std::string("vout_amount_") + std::to_string(vout_idx)] = std::to_string(amount);
+        }
     }
     if (auto err = wallet.CommitTransaction(tx, std::move(map_value), /*orderForm=*/{}); err) {
         throw JSONRPCError(RPC_WALLET_ERROR, "Broadcast failed: " + err->original);
@@ -2264,8 +2268,11 @@ RPCHelpMan sendall()
                 for (const auto& [vout_idx, addr] : created->vout_addr) {
                     map_value[std::string("vout_addr_") + std::to_string(vout_idx)] = addr;
                 }
-                for (const auto& [vout_idx, amount] : created->vout_amount) {
-                    map_value[std::string("vout_amount_") + std::to_string(vout_idx)] = std::to_string(amount);
+                // M-5: encrypted wallets must not persist plaintext CT amounts.
+                if (!pwallet->IsCrypted()) {
+                    for (const auto& [vout_idx, amount] : created->vout_amount) {
+                        map_value[std::string("vout_amount_") + std::to_string(vout_idx)] = std::to_string(amount);
+                    }
                 }
                 if (auto err = pwallet->CommitTransaction(created->tx, std::move(map_value), /*orderForm=*/{}); err) {
                     throw JSONRPCError(RPC_WALLET_ERROR, "Broadcast failed: " + err->original);

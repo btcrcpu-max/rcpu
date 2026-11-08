@@ -25,6 +25,8 @@ They are listed here so other docs have one place to copy from.
 | Tail emission after height 2,100,000 | ~105,120 RCPU / year | 1 RCPU * 288 blocks/day * 365 |
 | CT activation height | **0** (genesis) | `src/kernel/chainparams.cpp` (`nCTActivationHeight`) |
 | Path A (legacy nonce) ban height | **12748** (mainnet, v1.1.10); testnet: 0; regtest: `INT_MAX` | `src/kernel/chainparams.cpp` (`nBanPathAHeight`) |
+| CT strict rules height (M-1/M-2) | **27326** (frozen from tip 25,310 + 2016; observed tip 25,385 on 2026-11-08, remaining 1,941 blocks ~6.7 days, indicative 2026-11-15; re-check before tag); testnet: 0; regtest: 0; other chains: `INT_MAX` | `src/kernel/chainparams.cpp` (`nCTStrictRulesHeight`) |
+| v3 `SIGHASH_SINGLE` | **rejected immediately** (all heights, v1.4.5) | `src/script/interpreter.cpp` (`SignatureHashSchnorr`) |
 | ASERT activation height | **0** (genesis) | `src/kernel/chainparams.cpp` (`nASERTActivationHeight`) |
 | ASERT anchor block | 0 (genesis) | `src/kernel/chainparams.cpp` (`asertAnchorParams`) |
 | ASERT half-life | **2 days (172,800 s)** | `src/kernel/chainparams.cpp` (`nASERTHalfLife`) |
@@ -47,6 +49,20 @@ They are listed here so other docs have one place to copy from.
 | Checkpoints | 0, 1, 2, 5, 10, 20, 30, 38, 3,600, 4,922, 10,000 | `kernel/chainparams.cpp` (`checkpointData`) |
 
 ## Notes
+
+- **CT strict rules (v1.4.5)**: `nCTStrictRulesHeight` gates M-1 (confidential
+  output nonces must be non-null and on-curve) and M-2 (explicit zero is the
+  Pedersen identity). Before that height, M-1 keeps the historical
+  `0x03`/`0x04` shape check and M-2 keeps rejecting explicit zero via
+  `ExplicitCommit(0)`. The mainnet value `27326` was frozen from tip **25,310**
+  on 2026-11-08 using `tip + 2016`; the later observed tip **25,385** leaves
+  **1,941 blocks / ~6.7 days** (indicative activation **2026-11-15**). Before
+  tagging, check `getblockcount` again on a synced node; if the tip has moved,
+  recompute `final_tip + 2016` (or `final_tip + 2880` for a longer window) and
+  update this table, `src/kernel/chainparams.cpp` and the release notes in the
+  same commit. Record the tip at freeze time and the formula used.
+  H-1 is separate and **immediate**: v3 `SIGHASH_SINGLE` and
+  `SIGHASH_SINGLE|ANYONECANPAY` are rejected at all heights in v1.4.5.
 
 - **Dual-algo (v1.3.0)** is a consensus hard fork at height 21,000: blocks may be mined with either RandomX or a second algorithm selected by version bit 30. On mainnet/testnet `fDualAlgoEtchash = true`, so bit-30 blocks at height ≥ 21,000 are verified with **Etchash** (ECIP-1099-style light verification, epoch = `(height - 21000) / 6000`, 6000 blocks on mainnet/testnet, 10 on regtest); when `fDualAlgoEtchash = false` (pre-etchash builds) the same bit routes to the legacy qhash (qPoW) verifier. Each algorithm runs its own ASERT difficulty targeting a 10-minute spacing, anchored at height 20,999 with a reference target of `nBits >> 1` (twice the pre-fork difficulty); the combined chain keeps ~5-minute cadence. Below the activation height the version bit 30 is ignored and behavior is identical to v1.1.19. All other blocks (bit 30 clear) use RandomX; above the activation height the legacy single-algo ASERT path is not used.
 - **Etchash hash domain (v1.4.0)**: the 32-byte value fed to `hashimoto` is `keccak256` over the canonical 112-byte header with **both** `nNonce` and `hashRandomX` zeroed; the nonce enters only hashimoto's seed (`nonce8 = nNonce LE ‖ 0x00000000`). This matches standard Ethash/Etchash so stock GPU miners — which keep the header hash constant and vary only the nonce — can mine RCPU. Before v1.4.0 the nonce was part of the hashed header, making `header_hash` nonce-dependent and every off-the-shelf kernel unusable. No Etchash block existed when the rule changed, so this is a pre-activation change, not a fork; RandomX, ASERT, bit-30 dispatch and all historical blocks are unaffected. The block header still carries the real nonce (it is part of the block identity).

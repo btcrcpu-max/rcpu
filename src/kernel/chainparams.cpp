@@ -635,6 +635,12 @@ consensus.fPowRandomX = true;
         // Computed at 2026-10-01 from live tip (10732) + 2016 ≈ 7 days notice.
         // Recompute on release day if tip has moved: H = TIP + 2016.
         consensus.nBanPathAHeight = 12748;
+        // RCPU audit 2026-11-08: M-1 (strict CT nonce) and M-2 (explicit zero)
+        // are consensus changes. Frozen at 25,310 + 2016 = 27,326; the later
+        // observed tip 25,385 leaves ~1,941 blocks (~6.7 days, indicative
+        // activation 2026-11-15). Recompute on release day if tip moves:
+        // H = final_tip + 2016.
+        consensus.nCTStrictRulesHeight = 27326;
         // RCPU (P1-1): canonical hash domain is byte-identical to the live
         // raw-memory domain (static_asserts in primitives/block.h), so no
         // consensus change occurs at this height; it is the versioning guard
@@ -781,6 +787,9 @@ consensus.fPowRandomX = true;
         // RCPU hardening (P1-2): ban path-A plaintext nonces early on testnet
         // so the soft-fork rule is exercised well before mainnet deployment.
         consensus.nBanPathAHeight = 0;  // testnet: active from genesis height
+        // RCPU audit 2026-11-08: exercise the stricter CT rules on testnet
+        // from genesis; mainnet uses a scheduled height.
+        consensus.nCTStrictRulesHeight = 0;
         // RCPU (P1-1): testnet uses the canonical 112-byte hash domain from
         // genesis height (byte-identical to the legacy domain).
         genesis = CreateRcpuGenesisBlock(1708750000, 1, 0x1e7fffff, 1, 50 * COIN, "22/Feb/2024 RCPU Testnet Genesis - Independent Chain");
@@ -893,6 +902,9 @@ public:
         }
 
         consensus.fPowRandomX = true;
+        // RCPU audit 2026-11-08: exercise the strict CT rules in regtest from
+        // genesis; mainnet schedules them at nCTStrictRulesHeight.
+        consensus.nCTStrictRulesHeight = 0;
         consensus.nRandomXEpochDuration = 24 * 60 * 60;     // one day
         // !RCPU (dual-algo): regtest activates dual-algo early (height 150) so
         // unit and functional tests exercise both algorithms. Difficulty is

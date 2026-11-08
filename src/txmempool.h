@@ -22,6 +22,8 @@
 #include <util/hasher.h>
 #include <util/result.h>
 
+#include <limits>
+
 #include <boost/multi_index/hashed_index.hpp>
 #include <boost/multi_index/identity.hpp>
 #include <boost/multi_index/indexed_by.hpp>
@@ -460,7 +462,7 @@ public:
      * all inputs are in the mapNextTx array). If sanity-checking is turned off,
      * check does nothing.
      */
-    void check(const CCoinsViewCache& active_coins_tip, int64_t spendheight) const EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+    void check(const CCoinsViewCache& active_coins_tip, int64_t spendheight, int nCTStrictRulesHeight = std::numeric_limits<int>::max()) const EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 
     // addUnchecked must updated state for all ancestors of a given transaction,
     // to track size/count of descendant transactions.  First version of
