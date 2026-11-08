@@ -423,7 +423,9 @@ jobs:
 
   release:
     needs: [build-linux, build-windows]
-    if: startsWith(github.ref, 'refs/tags/')
+    # M-9: only a tag push may publish. workflow_dispatch is allowed to build
+    # artifacts for inspection, but it must not bypass the signed-tag guard.
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-22.04
     # The only job that needs to publish; everything else stays read-only.
     permissions:

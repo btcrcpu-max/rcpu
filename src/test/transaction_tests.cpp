@@ -1194,6 +1194,38 @@ BOOST_AUTO_TEST_CASE(ct_taproot_sighash_single_is_rejected)
                                       SigVersion::TAPROOT, txdata_explicit, MissingDataBehavior::FAIL));
 }
 
+BOOST_AUTO_TEST_CASE(ct_ecdsa_sighash_single_is_rejected)
+{
+    CKey key;
+    key.MakeNewKey(true);
+    const CPubKey pubkey = key.GetPubKey();
+    const std::vector<unsigned char> pubkey_bytes(pubkey.begin(), pubkey.end());
+    const CScript script = GetScriptForDestination(WitnessV0KeyHash(pubkey));
+
+    CMutableTransaction tx;
+    tx.nVersion = CT_VERSION;
+    tx.vin.emplace_back(COutPoint(Txid::FromUint256(uint256::ONE), 0));
+    tx.vout.emplace_back(1 * COIN, script);
+    const CTransaction tx_const(tx);
+
+    const CAmount amount = 1 * COIN;
+    std::vector<CTxOut> spent{CTxOut(amount, script)};
+    PrecomputedTransactionData txdata;
+    txdata.Init(tx_const, std::move(spent), /*force=*/true);
+
+    // Build a valid ECDSA signature over the legacy/BIP143 SINGLE hash. Before
+    // the H-1 ECDSA guard this signature verified; the checker must now reject
+    // it because other v3 outputs are not covered.
+    const uint256 sighash = SignatureHash(script, tx_const, 0, SIGHASH_SINGLE, amount,
+                                          SigVersion::WITNESS_V0, &txdata);
+    std::vector<unsigned char> sig;
+    BOOST_REQUIRE(key.Sign(sighash, sig));
+    sig.push_back(SIGHASH_SINGLE);
+
+    TransactionSignatureChecker checker(&tx_const, 0, amount, txdata, MissingDataBehavior::FAIL);
+    BOOST_CHECK(!checker.CheckECDSASignature(sig, pubkey_bytes, script, SigVersion::WITNESS_V0));
+}
+
 BOOST_AUTO_TEST_CASE(ct_nonce_shape_validation)
 {
     CKey key;
