@@ -129,6 +129,13 @@ bool VerifyAmounts(const std::vector<CTxOut>& inputs, const CTransaction& tx, CA
             if (!MoneyRange(val.GetAmount())) {
                 return false;
             }
+            // RCPU M-2: an explicit zero contributes the identity point to the
+            // Pedersen tally. secp256k1_pedersen_commit() returns 0 for the
+            // point at infinity, so calling ExplicitCommit(0) would reject
+            // otherwise-valid outputs such as a 0-value OP_RETURN. Skip it.
+            if (val.GetAmount() == 0) {
+                continue;
+            }
             if (!ExplicitCommit(vDataIn[i], val.GetAmount())) {
                 return false;
             }
@@ -164,7 +171,11 @@ bool VerifyAmounts(const std::vector<CTxOut>& inputs, const CTransaction& tx, CA
             if (!MoneyRange(val.GetAmount())) {
                 return false;
             }
-            if (!ExplicitCommit(vDataOut[i], val.GetAmount())) {
+            // RCPU M-2: see the input loop. Explicit zero is the identity and
+            // must not be fed to ExplicitCommit(0), which cannot represent the
+            // point at infinity. Fee outputs are handled above and must stay
+            // strictly positive.
+            if (val.GetAmount() != 0 && !ExplicitCommit(vDataOut[i], val.GetAmount())) {
                 return false;
             }
         } else if (val.IsCommitment()) {
@@ -176,6 +187,9 @@ bool VerifyAmounts(const std::vector<CTxOut>& inputs, const CTransaction& tx, CA
             }
         } else {
             return false;
+        }
+        if (val.IsExplicit() && val.GetAmount() == 0) {
+            continue; // identity point; do not include in the tally
         }
         vpOut.push_back(&vDataOut[i]);
     }
