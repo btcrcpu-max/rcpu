@@ -68,4 +68,12 @@ BOOST_AUTO_TEST_CASE(rejects_null_commitment)
     BOOST_CHECK(!CheckProofOfWorkRandomX(block, params, POW_VERIFY_COMMITMENT_ONLY));
 }
 
+// M-6: the linked RandomX must be the RCPU build (custom Argon salt), not a
+// stock ABI-compatible library. The fixed A2000 vector comes from
+// contrib/devtools/rx_parity_gate.cpp.
+BOOST_AUTO_TEST_CASE(linked_randomx_is_rcpu_variant)
+{
+    BOOST_CHECK(RandomXParityCheck());
+}
+
 BOOST_AUTO_TEST_SUITE_END()

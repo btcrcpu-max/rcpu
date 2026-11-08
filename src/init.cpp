@@ -1184,6 +1184,12 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
     // !RCPU
     if (chainparams.GetConsensus().fPowRandomX) {
         g_isRandomX = true;
+        // M-6: a stock librandomx is ABI-compatible but uses a different
+        // Argon salt, producing a different PoW domain. Fail fast rather than
+        // silently rejecting every RandomX block.
+        if (!RandomXParityCheck()) {
+            return InitError(_("The linked RandomX library is not built with the RCPU configuration (Argon salt mismatch). Rebuild it from depends/ or use an official binary."));
+        }
         LogPrintf("%s: RCPU RandomX proof-of-work active\n", __func__);
         randomx_flags flags = randomx_get_flags();
         if (flags & RANDOMX_FLAG_ARGON2_AVX2) {
