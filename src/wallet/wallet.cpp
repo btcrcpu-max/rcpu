@@ -2399,6 +2399,13 @@ DBErrors CWallet::LoadWallet()
         assert(m_internal_spk_managers.empty());
     }
 
+    // M-5: purge legacy plaintext CT amount metadata even if the wallet starts
+    // locked. Waiting for the first Unlock() would leave the leak on disk
+    // indefinitely for a node that only loads the wallet read-only.
+    if (IsCrypted()) {
+        PurgeCTPlaintextMetadata();
+    }
+
     return nLoadWalletRet;
 }
 
