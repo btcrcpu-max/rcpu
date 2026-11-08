@@ -1199,6 +1199,7 @@ BOOST_AUTO_TEST_CASE(ct_ecdsa_sighash_single_is_rejected)
     CKey key;
     key.MakeNewKey(true);
     const CPubKey pubkey = key.GetPubKey();
+    const std::vector<unsigned char> pubkey_bytes(pubkey.begin(), pubkey.end());
     const CScript script = GetScriptForDestination(WitnessV0KeyHash(pubkey));
 
     CMutableTransaction tx;
@@ -1222,7 +1223,7 @@ BOOST_AUTO_TEST_CASE(ct_ecdsa_sighash_single_is_rejected)
     sig.push_back(SIGHASH_SINGLE);
 
     TransactionSignatureChecker checker(&tx_const, 0, amount, txdata, MissingDataBehavior::FAIL);
-    BOOST_CHECK(!checker.CheckECDSASignature(sig, pubkey, script, SigVersion::WITNESS_V0));
+    BOOST_CHECK(!checker.CheckECDSASignature(sig, pubkey_bytes, script, SigVersion::WITNESS_V0));
 }
 
 BOOST_AUTO_TEST_CASE(ct_nonce_shape_validation)
