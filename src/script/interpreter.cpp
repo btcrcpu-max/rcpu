@@ -1544,19 +1544,16 @@ bool SignatureHashSchnorr(uint256& hash_out, ScriptExecutionData& execdata, cons
     if (!(hash_type <= 0x03 || (hash_type >= 0x81 && hash_type <= 0x83))) return false;
     ss << hash_type;
 
-    // !RCPU H-1: SIGHASH_SINGLE on a confidential output is not safe under the
-    // legacy "serialize false" rule below: CTxOut::Serialize(..., false) writes
-    // only 0 + scriptPubKey for a commitment, so the signature would not bind
-    // the Pedersen commitment, nNonce or vchRangeproof. A third party could
-    // then rewrite/freeze the signed output after signature generation. Until
-    // the properly bound sighash is activated network-wide, reject the only
-    // insecure shape: a v3 transaction whose SINGLE output is confidential.
-    // Explicit v3 outputs keep the legacy 8-byte amount serialization, so
-    // existing explicit SIGHASH_SINGLE signatures remain valid.
+    // !RCPU H-1: SIGHASH_SINGLE is unsafe for v3 transactions. The legacy
+    // "serialize false" rule below writes only 0 + scriptPubKey for a
+    // commitment, so the signature would not bind the Pedersen commitment,
+    // nNonce or vchRangeproof of the signed output; and even when that output
+    // is explicit, the other (possibly confidential) outputs are deliberately
+    // not covered by SINGLE and can be rewritten by a coordinator. Reject all
+    // v3 SINGLE/SINGLE|ANYONECANPAY signatures until the properly-bound
+    // sighash is activated network-wide.
     const bool fCT{tx_to.nVersion == CT_VERSION};
-    if (fCT && output_type == SIGHASH_SINGLE &&
-        in_pos < tx_to.vout.size() &&
-        tx_to.vout[in_pos].nValue.IsCommitment()) {
+    if (fCT && output_type == SIGHASH_SINGLE) {
         return false;
     }
 

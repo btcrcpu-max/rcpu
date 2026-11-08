@@ -1142,7 +1142,7 @@ BOOST_AUTO_TEST_CASE(spends_witness_program)
     }
 }
 
-BOOST_AUTO_TEST_CASE(ct_taproot_sighash_single_binds_only_safe_outputs)
+BOOST_AUTO_TEST_CASE(ct_taproot_sighash_single_is_rejected)
 {
     CKey key;
     key.MakeNewKey(true);
@@ -1180,8 +1180,8 @@ BOOST_AUTO_TEST_CASE(ct_taproot_sighash_single_binds_only_safe_outputs)
     BOOST_CHECK(SignatureHashSchnorr(sighash, execdata, tx_conf_const, 0, SIGHASH_ALL,
                                      SigVersion::TAPROOT, txdata_conf, MissingDataBehavior::FAIL));
 
-    // An explicit v3 SINGLE output is safe: the amount + script are committed
-    // by the legacy serialization, so the rule must not reject it.
+    // Explicit v3 SINGLE is rejected too: the other outputs of a v3 tx may be
+    // confidential and are not covered by SINGLE.
     CMutableTransaction tx_explicit;
     tx_explicit.nVersion = CT_VERSION;
     tx_explicit.vin.emplace_back(COutPoint(Txid::FromUint256(uint256::ONE), 1));
@@ -1190,8 +1190,8 @@ BOOST_AUTO_TEST_CASE(ct_taproot_sighash_single_binds_only_safe_outputs)
     std::vector<CTxOut> spent_explicit{tx_explicit.vout[0]};
     PrecomputedTransactionData txdata_explicit;
     txdata_explicit.Init(tx_explicit_const, std::move(spent_explicit), /*force=*/true);
-    BOOST_CHECK(SignatureHashSchnorr(sighash, execdata, tx_explicit_const, 0, SIGHASH_SINGLE,
-                                     SigVersion::TAPROOT, txdata_explicit, MissingDataBehavior::FAIL));
+    BOOST_CHECK(!SignatureHashSchnorr(sighash, execdata, tx_explicit_const, 0, SIGHASH_SINGLE,
+                                      SigVersion::TAPROOT, txdata_explicit, MissingDataBehavior::FAIL));
 }
 
 BOOST_AUTO_TEST_CASE(ct_nonce_shape_validation)
