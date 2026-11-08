@@ -63,7 +63,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
       - name: Download, patch, and build RandomX (Linux)
         run: |
-          curl --fail -L -o /tmp/randomx-src.tar.gz \
+          curl --fail --retry 6 --retry-delay 5 --retry-all-errors -L -o /tmp/randomx-src.tar.gz \
             https://github.com/tevador/RandomX/archive/refs/tags/v1.2.1.tar.gz
           echo "2e6dd3bed96479332c4c8e4cab2505699ade418a07797f64ee0d4fa394555032  /tmp/randomx-src.tar.gz" | sha256sum -c -
           tar -xf /tmp/randomx-src.tar.gz -C /tmp
@@ -113,7 +113,7 @@ jobs:
         run: |
           WS="${GITHUB_WORKSPACE//\\//}"
           set -euo pipefail
-          curl --fail -L -o /tmp/randomx-src.tar.gz \
+          curl --fail --retry 6 --retry-delay 5 --retry-all-errors -L -o /tmp/randomx-src.tar.gz \
             https://github.com/tevador/RandomX/archive/refs/tags/v1.2.1.tar.gz
           echo "2e6dd3bed96479332c4c8e4cab2505699ade418a07797f64ee0d4fa394555032  /tmp/randomx-src.tar.gz" | sha256sum -c -
           tar -xf /tmp/randomx-src.tar.gz -C /tmp

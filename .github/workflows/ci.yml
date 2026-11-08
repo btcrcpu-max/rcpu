@@ -36,7 +36,7 @@ jobs:
           bash test/lint/lint-cve-52911-connectblock.sh
       - name: Build RandomX dependency
         run: |
-          curl --fail -L -o /tmp/randomx-src.tar.gz https://github.com/tevador/RandomX/archive/refs/tags/v1.2.1.tar.gz
+          curl --fail --retry 6 --retry-delay 5 --retry-all-errors -L -o /tmp/randomx-src.tar.gz https://github.com/tevador/RandomX/archive/refs/tags/v1.2.1.tar.gz
           # Pin the exact tarball to make historical CI builds reproducible and
           # detect silent supply-chain modification before it is compiled.
           echo "2e6dd3bed96479332c4c8e4cab2505699ade418a07797f64ee0d4fa394555032  /tmp/randomx-src.tar.gz" | sha256sum -c -
@@ -110,7 +110,7 @@ jobs:
             libminiupnpc-dev
       - name: Build RandomX dependency
         run: |
-          curl --fail -L -o /tmp/randomx-src.tar.gz https://github.com/tevador/RandomX/archive/refs/tags/v1.2.1.tar.gz
+          curl --fail --retry 6 --retry-delay 5 --retry-all-errors -L -o /tmp/randomx-src.tar.gz https://github.com/tevador/RandomX/archive/refs/tags/v1.2.1.tar.gz
           echo "2e6dd3bed96479332c4c8e4cab2505699ade418a07797f64ee0d4fa394555032  /tmp/randomx-src.tar.gz" | sha256sum -c -
           tar -xf /tmp/randomx-src.tar.gz -C /tmp
           cd /tmp/RandomX-1.2.1
@@ -149,7 +149,7 @@ jobs:
           sudo apt-get install -y build-essential libtool autotools-dev automake             pkg-config bsdmainutils python3 autoconf-archive cmake             libssl-dev libevent-dev libboost-all-dev             libsqlite3-dev libdb-dev libdb++-dev
       - name: Build RandomX dependency
         run: |
-          curl --fail -L -o /tmp/randomx-src.tar.gz https://github.com/tevador/RandomX/archive/refs/tags/v1.2.1.tar.gz
+          curl --fail --retry 6 --retry-delay 5 --retry-all-errors -L -o /tmp/randomx-src.tar.gz https://github.com/tevador/RandomX/archive/refs/tags/v1.2.1.tar.gz
           echo "2e6dd3bed96479332c4c8e4cab2505699ade418a07797f64ee0d4fa394555032  /tmp/randomx-src.tar.gz" | sha256sum -c -
           tar -xf /tmp/randomx-src.tar.gz -C /tmp
           cd /tmp/RandomX-1.2.1
@@ -208,7 +208,7 @@ jobs:
             libsqlite3-dev libdb-dev libdb++-dev
       - name: Build RandomX dependency
         run: |
-          curl --fail -L -o /tmp/randomx-src.tar.gz https://github.com/tevador/RandomX/archive/refs/tags/v1.2.1.tar.gz
+          curl --fail --retry 6 --retry-delay 5 --retry-all-errors -L -o /tmp/randomx-src.tar.gz https://github.com/tevador/RandomX/archive/refs/tags/v1.2.1.tar.gz
           echo "2e6dd3bed96479332c4c8e4cab2505699ade418a07797f64ee0d4fa394555032  /tmp/randomx-src.tar.gz" | sha256sum -c -
           tar -xf /tmp/randomx-src.tar.gz -C /tmp
           cd /tmp/RandomX-1.2.1
