@@ -1998,17 +1998,29 @@ bool CheckInputScripts(const CTransaction& tx, TxValidationState& state,
         if (pvChecks) {
             pvChecks->emplace_back(std::move(check));
         } else if (!check()) {
-            // Tx failures never trigger disconnections/bans.
-            // This is so that network splits aren't triggered
-            // either due to non-consensus relay policies (such as
-            // non-standard DER encodings or non-null dummy
-            // arguments) or due to new consensus rules introduced in
-            // soft forks.
             if (flags & STANDARD_NOT_MANDATORY_VERIFY_FLAGS) {
-                return state.Invalid(TxValidationResult::TX_NOT_STANDARD, strprintf("mempool-script-verify-flag-failed (%s)", ScriptErrorString(check.GetScriptError())));
-            } else {
-                return state.Invalid(TxValidationResult::TX_CONSENSUS, strprintf("mandatory-script-verify-flag-failed (%s)", ScriptErrorString(check.GetScriptError())));
+                // Check whether the failure was caused by a non-mandatory
+                // script verification check, such as non-standard DER
+                // encodings or non-null dummy arguments; if so, ensure we
+                // return NOT_STANDARD instead of CONSENSUS to avoid
+                // downstream users splitting the network between upgraded and
+                // non-upgraded nodes by banning CONSENSUS-failing data
+                // providers. Do not classify *mandatory* failures as
+                // NOT_STANDARD merely because the mempool flags also contain
+                // non-mandatory checks (M-4): retry with those checks removed.
+                CScriptCheck check2(txdata.m_spent_outputs[i], tx, i,
+                        flags & ~STANDARD_NOT_MANDATORY_VERIFY_FLAGS, cacheSigStore, &txdata);
+                if (check2()) {
+                    return state.Invalid(TxValidationResult::TX_NOT_STANDARD,
+                        strprintf("non-mandatory-script-verify-flag (%s)", ScriptErrorString(check.GetScriptError())));
+                }
             }
+            // MANDATORY flag failures correspond to
+            // TxValidationResult::TX_CONSENSUS. Because CONSENSUS failures are
+            // the most serious case of validation failures, callers may decide
+            // to ban the peer that supplied the transaction.
+            return state.Invalid(TxValidationResult::TX_CONSENSUS,
+                strprintf("mandatory-script-verify-flag-failed (%s)", ScriptErrorString(check.GetScriptError())));
         }
     }
 
