@@ -21,6 +21,22 @@ jobs:
     outputs:
       ok: ${{ steps.check.outputs.ok }}
     steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+      - name: Verify signed release tag
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          # M-9: a tag push alone is not authorization. Require an annotated,
+          # valid signature from the RCPU release key before any build starts.
+          gpg --batch --import "${GITHUB_WORKSPACE}/RCPU-DEV-GPG-KEY.asc"
+          if ! git verify-tag --raw "${GITHUB_REF_NAME}" > /tmp/tagverify.txt 2>&1; then
+            cat /tmp/tagverify.txt
+            exit 1
+          fi
+          cat /tmp/tagverify.txt
+          grep -F "VALIDSIG 934D5BC95DD4B3ACFEF521B9547633501FE4B8EE" /tmp/tagverify.txt
       - id: check
         shell: bash
         run: |
@@ -140,22 +156,25 @@ jobs:
         run: |
           sha256sum "$APPIMAGE_ASSET" > "$APPIMAGE_ASSET.sha256"
 
-      - name: Sign with GPG (if key configured)
+      - name: Sign and verify with the RCPU release key
         env:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
         run: |
-          # P2 E-1: without a GPG key we must NOT publish an empty .asc
-          # placeholder (a broken signature).
-          if [ -n "$GPG_PRIVATE_KEY" ]; then
-            echo "$GPG_PRIVATE_KEY" | gpg --batch --yes --import
-            echo "$GPG_PASSPHRASE" | gpg --batch --yes --passphrase-fd 0 \
-              --pinentry-mode loopback \
-              --output "$APPIMAGE_ASSET.asc" \
-              --detach-sig "$APPIMAGE_ASSET"
-          else
-            echo "No GPG key configured, skipping signature"
+          # M-9: refuse to publish an unsigned or differently-keyed AppImage.
+          if [ -z "$GPG_PRIVATE_KEY" ]; then
+            echo "ERROR: GPG_PRIVATE_KEY is not configured; refusing to publish an unsigned release"
+            exit 1
           fi
+          echo "$GPG_PRIVATE_KEY" | gpg --batch --yes --import
+          FPR="934D5BC95DD4B3ACFEF521B9547633501FE4B8EE"
+          gpg --batch --list-secret-keys "$FPR" >/dev/null
+          echo "$GPG_PASSPHRASE" | gpg --batch --yes --passphrase-fd 0 \
+            --pinentry-mode loopback \
+            --local-user "$FPR!" \
+            --output "$APPIMAGE_ASSET.asc" \
+            --detach-sig "$APPIMAGE_ASSET"
+          gpg --batch --verify "$APPIMAGE_ASSET.asc" "$APPIMAGE_ASSET"
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

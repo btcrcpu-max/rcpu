@@ -23,6 +23,22 @@ jobs:
     outputs:
       ok: ${{ steps.check.outputs.ok }}
     steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+      - name: Verify signed release tag
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          # M-9: a tag push alone is not authorization. Require an annotated,
+          # valid signature from the RCPU release key before any build starts.
+          gpg --batch --import "${GITHUB_WORKSPACE}/RCPU-DEV-GPG-KEY.asc"
+          if ! git verify-tag --raw "${GITHUB_REF_NAME}" > /tmp/tagverify.txt 2>&1; then
+            cat /tmp/tagverify.txt
+            exit 1
+          fi
+          cat /tmp/tagverify.txt
+          grep -F "VALIDSIG 934D5BC95DD4B3ACFEF521B9547633501FE4B8EE" /tmp/tagverify.txt
       - id: check
         shell: bash
         run: |
@@ -175,6 +191,7 @@ jobs:
           cp /tmp/randomx-linux/librandomx.a "$PREFIX/lib/"
           curl --fail -L -o /tmp/rx-src.tgz \
             https://github.com/tevador/RandomX/archive/refs/tags/v1.2.1.tar.gz
+          echo "2e6dd3bed96479332c4c8e4cab2505699ade418a07797f64ee0d4fa394555032  /tmp/rx-src.tgz" | sha256sum -c -
           tar -xf /tmp/rx-src.tgz -C /tmp
           cp /tmp/RandomX-1.2.1/src/randomx.h "$PREFIX/include/"
           test -f "$PREFIX/include/randomx.h"
@@ -229,7 +246,12 @@ jobs:
           mkdir -p "$STAGE"
           cp -a "$PREFIX/bin/rcpud" "$PREFIX/bin/rcpu-qt" \
                 "$PREFIX/bin/rcpu-cli" "$PREFIX/bin/rcpu-tx" \
-                "$PREFIX/bin/rcpu-wallet" "$STAGE/" 2>/dev/null || true
+                "$PREFIX/bin/rcpu-wallet" "$STAGE/"
+          # Never sign/package a partial or empty tarball: fail if any required
+          # binary is missing or zero-length.
+          for f in rcpud rcpu-qt rcpu-cli rcpu-tx rcpu-wallet; do
+            test -s "$STAGE/$f" || { echo "ERROR: missing or empty $STAGE/$f"; exit 1; }
+          done
           tar -C "$(dirname "$STAGE")" -czf \
             "rcpu-${PKGVER}-x86_64-linux-gnu.tgz" \
             "$(basename "$STAGE")"
@@ -295,6 +317,7 @@ jobs:
           cp /tmp/randomx-windows/librandomx.a "$PREFIX/lib/"
           curl --fail -L -o /tmp/rx-src.tgz \
             https://github.com/tevador/RandomX/archive/refs/tags/v1.2.1.tar.gz
+          echo "2e6dd3bed96479332c4c8e4cab2505699ade418a07797f64ee0d4fa394555032  /tmp/rx-src.tgz" | sha256sum -c -
           tar -xf /tmp/rx-src.tgz -C /tmp
           cp /tmp/RandomX-1.2.1/src/randomx.h "$PREFIX/include/"
           test -f "$PREFIX/include/randomx.h"
@@ -416,29 +439,32 @@ jobs:
           cat linux/SHA256SUMS-linux.txt windows/SHA256SUMS-windows.txt > SHA256SUMS.txt
           cat SHA256SUMS.txt
 
-      - name: Sign with GPG (if key configured)
+      - name: Sign and verify with the RCPU release key
         env:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
         run: |
-          # P2 E-1: without a GPG key we must NOT publish an empty .asc
-          # placeholder (a broken signature). The file list below therefore
-          # only includes the .asc when one was actually produced.
+          # M-9: a release must be signed by the documented RCPU key. Do not
+          # publish an unsigned or differently-keyed artifact on a tag build.
+          if [ -z "$GPG_PRIVATE_KEY" ]; then
+            echo "ERROR: GPG_PRIVATE_KEY is not configured; refusing to publish an unsigned release"
+            exit 1
+          fi
+          echo "$GPG_PRIVATE_KEY" | gpg --batch --yes --import
+          FPR="934D5BC95DD4B3ACFEF521B9547633501FE4B8EE"
+          gpg --batch --list-secret-keys "$FPR" >/dev/null
+          echo "$GPG_PASSPHRASE" | gpg --batch --yes --passphrase-fd 0 \
+            --pinentry-mode loopback \
+            --local-user "$FPR!" \
+            --output SHA256SUMS.txt.asc \
+            --detach-sig SHA256SUMS.txt
+          gpg --batch --verify SHA256SUMS.txt.asc SHA256SUMS.txt
           {
             echo "RELEASE_FILES<<EOF"
             echo "linux/*"
             echo "windows/*"
             echo "SHA256SUMS.txt"
-            if [ -n "$GPG_PRIVATE_KEY" ]; then
-              echo "$GPG_PRIVATE_KEY" | gpg --batch --yes --import
-              echo "$GPG_PASSPHRASE" | gpg --batch --yes --passphrase-fd 0 \
-                --pinentry-mode loopback \
-                --output SHA256SUMS.txt.asc \
-                --detach-sig SHA256SUMS.txt
-              echo "SHA256SUMS.txt.asc"
-            else
-              echo "No GPG key configured, skipping signature"
-            fi
+            echo "SHA256SUMS.txt.asc"
             echo "EOF"
           } >> "$GITHUB_ENV"
 
