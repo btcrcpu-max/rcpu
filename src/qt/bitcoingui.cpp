@@ -1471,7 +1471,10 @@ void BitcoinGUI::setEncryptionStatus(int status)
         encryptWalletAction->setEnabled(false);
         break;
     case WalletModel::Unencrypted:
-        labelWalletEncryptionIcon->hide();
+        // Make the "no encryption" state visible instead of hiding the icon.
+        labelWalletEncryptionIcon->show();
+        labelWalletEncryptionIcon->setThemedPixmap(QStringLiteral(":/icons/lock_open"), STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE);
+        labelWalletEncryptionIcon->setToolTip(tr("Wallet is <b>not encrypted</b>. Anyone with access to wallet.dat can spend your funds. Use Settings > Encrypt Wallet."));
         encryptWalletAction->setChecked(false);
         changePassphraseAction->setEnabled(false);
         encryptWalletAction->setEnabled(true);
