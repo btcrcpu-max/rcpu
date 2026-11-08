@@ -1756,6 +1756,15 @@ bool GenericTransactionSignatureChecker<T>::CheckECDSASignature(const std::vecto
     int nHashType = vchSig.back();
     vchSig.pop_back();
 
+    // !RCPU H-1: v3 SIGHASH_SINGLE is unsafe for ECDSA too. The Taproot
+    // guard in SignatureHashSchnorr() only covers Schnorr signatures; a v3
+    // transaction may spend an explicit legacy/segwit-v0 output and use ECDSA.
+    // SINGLE does not commit to the other outputs (and the legacy no-output
+    // case hashes to one), so reject it before verifying the signature.
+    if (txTo->nVersion == CT_VERSION && (nHashType & 0x1f) == SIGHASH_SINGLE) {
+        return false;
+    }
+
     // Witness sighashes need the amount.
     if (sigversion == SigVersion::WITNESS_V0 && amount < 0) return HandleMissingData(m_mdb);
 
