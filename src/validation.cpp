@@ -3910,7 +3910,7 @@ bool CheckBlock(const CBlock& block, BlockValidationState& state, const Consensu
 // Check that the header is valid (particularly PoW).  This is mostly
     // redundant with the call in AcceptBlockHeader.
     // !RCPU
-    // On RandomX chains the full PoW check is only performed in
+    // On RandomX chains the full PoW check is normally performed in
     // AcceptBlockHeader with the prev-block timestamp (see P0-2): it selects
     // the RandomX epoch from min(block.nTime, prevBlockTime +
     // MAX_FUTURE_BLOCK_TIME) so mining and validation agree. Here, inside the
@@ -3919,6 +3919,14 @@ bool CheckBlock(const CBlock& block, BlockValidationState& state, const Consensu
     // full RandomX verification here would pick the epoch from block.nTime
     // alone, which on regtest (genesis timestamp 2011 vs. current time 2026)
     // disagrees with the epoch used at mining time and rejects valid blocks.
+    //
+    // Etchash is different: its epoch is derived from the block height, which
+    // is known here, and its commitment-only check is trivially forgeable
+    // (it only compares the attacker-supplied hashRandomX field against the
+    // target). A peer could therefore use a forged bit-30 block to force a
+    // complete 4 MB CheckBlock before AcceptBlockHeader rejects the PoW. Run
+    // the full HashimotoLight check for Etchash here (M-3); it is cheap
+    // compared with the transaction/merkle work that follows.
     // !RCPU END
     if (g_isRandomX) {
         // !RCPU (dual-algo): bit-30 blocks are verified with the second
@@ -3939,7 +3947,7 @@ bool CheckBlock(const CBlock& block, BlockValidationState& state, const Consensu
                 // !RCPU (dual-algo etchash): bit-30 blocks are Etchash when
                 // the flag is set (height known), legacy qhash otherwise.
                 const bool fAlgoOk = pow_algo == PowAlgo::Etchash
-                    ? CheckProofOfWorkEtchash(block, nHeight, consensusParams, POW_VERIFY_COMMITMENT_ONLY)
+                    ? CheckProofOfWorkEtchash(block, nHeight, consensusParams, POW_VERIFY_FULL)
                     : CheckProofOfWorkQHash(block, consensusParams, POW_VERIFY_COMMITMENT_ONLY);
                 if (!fAlgoOk)
                     return state.Invalid(BlockValidationResult::BLOCK_INVALID_HEADER, "high-hash", "proof of work failed");
