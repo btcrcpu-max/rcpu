@@ -51,9 +51,11 @@ public:
 
     CMasterKey()
     {
-        // 25000 rounds is just under 0.1 seconds on a 1.86 GHz Pentium M
-        // ie slightly lower than the lowest hardware we need bother supporting
-        nDeriveIterations = 25000;
+        // 1,000,000 rounds is deliberately much higher than the historical
+        // 25000 (which was sized for a 1.86 GHz Pentium M in 2011). Existing
+        // wallets keep their stored nDeriveIterations; this only affects new
+        // encryption and passphrase changes.
+        nDeriveIterations = 1000000;
         nDerivationMethod = 0;
         vchOtherDerivationParameters = std::vector<unsigned char>(0);
     }

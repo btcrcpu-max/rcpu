@@ -19,6 +19,12 @@ CreateWalletDialog::CreateWalletDialog(QWidget* parent) :
     ui(new Ui::CreateWalletDialog)
 {
     ui->setupUi(this);
+    // Default to encrypting new wallets. The toggled() handler only runs on
+    // user interaction, so set the initial value and apply the dependent
+    // state explicitly (the .ui default stays unchecked for designer preview).
+    ui->encrypt_wallet_checkbox->setChecked(true);
+    ui->disable_privkeys_checkbox->setEnabled(!ui->encrypt_wallet_checkbox->isChecked());
+    ui->external_signer_checkbox->setEnabled(false);
     ui->buttonBox->button(QDialogButtonBox::Ok)->setText(tr("Create"));
     ui->buttonBox->button(QDialogButtonBox::Ok)->setEnabled(false);
     ui->wallet_name_line_edit->setFocus(Qt::ActiveWindowFocusReason);

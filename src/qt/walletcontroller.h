@@ -59,6 +59,9 @@ public:
 
     WalletModel* getOrCreateWallet(std::unique_ptr<interfaces::Wallet> wallet);
 
+    //! All currently loaded wallets (GUI thread only).
+    const std::vector<WalletModel*>& getWallets() const { return m_wallets; }
+
     //! Returns all wallet names in the wallet dir mapped to whether the wallet
     //! is loaded.
     std::map<std::string, bool> listWalletDir() const;
