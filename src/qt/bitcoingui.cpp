@@ -208,6 +208,12 @@ BitcoinGUI::BitcoinGUI(interfaces::Node& node, const PlatformStyle *_platformSty
 
     // Install event filter to be able to catch status tip events (QEvent::StatusTip)
     this->installEventFilter(this);
+    // Also watch application-wide input activity for the wallet auto-lock timer.
+    qApp->installEventFilter(this);
+
+    m_wallet_lock_timer = new QTimer(this);
+    m_wallet_lock_timer->setSingleShot(true);
+    connect(m_wallet_lock_timer, &QTimer::timeout, this, &BitcoinGUI::lockWallets);
 
     // Initially wallet actions should be disabled
     setWalletActionsEnabled(false);
@@ -315,6 +321,9 @@ void BitcoinGUI::createActions()
     encryptWalletAction = new QAction(tr("&Encrypt Wallet…"), this);
     encryptWalletAction->setStatusTip(tr("Encrypt the private keys that belong to your wallet"));
     encryptWalletAction->setCheckable(true);
+    lockWalletAction = new QAction(tr("&Lock Wallet Now"), this);
+    lockWalletAction->setStatusTip(tr("Lock the wallet immediately"));
+    lockWalletAction->setEnabled(false);
     backupWalletAction = new QAction(tr("&Backup Wallet…"), this);
     backupWalletAction->setStatusTip(tr("Backup wallet to another location"));
     changePassphraseAction = new QAction(tr("&Change Passphrase…"), this);
@@ -395,6 +404,7 @@ void BitcoinGUI::createActions()
     if(walletFrame)
     {
         connect(encryptWalletAction, &QAction::triggered, walletFrame, &WalletFrame::encryptWallet);
+        connect(lockWalletAction, &QAction::triggered, this, &BitcoinGUI::lockWallets);
         connect(backupWalletAction, &QAction::triggered, walletFrame, &WalletFrame::backupWallet);
         connect(changePassphraseAction, &QAction::triggered, walletFrame, &WalletFrame::changePassphrase);
         connect(signMessageAction, &QAction::triggered, [this]{ showNormalIfMinimized(); });
@@ -512,6 +522,7 @@ void BitcoinGUI::createMenuBar()
     if(walletFrame)
     {
         settings->addAction(encryptWalletAction);
+        settings->addAction(lockWalletAction);
         settings->addAction(changePassphraseAction);
         settings->addSeparator();
         settings->addAction(m_mask_values_action);
@@ -699,6 +710,16 @@ void BitcoinGUI::setWalletController(WalletController* wallet_controller, bool s
     assert(wallet_controller);
 
     m_wallet_controller = wallet_controller;
+
+    // Auto-lock encrypted wallets after a period without user input.
+    // Default 10 minutes; set walletLockTimeoutMin=0 in QSettings to disable.
+    {
+        QSettings settings;
+        const int auto_lock_minutes = settings.value("walletLockTimeoutMin", 10).toInt();
+        if (m_wallet_lock_timer && auto_lock_minutes > 0) {
+            m_wallet_lock_timer->start(auto_lock_minutes * 60 * 1000);
+        }
+    }
 
     m_create_wallet_action->setEnabled(true);
     m_open_wallet_action->setEnabled(true);
@@ -1383,6 +1404,20 @@ void BitcoinGUI::dropEvent(QDropEvent *event)
 
 bool BitcoinGUI::eventFilter(QObject *object, QEvent *event)
 {
+    // Reset the wallet auto-lock timer on genuine user input.
+    if (m_wallet_lock_timer && m_wallet_lock_timer->interval() > 0) {
+        switch (event->type()) {
+        case QEvent::MouseMove:
+        case QEvent::MouseButtonPress:
+        case QEvent::KeyPress:
+        case QEvent::Wheel:
+            m_wallet_lock_timer->start();
+            break;
+        default:
+            break;
+        }
+    }
+
     // Catch status tip events
     if (event->type() == QEvent::StatusTip)
     {
@@ -1391,6 +1426,18 @@ bool BitcoinGUI::eventFilter(QObject *object, QEvent *event)
             return true;
     }
     return QMainWindow::eventFilter(object, event);
+}
+
+void BitcoinGUI::lockWallets()
+{
+#ifdef ENABLE_WALLET
+    if (!m_wallet_controller) return;
+    for (WalletModel* wallet : m_wallet_controller->getWallets()) {
+        if (wallet->getEncryptionStatus() == WalletModel::Unlocked) {
+            wallet->setWalletLocked(true);
+        }
+    }
+#endif
 }
 
 #ifdef ENABLE_WALLET
@@ -1446,6 +1493,7 @@ void BitcoinGUI::setEncryptionStatus(int status)
         encryptWalletAction->setEnabled(false);
         break;
     }
+    lockWalletAction->setEnabled(status == WalletModel::Unlocked);
 }
 
 void BitcoinGUI::updateWalletStatus()

@@ -55,6 +55,7 @@ class QComboBox;
 class QDateTime;
 class QProgressBar;
 class QProgressDialog;
+class QTimer;
 QT_END_NAMESPACE
 
 namespace GUIUtil {
@@ -121,6 +122,7 @@ private:
     std::unique_ptr<interfaces::Handler> m_handler_question;
     ClientModel* clientModel = nullptr;
     WalletFrame* walletFrame = nullptr;
+    QTimer* m_wallet_lock_timer{nullptr};
 
     UnitDisplayStatusBarControl* unitDisplayControl = nullptr;
     GUIUtil::ThemedLabel* labelWalletEncryptionIcon = nullptr;
@@ -148,6 +150,7 @@ private:
     QAction* receiveCoinsAction = nullptr;
     QAction* optionsAction = nullptr;
     QAction* encryptWalletAction = nullptr;
+    QAction* lockWalletAction = nullptr;
     QAction* backupWalletAction = nullptr;
     QAction* changePassphraseAction = nullptr;
     QAction* aboutQtAction = nullptr;
@@ -251,6 +254,9 @@ public Q_SLOTS:
     void updateWalletStatus();
 
 private:
+    /** Lock all encrypted and unlocked wallets immediately. */
+    void lockWallets();
+
     /** Set the encryption status as shown in the UI.
        @param[in] status            current encryption status
        @see WalletModel::EncryptionStatus
