@@ -636,10 +636,10 @@ consensus.fPowRandomX = true;
         // Recompute on release day if tip has moved: H = TIP + 2016.
         consensus.nBanPathAHeight = 12748;
         // RCPU audit 2026-11-08: M-1 (strict CT nonce) and M-2 (explicit zero)
-        // are consensus changes. Schedule them for a future height so mixed
-        // versions do not split; raise/recompute on release if tip has passed
-        // this height without the rule being active.
-        consensus.nCTStrictRulesHeight = 30000;
+        // are consensus changes. Frozen at observed tip 25310 + 2016, i.e.
+        // 27326 (~7 days at 5 min/block, indicative activation 2026-11-15).
+        // Recompute on release day if tip has moved: H = final_tip + 2016.
+        consensus.nCTStrictRulesHeight = 27326;
         // RCPU (P1-1): canonical hash domain is byte-identical to the live
         // raw-memory domain (static_asserts in primitives/block.h), so no
         // consensus change occurs at this height; it is the versioning guard
