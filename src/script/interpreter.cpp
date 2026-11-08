@@ -1403,7 +1403,12 @@ uint256 GetSpentAmountsSHA256(const std::vector<CTxOut>& outputs_spent)
 {
     HashWriter ss{};
     for (const auto& txout : outputs_spent) {
-        if (!txout.nValue.IsExplicit()) continue; // RCPU CT: skip confidential (taproot-only field)
+        // RCPU CT: BIP341's sha_amounts field is an 8-byte amount. A Pedersen
+        // commitment cannot be represented there, and hashing 0 for it would
+        // falsely imply the amount was committed. The input's outpoint (which
+        // IS committed in sha_prevouts) binds the funding transaction and thus
+        // the full CTxOut, including commitment/nonce/rangeproof.
+        if (!txout.nValue.IsExplicit()) continue;
         ss << txout.nValue.GetAmount();
     }
     return ss.GetSHA256();
@@ -1539,6 +1544,22 @@ bool SignatureHashSchnorr(uint256& hash_out, ScriptExecutionData& execdata, cons
     if (!(hash_type <= 0x03 || (hash_type >= 0x81 && hash_type <= 0x83))) return false;
     ss << hash_type;
 
+    // !RCPU H-1: SIGHASH_SINGLE on a confidential output is not safe under the
+    // legacy "serialize false" rule below: CTxOut::Serialize(..., false) writes
+    // only 0 + scriptPubKey for a commitment, so the signature would not bind
+    // the Pedersen commitment, nNonce or vchRangeproof. A third party could
+    // then rewrite/freeze the signed output after signature generation. Until
+    // the properly bound sighash is activated network-wide, reject the only
+    // insecure shape: a v3 transaction whose SINGLE output is confidential.
+    // Explicit v3 outputs keep the legacy 8-byte amount serialization, so
+    // existing explicit SIGHASH_SINGLE signatures remain valid.
+    const bool fCT{tx_to.nVersion == CT_VERSION};
+    if (fCT && output_type == SIGHASH_SINGLE &&
+        in_pos < tx_to.vout.size() &&
+        tx_to.vout[in_pos].nValue.IsCommitment()) {
+        return false;
+    }
+
     // Transaction level data
     ss << tx_to.nVersion;
     ss << tx_to.nLockTime;
@@ -1559,6 +1580,11 @@ const uint8_t spend_type = (ext_flag << 1) + (have_annex ? 1 : 0); // The low bi
     ss << spend_type;
     if (input_type == SIGHASH_ANYONECANPAY) {
         ss << tx_to.vin[in_pos].prevout;
+        // RCPU H-1: keep the spent output in legacy mode here. The input's
+        // outpoint already commits to the exact CTxOut (including its
+        // commitment/nonce/rangeproof), and changing this field would invalidate
+        // every existing v3 SIGHASH_ALL|ANYONECANPAY signature for no security
+        // gain. The SINGLE output is the field that must bind the CT data.
         cache.m_spent_outputs[in_pos].Serialize(ss, false);
         ss << tx_to.vin[in_pos].nSequence;
     } else {
@@ -1573,7 +1599,12 @@ const uint8_t spend_type = (ext_flag << 1) + (have_annex ? 1 : 0); // The low bi
         if (in_pos >= tx_to.vout.size()) return false;
         if (!execdata.m_output_hash) {
             HashWriter sha_single_output{};
-            tx_to.vout[in_pos].Serialize(sha_single_output, false);
+            // RCPU H-1 (future binding): a confidential SINGLE output will be
+            // serialized in CT mode once the rejection above is lifted at a
+            // coordinated activation height. Explicit v3 outputs stay in the
+            // legacy mode to avoid changing existing signatures.
+            const bool fCTOutput{fCT && !tx_to.vout[in_pos].nValue.IsExplicit()};
+            tx_to.vout[in_pos].Serialize(sha_single_output, fCTOutput);
             execdata.m_output_hash = sha_single_output.GetSHA256();
         }
         ss << execdata.m_output_hash.value();
