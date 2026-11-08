@@ -166,7 +166,7 @@ int64_t GetTransactionSigOpCost(const CTransaction& tx, const CCoinsViewCache& i
     return nSigOps;
 }
 
-bool Consensus::CheckTxInputs(const CTransaction& tx, TxValidationState& state, const CCoinsViewCache& inputs, int nSpendHeight, CAmount& txfee, int nCTActivationHeight, int nBanPathAHeight)
+bool Consensus::CheckTxInputs(const CTransaction& tx, TxValidationState& state, const CCoinsViewCache& inputs, int nSpendHeight, CAmount& txfee, int nCTActivationHeight, int nBanPathAHeight, int nCTStrictRulesHeight)
 {
     // RCPU: single predicate for "is this a confidential transaction". The
     // serialization format keys off nVersion == CT_VERSION, so the consensus
@@ -265,24 +265,26 @@ if (g_con_elementsmode && fIsCT) {
             // recipient's wallet reports zero while the payer, who knows the
             // blind factor, can reclaim the output. That is a payment-forgery
             // primitive; reject it at the consensus layer.
-            if (nSpendHeight >= nBanPathAHeight) {
+            const bool fStrictRules = nSpendHeight >= nCTStrictRulesHeight;
+            if (fStrictRules && out.nValue.IsCommitment()) {
                 const auto& nc = out.nNonce.vchCommitment;
-                if (out.nValue.IsCommitment()) {
-                    if (out.nNonce.IsNull()) {
-                        return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-ct-nonce-missing",
-                            "confidential output has a null nonce");
-                    }
-                    if (!IsValidConfidentialNonce(out.nNonce)) {
-                        return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-ct-nonce-point",
-                            strprintf("confidential output nonce is not a valid curve point (prefix=0x%02x)",
-                                nc.empty() ? 0 : nc[0]));
-                    }
-                } else if (!out.nNonce.IsNull()) {
-                    if (nc.size() != 33 || (nc[0] != 0x03 && nc[0] != 0x04)) {
-                        return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-ct-legacy-nonce",
-                            strprintf("confidential output nonce has invalid shape (size=%u, prefix=0x%02x)",
-                                nc.size(), nc.empty() ? 0 : nc[0]));
-                    }
+                if (out.nNonce.IsNull()) {
+                    return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-ct-nonce-missing",
+                        "confidential output has a null nonce");
+                }
+                if (!IsValidConfidentialNonce(out.nNonce)) {
+                    return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-ct-nonce-point",
+                        strprintf("confidential output nonce is not a valid curve point (prefix=0x%02x)",
+                            nc.empty() ? 0 : nc[0]));
+                }
+            } else if (nSpendHeight >= nBanPathAHeight && !out.nNonce.IsNull()) {
+                // Legacy shape-only rule (path-A/ban height). The stricter
+                // on-curve/null checks above apply from nCTStrictRulesHeight.
+                const auto& nc = out.nNonce.vchCommitment;
+                if (nc.size() != 33 || (nc[0] != 0x03 && nc[0] != 0x04)) {
+                    return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-ct-legacy-nonce",
+                        strprintf("confidential output nonce has invalid shape (size=%u, prefix=0x%02x)",
+                            nc.size(), nc.empty() ? 0 : nc[0]));
                 }
             }
         }
@@ -299,8 +301,10 @@ if (g_con_elementsmode && fIsCT) {
             }
         }
 
-        // CT mode: confidential value balance + range proof verification
-        if (!VerifyAmounts(prevouts, tx, txfee)) {
+        // CT mode: confidential value balance + range proof verification.
+        // M-2 is a relaxation; only allow explicit zero from the scheduled
+        // strict-rules height onward.
+        if (!VerifyAmounts(prevouts, tx, txfee, nSpendHeight >= nCTStrictRulesHeight)) {
             return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-txns-ct-balance",
                 "confidential value balance or range proof failed");
         }

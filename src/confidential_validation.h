@@ -25,9 +25,13 @@
  * @param inputs the previous outputs being spent (size == tx.vin.size())
  * @param tx     the transaction being validated (not a coinbase)
  * @param[out] txfee_out the explicit fee (explicit_in_sum - explicit_out_sum)
+ * @param allow_zero_explicit from nCTStrictRulesHeight onward, explicit zero
+ *        inputs/outputs are accepted as the Pedersen identity (M-2). Before
+ *        that height they keep the historical reject behavior.
  * @return true if the value balance and all range proofs are valid
  */
-bool VerifyAmounts(const std::vector<CTxOut>& inputs, const CTransaction& tx, CAmount& txfee_out);
+bool VerifyAmounts(const std::vector<CTxOut>& inputs, const CTransaction& tx, CAmount& txfee_out,
+                   bool allow_zero_explicit = false);
 
 /**
  * Validate the nonce commitment of a confidential output.

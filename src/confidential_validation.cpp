@@ -106,7 +106,8 @@ bool IsValidConfidentialNonce(const CConfidentialNonce& nonce)
     return false;
 }
 
-bool VerifyAmounts(const std::vector<CTxOut>& inputs, const CTransaction& tx, CAmount& txfee_out)
+bool VerifyAmounts(const std::vector<CTxOut>& inputs, const CTransaction& tx, CAmount& txfee_out,
+                   bool allow_zero_explicit)
 {
     assert(!tx.IsCoinBase());
     assert(inputs.size() == tx.vin.size());
@@ -131,9 +132,9 @@ bool VerifyAmounts(const std::vector<CTxOut>& inputs, const CTransaction& tx, CA
             }
             // RCPU M-2: an explicit zero contributes the identity point to the
             // Pedersen tally. secp256k1_pedersen_commit() returns 0 for the
-            // point at infinity, so calling ExplicitCommit(0) would reject
-            // otherwise-valid outputs such as a 0-value OP_RETURN. Skip it.
-            if (val.GetAmount() == 0) {
+            // point at infinity. From nCTStrictRulesHeight onward skip it;
+            // before activation keep the historical reject behavior.
+            if (allow_zero_explicit && val.GetAmount() == 0) {
                 continue;
             }
             if (!ExplicitCommit(vDataIn[i], val.GetAmount())) {
@@ -174,8 +175,9 @@ bool VerifyAmounts(const std::vector<CTxOut>& inputs, const CTransaction& tx, CA
             // RCPU M-2: see the input loop. Explicit zero is the identity and
             // must not be fed to ExplicitCommit(0), which cannot represent the
             // point at infinity. Fee outputs are handled above and must stay
-            // strictly positive.
-            if (val.GetAmount() != 0 && !ExplicitCommit(vDataOut[i], val.GetAmount())) {
+            // strictly positive. Only skip the identity after activation.
+            if ((!allow_zero_explicit || val.GetAmount() != 0) &&
+                !ExplicitCommit(vDataOut[i], val.GetAmount())) {
                 return false;
             }
         } else if (val.IsCommitment()) {
@@ -188,7 +190,7 @@ bool VerifyAmounts(const std::vector<CTxOut>& inputs, const CTransaction& tx, CA
         } else {
             return false;
         }
-        if (val.IsExplicit() && val.GetAmount() == 0) {
+        if (allow_zero_explicit && val.IsExplicit() && val.GetAmount() == 0) {
             continue; // identity point; do not include in the tally
         }
         vpOut.push_back(&vDataOut[i]);

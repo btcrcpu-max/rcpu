@@ -148,7 +148,7 @@ BOOST_AUTO_TEST_CASE(explicit_zero_output_is_identity)
     const std::vector<CTxOut> inputs{input};
 
     CAmount txfee = -1;
-    BOOST_CHECK(VerifyAmounts(inputs, tx, txfee));
+    BOOST_CHECK(VerifyAmounts(inputs, tx, txfee, /*allow_zero_explicit=*/true));
     BOOST_CHECK_EQUAL(txfee, CAmount(0));
 }
 
@@ -167,7 +167,7 @@ BOOST_AUTO_TEST_CASE(explicit_zero_input_and_output_are_identity)
     const std::vector<CTxOut> inputs{input};
 
     CAmount txfee = -1;
-    BOOST_CHECK(VerifyAmounts(inputs, tx, txfee));
+    BOOST_CHECK(VerifyAmounts(inputs, tx, txfee, /*allow_zero_explicit=*/true));
     BOOST_CHECK_EQUAL(txfee, CAmount(0));
 }
 
@@ -187,7 +187,7 @@ BOOST_AUTO_TEST_CASE(zero_fee_output_still_rejected)
     const std::vector<CTxOut> inputs{input};
 
     CAmount txfee = -1;
-    BOOST_CHECK(!VerifyAmounts(inputs, tx, txfee));
+    BOOST_CHECK(!VerifyAmounts(inputs, tx, txfee, /*allow_zero_explicit=*/true));
 }
 
 BOOST_AUTO_TEST_SUITE_END()

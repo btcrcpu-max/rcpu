@@ -857,7 +857,7 @@ bool MemPoolAccept::PreChecks(ATMPArgs& args, Workspace& ws)
     }
 
 // The mempool holds txs for the next block, so pass height+1 to CheckTxInputs
-    if (!Consensus::CheckTxInputs(tx, state, m_view, m_active_chainstate.m_chain.Height() + 1, ws.m_base_fees, m_active_chainstate.m_chainman.GetParams().GetConsensus().nCTActivationHeight, m_active_chainstate.m_chainman.GetParams().GetConsensus().nBanPathAHeight)) {
+    if (!Consensus::CheckTxInputs(tx, state, m_view, m_active_chainstate.m_chain.Height() + 1, ws.m_base_fees, m_active_chainstate.m_chainman.GetParams().GetConsensus().nCTActivationHeight, m_active_chainstate.m_chainman.GetParams().GetConsensus().nBanPathAHeight, m_active_chainstate.m_chainman.GetParams().GetConsensus().nCTStrictRulesHeight)) {
         return false; // state filled in by CheckTxInputs
     }
 
@@ -2468,7 +2468,7 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
         {
             CAmount txfee = 0;
             TxValidationState tx_state;
-            if (!Consensus::CheckTxInputs(tx, tx_state, view, pindex->nHeight, txfee, m_chainman.GetParams().GetConsensus().nCTActivationHeight, m_chainman.GetParams().GetConsensus().nBanPathAHeight)) {
+            if (!Consensus::CheckTxInputs(tx, tx_state, view, pindex->nHeight, txfee, m_chainman.GetParams().GetConsensus().nCTActivationHeight, m_chainman.GetParams().GetConsensus().nBanPathAHeight, m_chainman.GetParams().GetConsensus().nCTStrictRulesHeight)) {
                 // Any transaction validation failure in ConnectBlock is a block consensus failure
                 state.Invalid(BlockValidationResult::BLOCK_CONSENSUS,
                             tx_state.GetRejectReason(), tx_state.GetDebugMessage());
@@ -3287,7 +3287,8 @@ bool Chainstate::ActivateBestChainStep(BlockValidationState& state, CBlockIndex*
         // any disconnected transactions back to the mempool.
         MaybeUpdateMempoolForReorg(disconnectpool, true);
     }
-    if (m_mempool) m_mempool->check(this->CoinsTip(), this->m_chain.Height() + 1);
+    if (m_mempool) m_mempool->check(this->CoinsTip(), this->m_chain.Height() + 1,
+        m_chainman.GetParams().GetConsensus().nCTStrictRulesHeight);
 
     CheckForkWarningConditions();
 
@@ -4666,7 +4667,8 @@ MempoolAcceptResult ChainstateManager::ProcessTransaction(const CTransactionRef&
         return MempoolAcceptResult::Failure(state);
     }
     auto result = AcceptToMemoryPool(active_chainstate, tx, GetTime(), /*bypass_limits=*/ false, test_accept);
-    active_chainstate.GetMempool()->check(active_chainstate.CoinsTip(), active_chainstate.m_chain.Height() + 1);
+    active_chainstate.GetMempool()->check(active_chainstate.CoinsTip(), active_chainstate.m_chain.Height() + 1,
+        active_chainstate.m_chainman.GetParams().GetConsensus().nCTStrictRulesHeight);
     return result;
 }
 
