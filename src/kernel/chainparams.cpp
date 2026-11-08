@@ -637,7 +637,7 @@ consensus.fPowRandomX = true;
         consensus.nBanPathAHeight = 12748;
         // RCPU audit 2026-11-08: M-1 (strict CT nonce) and M-2 (explicit zero)
         // are consensus changes. Frozen at 25,310 + 2016 = 27,326; the later
-        // observed tip 25,362 leaves ~1,964 blocks (~6.8 days, indicative
+        // observed tip 25,385 leaves ~1,941 blocks (~6.7 days, indicative
         // activation 2026-11-15). Recompute on release day if tip moves:
         // H = final_tip + 2016.
         consensus.nCTStrictRulesHeight = 27326;
