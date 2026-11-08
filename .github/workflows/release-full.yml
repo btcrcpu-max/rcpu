@@ -64,7 +64,7 @@ jobs:
       - name: Download, patch, and build RandomX (Linux)
         run: |
           curl --fail --retry 6 --retry-delay 5 --retry-all-errors -L -o /tmp/randomx-src.tar.gz \
-            https://github.com/tevador/RandomX/archive/refs/tags/v1.2.1.tar.gz
+            https://codeload.github.com/tevador/RandomX/tar.gz/refs/tags/v1.2.1
           echo "2e6dd3bed96479332c4c8e4cab2505699ade418a07797f64ee0d4fa394555032  /tmp/randomx-src.tar.gz" | sha256sum -c -
           tar -xf /tmp/randomx-src.tar.gz -C /tmp
           cd /tmp/RandomX-1.2.1
@@ -114,7 +114,7 @@ jobs:
           WS="${GITHUB_WORKSPACE//\\//}"
           set -euo pipefail
           curl --fail --retry 6 --retry-delay 5 --retry-all-errors -L -o /tmp/randomx-src.tar.gz \
-            https://github.com/tevador/RandomX/archive/refs/tags/v1.2.1.tar.gz
+            https://codeload.github.com/tevador/RandomX/tar.gz/refs/tags/v1.2.1
           echo "2e6dd3bed96479332c4c8e4cab2505699ade418a07797f64ee0d4fa394555032  /tmp/randomx-src.tar.gz" | sha256sum -c -
           tar -xf /tmp/randomx-src.tar.gz -C /tmp
           cd /tmp/RandomX-1.2.1
@@ -190,7 +190,7 @@ jobs:
           mkdir -p "$PREFIX/lib" "$PREFIX/include"
           cp /tmp/randomx-linux/librandomx.a "$PREFIX/lib/"
           curl --fail -L -o /tmp/rx-src.tgz \
-            https://github.com/tevador/RandomX/archive/refs/tags/v1.2.1.tar.gz
+            https://codeload.github.com/tevador/RandomX/tar.gz/refs/tags/v1.2.1
           echo "2e6dd3bed96479332c4c8e4cab2505699ade418a07797f64ee0d4fa394555032  /tmp/rx-src.tgz" | sha256sum -c -
           tar -xf /tmp/rx-src.tgz -C /tmp
           cp /tmp/RandomX-1.2.1/src/randomx.h "$PREFIX/include/"
@@ -316,7 +316,7 @@ jobs:
           mkdir -p "$PREFIX/lib" "$PREFIX/include"
           cp /tmp/randomx-windows/librandomx.a "$PREFIX/lib/"
           curl --fail -L -o /tmp/rx-src.tgz \
-            https://github.com/tevador/RandomX/archive/refs/tags/v1.2.1.tar.gz
+            https://codeload.github.com/tevador/RandomX/tar.gz/refs/tags/v1.2.1
           echo "2e6dd3bed96479332c4c8e4cab2505699ade418a07797f64ee0d4fa394555032  /tmp/rx-src.tgz" | sha256sum -c -
           tar -xf /tmp/rx-src.tgz -C /tmp
           cp /tmp/RandomX-1.2.1/src/randomx.h "$PREFIX/include/"
