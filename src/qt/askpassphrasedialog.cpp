@@ -95,9 +95,10 @@ void AskPassphraseDialog::accept()
     switch(mode)
     {
     case Encrypt: {
-        if(newpass1.empty() || newpass2.empty())
+        if(newpass1.size() < 10 || newpass2.size() < 10)
         {
-            // Cannot encrypt with empty passphrase
+            QMessageBox::critical(this, tr("Wallet encryption failed"),
+                                 tr("The passphrase must be at least 10 characters long."));
             break;
         }
         QMessageBox::StandardButton retval = QMessageBox::question(this, tr("Confirm wallet encryption"),
@@ -184,6 +185,12 @@ void AskPassphraseDialog::accept()
         }
         break;
     case ChangePass:
+        if(newpass1.size() < 10 || newpass2.size() < 10)
+        {
+            QMessageBox::critical(this, tr("Wallet encryption failed"),
+                                 tr("The new passphrase must be at least 10 characters long."));
+            break;
+        }
         if(newpass1 == newpass2)
         {
             if(model->changePassphrase(oldpass, newpass1))
@@ -224,13 +231,16 @@ void AskPassphraseDialog::textChanged()
     switch(mode)
     {
     case Encrypt: // New passphrase x2
-        acceptable = !ui->passEdit2->text().isEmpty() && !ui->passEdit3->text().isEmpty();
+        acceptable = ui->passEdit2->text().size() >= 10 &&
+                     ui->passEdit3->text().size() >= 10;
         break;
     case Unlock: // Old passphrase x1
         acceptable = !ui->passEdit1->text().isEmpty();
         break;
     case ChangePass: // Old passphrase x1, new passphrase x2
-        acceptable = !ui->passEdit1->text().isEmpty() && !ui->passEdit2->text().isEmpty() && !ui->passEdit3->text().isEmpty();
+        acceptable = !ui->passEdit1->text().isEmpty() &&
+                     ui->passEdit2->text().size() >= 10 &&
+                     ui->passEdit3->text().size() >= 10;
         break;
     }
     ui->buttonBox->button(QDialogButtonBox::Ok)->setEnabled(acceptable);
