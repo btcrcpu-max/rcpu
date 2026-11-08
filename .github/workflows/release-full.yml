@@ -26,22 +26,6 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           fetch-depth: 0
-      - name: Verify signed release tag
-        if: github.event_name == 'push'
-        shell: bash
-        run: |
-          # M-9: a tag push alone is not authorization. Require an annotated,
-          # valid signature from the RCPU release key before any build starts.
-          gpg --batch --import "${GITHUB_WORKSPACE}/RCPU-DEV-GPG-KEY.asc"
-          # actions/checkout can leave only the commit ref for a tag event;
-          # fetch the annotated tag object itself before verification.
-          git fetch --tags --force origin
-          if ! git verify-tag --raw "${GITHUB_REF_NAME}" > /tmp/tagverify.txt 2>&1; then
-            cat /tmp/tagverify.txt
-            exit 1
-          fi
-          cat /tmp/tagverify.txt
-          grep -F "VALIDSIG 934D5BC95DD4B3ACFEF521B9547633501FE4B8EE" /tmp/tagverify.txt
       - id: check
         shell: bash
         run: |
@@ -58,6 +42,22 @@ jobs:
             echo "::notice::'$tag' is not a node release tag (expected vX.Y.Z with minor >= 1); skipping node builds. Miner releases use miner-v*."
           fi
           echo "ok=$ok" >> "$GITHUB_OUTPUT"
+      - name: Verify signed release tag
+        if: github.event_name == 'push' && steps.check.outputs.ok == 'true'
+        shell: bash
+        run: |
+          # M-9: a tag push alone is not authorization. Require an annotated,
+          # valid signature from the RCPU release key before any build starts.
+          gpg --batch --import "${GITHUB_WORKSPACE}/RCPU-DEV-GPG-KEY.asc"
+          # actions/checkout can leave only the commit ref for a tag event;
+          # fetch the annotated tag object itself before verification.
+          git fetch --tags --force origin
+          if ! git verify-tag --raw "${GITHUB_REF_NAME}" > /tmp/tagverify.txt 2>&1; then
+            cat /tmp/tagverify.txt
+            exit 1
+          fi
+          cat /tmp/tagverify.txt
+          grep -F "VALIDSIG 934D5BC95DD4B3ACFEF521B9547633501FE4B8EE" /tmp/tagverify.txt
   build-randomx-linux:
     needs: tag-guard
     if: needs.tag-guard.outputs.ok == 'true'
