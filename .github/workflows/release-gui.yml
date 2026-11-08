@@ -31,6 +31,9 @@ jobs:
           # M-9: a tag push alone is not authorization. Require an annotated,
           # valid signature from the RCPU release key before any build starts.
           gpg --batch --import "${GITHUB_WORKSPACE}/RCPU-DEV-GPG-KEY.asc"
+          # actions/checkout can leave only the commit ref for a tag event;
+          # fetch the annotated tag object itself before verification.
+          git fetch --tags --force origin
           if ! git verify-tag --raw "${GITHUB_REF_NAME}" > /tmp/tagverify.txt 2>&1; then
             cat /tmp/tagverify.txt
             exit 1
