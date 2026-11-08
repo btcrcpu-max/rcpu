@@ -13,6 +13,7 @@
 #include <consensus/amount.h>
 #include <consensus/tx_check.h>
 #include <consensus/validation.h>
+#include <confidential_validation.h>
 #include <core_io.h>
 #include <key.h>
 #include <policy/policy.h>
@@ -1191,6 +1192,37 @@ BOOST_AUTO_TEST_CASE(ct_taproot_sighash_single_binds_only_safe_outputs)
     txdata_explicit.Init(tx_explicit_const, std::move(spent_explicit), /*force=*/true);
     BOOST_CHECK(SignatureHashSchnorr(sighash, execdata, tx_explicit_const, 0, SIGHASH_SINGLE,
                                      SigVersion::TAPROOT, txdata_explicit, MissingDataBehavior::FAIL));
+}
+
+BOOST_AUTO_TEST_CASE(ct_nonce_shape_validation)
+{
+    CKey key;
+    key.MakeNewKey(true);
+    const CPubKey pub = key.GetPubKey();
+
+    CConfidentialNonce compressed;
+    compressed.vchCommitment.assign(pub.begin(), pub.end());
+    BOOST_CHECK(IsValidConfidentialNonce(compressed));
+
+    CConfidentialNonce null_nonce;
+    BOOST_CHECK(!IsValidConfidentialNonce(null_nonce));
+
+    CConfidentialNonce legacy;
+    legacy.vchCommitment.assign(33, 0x02);
+    BOOST_CHECK(!IsValidConfidentialNonce(legacy));
+
+    // Path C carries X only; the helper must reconstruct either y parity.
+    CConfidentialNonce xonly;
+    xonly.vchCommitment.resize(33);
+    xonly.vchCommitment[0] = 0x04;
+    std::copy(pub.begin() + 1, pub.end(), xonly.vchCommitment.begin() + 1);
+    BOOST_CHECK(IsValidConfidentialNonce(xonly));
+
+    // 0x03 with an off-curve X must not pass.
+    CConfidentialNonce off_curve;
+    off_curve.vchCommitment.assign(33, 0xff);
+    off_curve.vchCommitment[0] = 0x03;
+    BOOST_CHECK(!IsValidConfidentialNonce(off_curve));
 }
 
 BOOST_AUTO_TEST_SUITE_END()

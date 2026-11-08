@@ -79,6 +79,33 @@ bool VerifyRangeProof(const CTxOut& out)
 
 } // namespace
 
+bool IsValidConfidentialNonce(const CConfidentialNonce& nonce)
+{
+    const auto& nc = nonce.vchCommitment;
+    if (nc.size() != 33) return false;
+
+    secp256k1_context* ctx = GetCTContext();
+    secp256k1_pubkey pk;
+
+    if (nc[0] == 0x03) {
+        // Path B: full compressed ephemeral pubkey.
+        return secp256k1_ec_pubkey_parse(ctx, &pk, nc.data(), 33) == 1;
+    }
+    if (nc[0] == 0x04) {
+        // Path C: 0x04 || X. Reconstruct the compressed point by trying both
+        // y parities; at least one must be a valid curve point.
+        unsigned char ser[33];
+        ser[0] = 0x02;
+        std::memcpy(&ser[1], &nc[1], 32);
+        if (secp256k1_ec_pubkey_parse(ctx, &pk, ser, sizeof(ser)) == 1) return true;
+        ser[0] = 0x03;
+        return secp256k1_ec_pubkey_parse(ctx, &pk, ser, sizeof(ser)) == 1;
+    }
+    // 0x00 (null/shape), 0x01 (explicit), 0x02 (legacy Path A plaintext
+    // nonce) and anything else are not acceptable confidential nonces.
+    return false;
+}
+
 bool VerifyAmounts(const std::vector<CTxOut>& inputs, const CTransaction& tx, CAmount& txfee_out)
 {
     assert(!tx.IsCoinBase());

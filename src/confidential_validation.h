@@ -29,4 +29,19 @@
  */
 bool VerifyAmounts(const std::vector<CTxOut>& inputs, const CTransaction& tx, CAmount& txfee_out);
 
+/**
+ * Validate the nonce commitment of a confidential output.
+ *
+ * Accepted shapes (from nBanPathAHeight onward, see CheckTxInputs):
+ *   - 0x03 || X: a compressed ephemeral public key; X must be on the curve.
+ *   - 0x04 || X: an x-only ephemeral key (Path C); either 02||X or 03||X must
+ *     parse as a compressed public key.
+ *
+ * A null nonce, 0x02 (legacy Path A plaintext nonce), or an off-curve X is
+ * rejected.  The point is not required to belong to the recipient: binding a
+ * nonce to a script is a wallet/payment-protocol concern; consensus only
+ * enforces that the encoding can be unblinded at all.
+ */
+bool IsValidConfidentialNonce(const CConfidentialNonce& nonce);
+
 #endif // BITCOIN_CONFIDENTIAL_VALIDATION_H
