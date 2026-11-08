@@ -1720,14 +1720,17 @@ std::vector<std::optional<CPubKey>> recipient_keys;
                 recipient_keys.push_back(pubkey);
             }
         }
-        // RCPU H-1 wallet-side: from nBanPathAHeight onward -ctlegacy=1 must
-        // fail at the wallet instead of producing a transaction the network
-        // would reject (bad-ct-legacy-nonce). Without -ctlegacy no Path A
-        // output can be created anymore (bare addresses are emitted explicit
-        // since H-1), so the gate only restricts the legacy flag. testnet has
-        // nBanPathAHeight=0 (Path A banned from genesis); mainnet keeps
-        // nBanPathAHeight=12748 since v1.1.10. The soft fork was activated at
-        // that height; -ctlegacy is now rejected at and above 12748.
+        // RCPU H-1 wallet-side: from nBanPathAHeight (or the stricter
+        // nCTStrictRulesHeight) onward -ctlegacy=1 must fail at the wallet
+        // instead of producing a transaction the network would reject
+        // (bad-ct-legacy-nonce / bad-ct-nonce-point). Without -ctlegacy no
+        // Path A output can be created anymore (bare addresses are emitted
+        // explicit since H-1), so the gate only restricts the legacy flag.
+        // testnet has nBanPathAHeight=0 (Path A banned from genesis); mainnet
+        // keeps nBanPathAHeight=12748 since v1.1.10, and M-1 adds
+        // nCTStrictRulesHeight for the on-curve rule. Regtest has
+        // nBanPathAHeight=INT_MAX but nCTStrictRulesHeight=0, so the strict
+        // height check is required there too.
         //
         // RCPU P2-3: an all-explicit spend (every input unblinded, every
         // output plaintext) has no confidentiality at all. Emitting it as v3
@@ -1744,9 +1747,17 @@ std::vector<std::optional<CPubKey>> recipient_keys;
                                   all_outputs_explicit && all_inputs_explicit;
         txNew.nVersion = use_plain_v2 ? CTransaction::CURRENT_VERSION : CT_VERSION;
         if (txNew.nVersion == CT_VERSION) {
-            if (gArgs.GetBoolArg("-ctlegacy", false) &&
-                wallet.GetLastBlockHeight() >= Params().GetConsensus().nBanPathAHeight) {
-                return util::Error{_("Path-A (plaintext-nonce) outputs are banned at this height; use a confidential rcpux1... address instead of -ctlegacy")};
+            if (gArgs.GetBoolArg("-ctlegacy", false)) {
+                const auto& consensus = Params().GetConsensus();
+                const int height = wallet.GetLastBlockHeight();
+                // nBanPathAHeight covers the historical 0x02 ban; the stricter
+                // M-1 rule (nCTStrictRulesHeight) also rejects 0x02 because it
+                // is not a valid nonce point. Refuse Path A at either height,
+                // otherwise -ctlegacy could build a consensus-invalid tx on
+                // regtest (nBanPathAHeight=INT_MAX, strict height=0).
+                if (height >= consensus.nBanPathAHeight || height >= consensus.nCTStrictRulesHeight) {
+                    return util::Error{_("Path-A (plaintext-nonce) outputs are banned at this height; use a confidential rcpux1... address instead of -ctlegacy")};
+                }
             }
             // RCPU CT: the fee estimated above is only a coin-selection
             // target. The real serialized size of a CT transaction depends on
