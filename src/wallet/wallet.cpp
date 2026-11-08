@@ -3565,6 +3565,13 @@ void CWallet::CacheCTUnblindedAmounts()
     // unlocked, UnblindConfidentialOutput() recomputes values on demand.
     if (IsCrypted()) {
         PurgeCTPlaintextMetadata();
+        // M-5: no plaintext cache exists, so the in-memory amount caches must
+        // be invalidated on every lock/unlock. Otherwise a locked wallet can
+        // keep a stale 0 (or a value from the previous unlocked session) after
+        // unlock, because CWalletTx::m_amounts would not be recomputed.
+        for (auto& item : mapWallet) {
+            item.second.MarkDirty();
+        }
         return;
     }
     WalletBatch batch(GetDatabase());
