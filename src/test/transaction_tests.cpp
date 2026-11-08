@@ -1202,6 +1202,9 @@ BOOST_AUTO_TEST_CASE(ct_nonce_shape_validation)
 
     CConfidentialNonce compressed;
     compressed.vchCommitment.assign(pub.begin(), pub.end());
+    // Path B requires the 0x03 compressed form. If the test key has even Y,
+    // flip only the prefix: the same X with odd Y is still a valid point.
+    compressed.vchCommitment[0] = 0x03;
     BOOST_CHECK(IsValidConfidentialNonce(compressed));
 
     CConfidentialNonce null_nonce;
