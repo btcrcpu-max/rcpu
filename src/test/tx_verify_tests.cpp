@@ -524,4 +524,65 @@ BOOST_AUTO_TEST_CASE(explicit_zero_gated_by_strict_height)
     g_con_elementsmode = old_ct_mode;
 }
 
+// RCPU M-1: from nCTStrictRulesHeight a confidential output must carry a
+// non-null, on-curve nonce. CheckTxInputs is the shared enforcement point for
+// both the mempool path (validation.cpp test-accept, spend height = tip + 1)
+// and the block path (ConnectBlock), so covering it here covers both.
+BOOST_AUTO_TEST_CASE(strict_nonce_rules_reject_null_and_bad_points)
+{
+    const COutPoint prevout{TxidFromString("0xffff"), 0};
+
+    CCoinsViewTest base;
+    base.Add(prevout, MakeCommitmentCoin(1000 * COIN));
+    CCoinsViewCache view{&base};
+
+    const bool old_ct_mode = g_con_elementsmode;
+    g_con_elementsmode = true;
+
+    const auto expect_reject = [&](const std::vector<unsigned char>& nonce, const char* reason) {
+        CMutableTransaction mtx;
+        mtx.nVersion = CT_VERSION;
+        mtx.vin.emplace_back(CTxIn(prevout, CScript(), 0xffffffff));
+
+        CTxOut out;
+        uint256 blind, out_nonce;
+        BOOST_REQUIRE(BlindOutput(out.nValue, out.nNonce, out.vchRangeproof, blind, out_nonce, 500 * COIN));
+        out.scriptPubKey = CScript() << OP_TRUE;
+        out.nNonce.vchCommitment = nonce;
+        mtx.vout.push_back(out);
+
+        CTxOut fee;
+        fee.nValue.SetToAmount(500 * COIN);
+        mtx.vout.push_back(fee);
+
+        const CTransaction tx{mtx};
+        TxValidationState state;
+        CAmount fee_out = -1;
+        BOOST_CHECK(!Consensus::CheckTxInputs(tx, state, view, /*nSpendHeight=*/300, fee_out,
+            /*nCTActivationHeight=*/0, /*nBanPathAHeight=*/0, /*nCTStrictRulesHeight=*/200));
+        BOOST_CHECK_EQUAL(state.GetRejectReason(), reason);
+    };
+
+    // Null nonce: the recipient cannot rewind the output.
+    expect_reject({}, "bad-ct-nonce-missing");
+
+    // Legacy 0x02 (Path A plaintext nonce) prefix, even over a valid curve X.
+    // X of the secp256k1 generator is a valid point, so only the prefix rule
+    // can reject it.
+    std::vector<unsigned char> legacy{0x02};
+    legacy.insert(legacy.end(), {
+        0x79, 0xbe, 0x66, 0x7e, 0xf9, 0xdc, 0xbb, 0xac,
+        0x55, 0xa0, 0x62, 0x95, 0xce, 0x87, 0x0b, 0x07,
+        0x02, 0x9b, 0xfc, 0xdb, 0x2d, 0xce, 0x28, 0xd9,
+        0x59, 0xf2, 0x81, 0x5b, 0x16, 0xf8, 0x17, 0x98});
+    expect_reject(legacy, "bad-ct-nonce-point");
+
+    // 0x03 prefix with an off-curve X (all 0xff exceeds the field prime).
+    std::vector<unsigned char> off_curve{0x03};
+    off_curve.insert(off_curve.end(), 32, 0xff);
+    expect_reject(off_curve, "bad-ct-nonce-point");
+
+    g_con_elementsmode = old_ct_mode;
+}
+
 BOOST_AUTO_TEST_SUITE_END()
