@@ -487,6 +487,11 @@ static uint32_t GetDualAlgoWorkRequired(const CBlockIndex* pindexLast,
         return refTarget.GetCompact();
     }
 
+    // L-4: a misconfigured chain must not divide by zero in CalculateASERT.
+    if (params.nASERTHalfLife <= 0 || params.nDualAlgoTargetSpacing <= 0) {
+        return powLimit.GetCompact();
+    }
+
     // Special difficulty rule for testnet (mirrors the single-algo ASERT path).
     // Deliberately keeps nPowTargetSpacing (not nDualAlgoTargetSpacing): this
     // branch is a consensus rule on the chains where fPowAllowMinDifficultyBlocks
@@ -1198,6 +1203,9 @@ std::optional<PowAlgo> GetPowAlgoForHeader(int64_t nHeight, int32_t nVersion, co
 int64_t GetEtchashEpoch(int64_t nHeight, const Consensus::Params& params)
 {
     if (nHeight < 0 || nHeight < params.nDualAlgoActivationHeight) {
+        return -1;
+    }
+    if (params.nEtchashEpochLength <= 0) {
         return -1;
     }
     return (nHeight - params.nDualAlgoActivationHeight) / params.nEtchashEpochLength;

@@ -236,8 +236,8 @@ struct Params {
      * parameter is the versioning guard if the header layout ever grows
      */
     /** Used by the ASERT DAA */
-    int nASERTActivationHeight; // Block height at which ASERT DAA becomes active, if asertAnchorParams is set.
-    int64_t nASERTHalfLife;
+    int nASERTActivationHeight{0}; // Block height at which ASERT DAA becomes active, if asertAnchorParams is set.
+    int64_t nASERTHalfLife{0};
     struct ASERTAnchor {
         int nHeight;
         uint32_t nBits;

@@ -921,7 +921,7 @@ bool AppInitParameterInteraction(const ArgsManager& args)
     // For RCPU networks, CT is enabled by default (consensus rule active from
     // genesis: Consensus::Params::nCTActivationHeight = 0).
     // For non-RCPU networks, CT is off by default and can be enabled with -ctmode.
-bool fDefaultCT = (chainparams.GetChainType() == ChainType::RCPUMAIN || chainparams.GetChainType() == ChainType::TESTNET || chainparams.GetChainType() == ChainType::RCPUTESTNET || chainparams.GetChainType() == ChainType::REGTEST || chainparams.GetChainType() == ChainType::RCPUREGTEST);
+bool fDefaultCT = (chainparams.GetChainType() == ChainType::RCPUMAIN || chainparams.GetChainType() == ChainType::RCPUTESTNET || chainparams.GetChainType() == ChainType::RCPUREGTEST);
     g_con_elementsmode = args.GetBoolArg("-ctmode", fDefaultCT);
     // RCPU hardening (P0-3): CT is a consensus rule on RCPU mainnet and
     // testnet (active from genesis), so -ctmode=0 must NOT be allowed to

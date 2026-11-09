@@ -1583,58 +1583,12 @@ CTxOut txout(recipient.nAmount, GetScriptForDestination(recipient.dest));
             const bool has_conf_recipient = std::any_of(vecSend.begin(), vecSend.end(),
                 [](const CRecipient& r) { return std::get_if<ConfidentialKeyHash>(&r.dest) != nullptr; });
             if (has_blinded_input && !has_conf_recipient) {
-                // Reuse the already-reserved change destination when its
-                // blinding key resolved; otherwise (foreign destChange or a
-                // failed reservation) reserve a fresh confidential address.
-                if (!change_key) {
-                    inj_reservedest = std::make_unique<ReserveDestination>(&wallet, OutputType::CONFIDENTIAL);
-                    if (auto op_dest = inj_reservedest->GetReservedDestination(true)) {
-                        CTxDestination dest{*op_dest};
-                        resolve_change_key(dest);
-                        if (change_key) {
-                            scriptChange = GetScriptForDestination(dest);
-                        }
-                    }
-                }
-                if (change_key && !scriptChange.empty()) {
-                    const CTxOut proto(0, scriptChange);
-                    const CAmount out_dust = GetDustThreshold(proto, wallet.chain().relayDustFee());
-                    SizeComputer sc;
-                    proto.Serialize(sc, false);
-                    const int out_size = sc.size() + EstimatedBlindedOutputDelta(out_dust);
-                    const CAmount out_fee = coin_selection_params.m_effective_feerate.GetFee(out_size);
-                    const CAmount reduction = out_dust + out_fee;
-                    // Fund from the largest recipient output that stays above
-                    // its own dust threshold after the reduction.
-                    std::vector<size_t> order(txNew.vout.size());
-                    std::iota(order.begin(), order.end(), size_t{0});
-                    std::sort(order.begin(), order.end(), [&](size_t a, size_t b) {
-                        return txNew.vout[a].nValue.GetAmount() > txNew.vout[b].nValue.GetAmount();
-                    });
-                    bool funded{false};
-                    for (const size_t oi : order) {
-                        CTxOut& payee = txNew.vout[oi];
-                        if (!payee.nValue.IsExplicit()) continue;
-                        const CAmount before = payee.nValue.GetAmount();
-                        if (before - reduction <= 0) continue;
-                        if (IsDust(CTxOut(before - reduction, payee.scriptPubKey), wallet.chain().relayDustFee())) continue;
-                        payee.nValue = before - reduction;
-                        const unsigned int pos = rng_fast.randrange(txNew.vout.size() + 1);
-                        txNew.vout.insert(txNew.vout.begin() + pos, CTxOut(out_dust, scriptChange));
-                        change_pos = pos;
-                        // Track where the reduced payee ended up: inserting at
-                        // pos shifts every output from pos onwards by one.
-                        injected_change_funding_pos = (pos <= oi) ? oi + 1 : oi;
-                        current_fee = result.GetSelectedValue() - CalculateOutputValue(txNew);
-                        funded = true;
-                        break;
-                    }
-                    if (!funded) {
-                        return util::Error{_("Spending confidential inputs requires a blinded balancing output, but no recipient output can fund the dust change")};
-                    }
-                }
-                // No wallet-owned confidential change key available: fall
-                // through and let BlindTransaction fail closed as before.
+                // RCPU M-3: do not silently reduce the recipient to fund a
+                // dust balancing output. The old fallback changed the payee
+                // amount after fee calculation and could break sendall's
+                // "empty the wallet" semantics. Require an explicit change
+                // output or a confidential recipient instead.
+                return util::Error{_("Confidential inputs cannot pay an explicit recipient without a confidential change output; add change or use a confidential recipient")};
             }
         }
 std::vector<uint256> output_blinds, output_nonces;

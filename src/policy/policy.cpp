@@ -153,9 +153,10 @@ bool IsStandardTx(const CTransaction& tx, const std::optional<unsigned>& max_dat
     unsigned int nDataOut = 0;
     TxoutType whichType;
     for (const CTxOut& txout : tx.vout) {
-        if (txout.IsFee()) {
+        if (tx.nVersion == CT_VERSION && txout.IsFee()) {
             // RCPU CT: fee outputs have an empty scriptPubKey and are excluded
-            // from the UTXO set; skip standardness checks for them.
+            // from the UTXO set; skip standardness checks for them. Restrict
+            // the exemption to the confidential transaction version.
             continue;
         }
         if (!::IsStandard(txout.scriptPubKey, max_datacarrier_bytes, whichType)) {
