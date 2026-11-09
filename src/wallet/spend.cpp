@@ -1091,7 +1091,17 @@ static util::Result<CreatedTransactionResult> CreateTransactionInternal(
         }
         return false;
     }()};
-    const OutputType change_type = wallet.TransactionChangeType(coin_control.m_change_type ? *coin_control.m_change_type : wallet.m_default_change_type, vecSend, has_conf_utxo);
+    const bool conf_change{g_con_elementsmode && !gArgs.GetBoolArg("-ctlegacy", false)};
+    const bool has_conf_recipient = std::any_of(vecSend.begin(), vecSend.end(),
+        [](const CRecipient& r) { return std::get_if<ConfidentialKeyHash>(&r.dest) != nullptr; });
+    OutputType change_type = wallet.TransactionChangeType(coin_control.m_change_type ? *coin_control.m_change_type : wallet.m_default_change_type, vecSend, has_conf_utxo);
+    // RCPU M-2: an all-explicit input set must not end up with a single
+    // confidential output (blind 0 leaks the amount). If a confidential
+    // recipient is present, make the change confidential too so the blind
+    // sum has a random pair instead of relying on a zero blind.
+    if (conf_change && has_conf_recipient) {
+        change_type = OutputType::CONFIDENTIAL;
+    }
     ReserveDestination reservedest(&wallet, change_type);
     unsigned int outputs_to_subtract_fee_from = 0; // The number of outputs which we are subtracting the fee from
     for (const auto& recipient : vecSend) {
@@ -1158,7 +1168,6 @@ static util::Result<CreatedTransactionResult> CreateTransactionInternal(
             }
         }
     };
-    const bool conf_change{g_con_elementsmode && !gArgs.GetBoolArg("-ctlegacy", false)};
 
     // coin control: send change to custom address
     if (!std::get_if<CNoDestination>(&coin_control.destChange)) {
