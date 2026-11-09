@@ -1,4 +1,4 @@
-// Copyright (c) 2021-2022 The Bitcoin Core developers
+﻿// Copyright (c) 2021-2022 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -781,7 +781,7 @@ util::Result<SelectionResult> ChooseSelectionResult(interfaces::Chain& chain, co
         results.push_back(*knapsack_result);
     } else append_error(knapsack_result);
 
-    if (coin_selection_params.m_effective_feerate > CFeeRate{3 * coin_selection_params.m_long_term_feerate}) { // Minimize input set for feerates of at least 3×LTFRE (default: 30 ṩ/vB+)
+    if (coin_selection_params.m_effective_feerate > CFeeRate{3 * coin_selection_params.m_long_term_feerate}) { // Minimize input set for feerates of at least 3脳LTFRE (default: 30鈥供/vB+)
         if (auto cg_result{CoinGrinder(groups.positive_group, nTargetValue, coin_selection_params.m_min_change_target, max_inputs_weight)}) {
             cg_result->ComputeAndSetWaste(coin_selection_params.min_viable_change, coin_selection_params.m_cost_of_change, coin_selection_params.m_change_fee);
             results.push_back(*cg_result);
@@ -1172,7 +1172,7 @@ static util::Result<CreatedTransactionResult> CreateTransactionInternal(
     // coin control: send change to custom address
     if (!std::get_if<CNoDestination>(&coin_control.destChange)) {
         CTxDestination destChange = coin_control.destChange;
-        if (conf_change) {
+        if (conf_change && (has_conf_utxo || has_conf_recipient)) {
             resolve_change_key(destChange);
         }
         scriptChange = GetScriptForDestination(destChange);
@@ -1192,7 +1192,7 @@ static util::Result<CreatedTransactionResult> CreateTransactionInternal(
             error = _("Transaction needs a change address, but we can't generate it.") + Untranslated(" ") + util::ErrorString(op_dest);
 } else {
             dest = *op_dest;
-            if (conf_change) {
+            if (conf_change && (has_conf_utxo || has_conf_recipient)) {
                 resolve_change_key(dest);
             }
             scriptChange = GetScriptForDestination(dest);
@@ -1572,7 +1572,7 @@ CTxOut txout(recipient.nAmount, GetScriptForDestination(recipient.dest));
             }
         }
         // RCPU CT: a v3 transaction spending blinded inputs must carry at
-        // least one blinded output — with all-explicit outputs the Pedersen
+        // least one blinded output 鈥?with all-explicit outputs the Pedersen
         // tally cannot balance (bad-txns-ct-balance) and BlindTransaction
         // fails closed. The exact-spend case (coin selection produced no
         // change) paying only bare rcpu1... recipients hit precisely that
@@ -1607,8 +1607,8 @@ std::vector<uint256> output_blinds, output_nonces;
         // key cannot be resolved (e.g. a foreign P2WPKH/P2PKH address this
         // wallet does not own) is emitted as an explicit plaintext output
         // (H-1: Path A is no longer used from the wallet).
-        // Resolved pubkey (rcpux1 / own change) → Path C (0x04).
-        // Unresolved pubkey (bare rcpu1) → explicit plaintext output
+        // Resolved pubkey (rcpux1 / own change) 鈫?Path C (0x04).
+        // Unresolved pubkey (bare rcpu1) 鈫?explicit plaintext output
         // (H-1 policy: never fall back to Path A from the wallet; a bare
         // address gets an unblinded output instead of a rewind-nonce
         // commitment). Explicit outputs keep their plaintext value, empty
@@ -1645,7 +1645,7 @@ std::vector<std::optional<CPubKey>> recipient_keys;
                 // (nonce 0x04, path C) and the sender's record keeps the
                 // rcpux1 address. The change slot is never matched against
                 // vecSend: with no resolved change key it is emitted explicit
-                // (plaintext) — never Path A. Fee / empty-script outputs are
+                // (plaintext) 鈥?never Path A. Fee / empty-script outputs are
                 // appended after BlindTransaction and can never reach this
                 // vector.
                 if (change_pos && *change_pos == vi) {
@@ -1670,7 +1670,7 @@ std::vector<std::optional<CPubKey>> recipient_keys;
                     }
                 }
                 // No pubkey (bare rcpu1 / foreign script / unresolvable change
-                // key): H-1 policy — emit an explicit plaintext output instead
+                // key): H-1 policy 鈥?emit an explicit plaintext output instead
                 // of falling back to Path A (0x02 rewind-nonce commitment).
                 // BlindTransaction keeps such outputs unblinded (plaintext
                 // value, empty nonce, no range proof); they do not take part
@@ -2004,3 +2004,4 @@ util::Result<CreatedTransactionResult> FundTransaction(CWallet& wallet, const CM
     return res;
 }
 } // namespace wallet
+
