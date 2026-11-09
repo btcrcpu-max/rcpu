@@ -51,11 +51,12 @@ class BumpfeeUnavailableTest(BitcoinTestFramework):
         assert len(payer_outs) == 1, \
             f"expected one explicit output to {explicit_dest}: {decoded_a['vout']}"
         assert_equal(payer_outs[0]["value"], Decimal("10"))
-        # resolve_change_key() upgrades wallet-owned change to Path C regardless
-        # of the address format, so this is a mixed tx (explicit recipient plus
-        # confidential change), not an all-explicit one.
-        assert any(o["value"] == "confidential" for o in decoded_a["vout"]), \
-            f"expected confidential change: {decoded_a['vout']}"
+        # The wallet holds only explicit coinbase UTXOs and the recipient is a
+        # plain rcpu1 address, so change stays explicit and a plain v2
+        # transaction is built. Forcing a single confidential output here would
+        # have blind 0 and leak the amount (M-2).
+        assert all(o["value"] != "confidential" for o in decoded_a["vout"]), \
+            f"expected all-explicit outputs: {decoded_a['vout']}"
         assert_raises_rpc_error(-8, "RBF is not supported.", wallet.bumpfee, explicit_txid)
 
         self.log.info("bumpfee refuses a confidential transaction")
