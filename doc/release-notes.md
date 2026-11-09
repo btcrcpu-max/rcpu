@@ -2,6 +2,7 @@
 
 RCPU Core release notes live in [doc/release-notes/](release-notes/):
 
+- [v1.4.7](release-notes/v1.4.7.md) — Security follow-up: M-2 zero-blind/single-CT fail-closed, M-3 silent payee reduction removed, M-4 Etchash nBits precheck, M-5 large-CT wallet bound, L-2..L-6 hardening, M-1 nonce regression test. No consensus parameter change.
 - [v1.4.6](release-notes/v1.4.6.md) — Security follow-up: v3 ECDSA `SIGHASH_SINGLE` is now rejected too (v1.4.5 only covered Schnorr); release publishing is restricted to signed tag pushes. No consensus parameter change.
 - [v1.4.5](release-notes/v1.4.5.md) — Released security release: v3 Taproot SIGHASH_SINGLE is rejected immediately; CT nonce/zero-value rules activate at `nCTStrictRulesHeight` (27,326); wallet plaintext CT amount cache removed; CI/release supply-chain hardening. Superseded by v1.4.6 for the ECDSA H-1 path.
 - [v1.4.4](release-notes/v1.4.4.md) — GUI wallet security hardening: new wallets encrypted by default, KDF 1,000,000 rounds, minimum passphrase length, 10-minute idle auto-lock, explicit localhost RPC binding. No consensus change.
