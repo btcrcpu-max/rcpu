@@ -999,6 +999,11 @@ bool CCoinsViewMemPool::GetCoin(const COutPoint &outpoint, Coin &coin) const {
     CTransactionRef ptx = mempool.get(outpoint.hash);
     if (ptx) {
         if (outpoint.n < ptx->vout.size()) {
+            // RCPU L-2: fee outputs are not coins in the real UTXO set.
+            // Do not expose them through the mempool view, or a child that
+            // spends a fee output can enter the mempool but can never be
+            // mined.
+            if (ptx->vout[outpoint.n].IsFee()) return false;
             coin = Coin(ptx->vout[outpoint.n], MEMPOOL_HEIGHT, false);
             m_non_base_coins.emplace(outpoint);
             return true;
@@ -1012,6 +1017,7 @@ bool CCoinsViewMemPool::GetCoin(const COutPoint &outpoint, Coin &coin) const {
 void CCoinsViewMemPool::PackageAddTransaction(const CTransactionRef& tx)
 {
     for (unsigned int n = 0; n < tx->vout.size(); ++n) {
+        if (tx->vout[n].IsFee()) continue;
         m_temp_added.emplace(COutPoint(tx->GetHash(), n), Coin(tx->vout[n], MEMPOOL_HEIGHT, false));
         m_non_base_coins.emplace(tx->GetHash(), n);
     }

@@ -314,6 +314,7 @@ BOOST_AUTO_TEST_CASE(blind_tx_last_output_is_fee)
     tx.vout.push_back(MakeFeeOut(12345));
 
     std::vector<uint256> in_blinds(1);
+    in_blinds[0] = uint256::ONE; // non-zero confidential input blind
     std::vector<uint256> out_blinds;
     std::vector<uint256> out_nonces;
     BOOST_REQUIRE(BlindTransaction(in_blinds, tx, out_blinds, out_nonces));
@@ -357,6 +358,18 @@ BOOST_AUTO_TEST_CASE(blind_tx_single_ct_no_input_blinds)
     BOOST_REQUIRE(UnblindValue(tx.vout[0].nValue, tx.vout[0].nNonce,
                                tx.vout[0].vchRangeproof, a, b));
     BOOST_CHECK_EQUAL(a, 1000);
+}
+
+BOOST_AUTO_TEST_CASE(blind_tx_single_ct_zero_input_blind_fails)
+{
+    CMutableTransaction tx;
+    tx.vin.emplace_back(COutPoint(Txid::FromUint256(uint256::ONE), 0));
+    tx.vout.push_back(MakeExplicitOut(1000));
+    // All-explicit inputs are represented by a zero blind. A single
+    // confidential output would balance with blind 0 and leak C = v*H.
+    std::vector<uint256> in_blinds(1);
+    std::vector<uint256> out_blinds, out_nonces;
+    BOOST_CHECK(!BlindTransaction(in_blinds, tx, out_blinds, out_nonces));
 }
 
 BOOST_AUTO_TEST_CASE(blind_tx_empty_vout)

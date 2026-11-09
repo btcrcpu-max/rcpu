@@ -4629,7 +4629,15 @@ bool ChainstateManager::ProcessNewBlock(const std::shared_ptr<const CBlock>& blo
             // merkle/transaction validation path before it is discarded.
             state.Invalid(BlockValidationResult::BLOCK_MISSING_PREV, "prev-blk-not-found");
         } else {
-            ret = CheckBlock(*block, state, GetConsensus(), /*fCheckPOW=*/true, /*fCheckMerkleRoot=*/true, pindex_prev ? pindex_prev->nHeight + 1 : -1);
+            // M-4: check contextual difficulty before CheckBlock performs the
+            // expensive Etchash HashimotoLight. Otherwise a peer can force
+            // repeated full proofs with an invalid nBits header that is only
+            // rejected later by AcceptBlock.
+            if (pindex_prev && !ContextualCheckBlockHeader(block->GetBlockHeader(), state, m_blockman, *this, pindex_prev)) {
+                ret = false;
+            } else {
+                ret = CheckBlock(*block, state, GetConsensus(), /*fCheckPOW=*/true, /*fCheckMerkleRoot=*/true, pindex_prev ? pindex_prev->nHeight + 1 : -1);
+            }
         }
         if (ret) {
             // Store to disk

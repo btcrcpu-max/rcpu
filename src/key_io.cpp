@@ -408,6 +408,7 @@ bool IsValidDestinationString(const std::string& str)
 bool IsConfidentialAddress(const std::string& str, const CChainParams& params)
 {
     const std::string& hrp = params.ConfidentialBech32HRP();
+    if (hrp.empty()) return false;
     return str.size() > hrp.size() + 1 &&
            ToLower(str.substr(0, hrp.size())) == hrp &&
            str[hrp.size()] == '1';

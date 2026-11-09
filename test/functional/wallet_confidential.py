@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 # Copyright (c) 2026 The RCPU Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
@@ -290,16 +290,12 @@ class WalletConfidentialTest(BitcoinTestFramework):
             options={"change_address": bech32_addr},
         )
 
-        # ---- 7e. Exact spend (no change) from a confidential input to a bare address ----
-        # Regression for the reported wallet bug: a wallet whose only UTXO is
-        # confidential sending its full balance (subtractfeefromamount, so coin
-        # selection plans no change output) to a bare rcpu1 address used to
-        # fail with "Confidential transaction blinding failed" — every output
-        # explicit, nothing to absorb the input's blinding factor — while the
-        # same send to an rcpux1 address succeeded. CreateTransaction now
-        # injects a dust-sized wallet-owned confidential change output (funded
-        # from the recipient output) so the blind sum balances.
-        self.log.info("Exact spend from a confidential UTXO to a bare address auto-adds a balancing output")
+        # ---- 7e. Exact spend to a bare address must fail closed ----
+        # M-3: a confidential input paying an explicit recipient with no
+        # change has no blinded output to absorb the input's blind factor.
+        # The old wallet injected a dust output funded by silently reducing
+        # the payee; now it returns a clear error instead.
+        self.log.info("Exact spend from a confidential UTXO to a bare address fails closed")
         self.restart_node(0, extra_args=["-changetype=confidential"])
         node.loadwallet("mixer")
         mixer = node.get_wallet_rpc("mixer")
@@ -309,63 +305,34 @@ class WalletConfidentialTest(BitcoinTestFramework):
         mixer.sendtoaddress(sweeper_conf, Decimal("0.2"))
         self.generatetoaddress(node, 1, mixer.getnewaddress("", "bech32"))
         assert_equal(sweeper.getbalance(), Decimal("0.2"))
-        # Spend the full balance with the fee taken out of the recipient
-        # amount: coin selection finds an exact match and plans no change.
-        txid7e = sweeper.sendtoaddress(bech32_addr, Decimal("0.2"), "", "", True)
-        decoded7e = node.getrawtransaction(txid7e, True)
-        target7e = None
-        for o in decoded7e["vout"]:
-            spk = o["scriptPubKey"]
-            if bech32_addr == spk.get("address") or bech32_addr in spk.get("addresses", []):
-                target7e = o
-                break
-        assert target7e is not None, f"no vout pays {bech32_addr}: {decoded7e['vout']}"
-        assert not isinstance(target7e["value"], str), f"bare target must be explicit, got {target7e['value']}"
-        assert target7e["value"] < Decimal("0.2"), f"fee+dust must come out of the target: {target7e['value']}"
-        # The injected balancing output is a wallet-owned Path-C change output.
-        change7e = [o for o in decoded7e["vout"] if o["value"] == "confidential"]
-        assert change7e, f"expected injected confidential balancing output: {decoded7e['vout']}"
-        # vout layout: explicit payee + injected change + explicit fee output
-        # (empty scriptPubKey).
-        fee7e = [o for o in decoded7e["vout"] if o["scriptPubKey"].get("hex", "x") == ""]
-        assert fee7e, f"expected explicit fee output: {decoded7e['vout']}"
-        assert_equal(len(decoded7e["vout"]), 3)
-        # Confirm the 7e spend so the unconfirmed payment to bech32_addr does
-        # not leak into the balance assertions of the sections below.
-        self.generatetoaddress(node, 1, mixer.getnewaddress("", "bech32"))
+        assert_raises_rpc_error(
+            -6,
+            "Confidential inputs cannot pay an explicit recipient without a confidential change output",
+            sweeper.sendtoaddress, bech32_addr, Decimal("0.2"), "", "", True,
+        )
         self.sync_all()
 
-        # ---- 7f. sendall sweeps confidential UTXOs ----
+        # ---- 7f. sendall to a bare address must fail closed; confidential target works ----
         # Regression for the reported wallet bug: sendall counted confidential
         # (blinded) inputs as 0, so a wallet whose UTXOs were confidential
-        # always failed with "Total value of UTXO pool too low" (or built a
-        # consensus-invalid v2 spend when construction got that far). sendall
-        # now resolves the real input values and routes through
-        # CreateTransaction whenever any input or recipient is confidential.
+        # always failed with "Total value of UTXO pool too low". sendall now
+        # resolves real values, but an explicit bare target with no change is
+        # still rejected by M-3 rather than silently reducing the payee.
         self.log.info("sendall sweeps a confidential-only wallet")
         node.createwallet(wallet_name="sweepall", descriptors=True)
         sweepall = node.get_wallet_rpc("sweepall")
         sweepall_conf = sweepall.getnewaddress("", "confidential")
-        # 7b and 7e already spent most of the mixer's 0.3; mine directly to it.
         self.generatetoaddress(node, 101, mixer.getnewaddress("", "bech32"))
         mixer.sendtoaddress(sweepall_conf, Decimal("0.2"))
         self.generatetoaddress(node, 1, mixer.getnewaddress("", "bech32"))
         assert_equal(sweepall.getbalance(), Decimal("0.2"))
-        # Sweep to a bare rcpu1 address: the payee output is explicit and a
-        # dust-sized wallet-owned confidential balancing output is injected.
-        sweep_res = sweepall.sendall([mixer.getnewaddress("", "bech32")])
-        assert_equal(sweep_res["complete"], True)
-        sweep_tx = node.getrawtransaction(sweep_res["txid"], True)
-        assert_equal(sweep_tx["version"], 3)
-        assert any(o["scriptPubKey"].get("hex", "x") == "" for o in sweep_tx["vout"]), f"no explicit fee output: {sweep_tx['vout']}"
-        assert any(o["value"] == "confidential" for o in sweep_tx["vout"]), f"no confidential balancing output: {sweep_tx['vout']}"
-        self.generatetoaddress(node, 1, mixer.getnewaddress("", "bech32"))
-        # Only the dust balancing change remains in the wallet.
-        assert sweepall.getbalance() < Decimal("0.0001"), sweepall.getbalance()
+        assert_raises_rpc_error(
+            -4,
+            "Confidential inputs cannot pay an explicit recipient without a confidential change output",
+            sweepall.sendall, [mixer.getnewaddress("", "bech32")],
+        )
         # Sweep to a confidential address: the payee output itself is blinded,
-        # so no balancing output is needed and the wallet ends up empty.
-        mixer.sendtoaddress(sweepall_conf, Decimal("0.2"))
-        self.generatetoaddress(node, 1, mixer.getnewaddress("", "bech32"))
+        # so the wallet can balance without an explicit M-3 fallback.
         sweep_conf_res = sweepall.sendall([mixer.getnewaddress("", "confidential")])
         assert_equal(sweep_conf_res["complete"], True)
         sweep_conf_tx = node.getrawtransaction(sweep_conf_res["txid"], True)
@@ -423,3 +390,6 @@ class WalletConfidentialTest(BitcoinTestFramework):
 
 if __name__ == "__main__":
     WalletConfidentialTest().main()
+
+
+

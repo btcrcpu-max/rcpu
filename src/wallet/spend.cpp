@@ -1,4 +1,4 @@
-// Copyright (c) 2021-2022 The Bitcoin Core developers
+﻿// Copyright (c) 2021-2022 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -781,7 +781,7 @@ util::Result<SelectionResult> ChooseSelectionResult(interfaces::Chain& chain, co
         results.push_back(*knapsack_result);
     } else append_error(knapsack_result);
 
-    if (coin_selection_params.m_effective_feerate > CFeeRate{3 * coin_selection_params.m_long_term_feerate}) { // Minimize input set for feerates of at least 3×LTFRE (default: 30 ṩ/vB+)
+    if (coin_selection_params.m_effective_feerate > CFeeRate{3 * coin_selection_params.m_long_term_feerate}) { // Minimize input set for feerates of at least 3脳LTFRE (default: 30鈥供/vB+)
         if (auto cg_result{CoinGrinder(groups.positive_group, nTargetValue, coin_selection_params.m_min_change_target, max_inputs_weight)}) {
             cg_result->ComputeAndSetWaste(coin_selection_params.min_viable_change, coin_selection_params.m_cost_of_change, coin_selection_params.m_change_fee);
             results.push_back(*cg_result);
@@ -1091,7 +1091,17 @@ static util::Result<CreatedTransactionResult> CreateTransactionInternal(
         }
         return false;
     }()};
-    const OutputType change_type = wallet.TransactionChangeType(coin_control.m_change_type ? *coin_control.m_change_type : wallet.m_default_change_type, vecSend, has_conf_utxo);
+    const bool conf_change{g_con_elementsmode && !gArgs.GetBoolArg("-ctlegacy", false)};
+    const bool has_conf_recipient = std::any_of(vecSend.begin(), vecSend.end(),
+        [](const CRecipient& r) { return std::get_if<ConfidentialKeyHash>(&r.dest) != nullptr; });
+    OutputType change_type = wallet.TransactionChangeType(coin_control.m_change_type ? *coin_control.m_change_type : wallet.m_default_change_type, vecSend, has_conf_utxo);
+    // RCPU M-2: an all-explicit input set must not end up with a single
+    // confidential output (blind 0 leaks the amount). If a confidential
+    // recipient is present, make the change confidential too so the blind
+    // sum has a random pair instead of relying on a zero blind.
+    if (conf_change && has_conf_recipient) {
+        change_type = OutputType::CONFIDENTIAL;
+    }
     ReserveDestination reservedest(&wallet, change_type);
     unsigned int outputs_to_subtract_fee_from = 0; // The number of outputs which we are subtracting the fee from
     for (const auto& recipient : vecSend) {
@@ -1158,12 +1168,11 @@ static util::Result<CreatedTransactionResult> CreateTransactionInternal(
             }
         }
     };
-    const bool conf_change{g_con_elementsmode && !gArgs.GetBoolArg("-ctlegacy", false)};
 
     // coin control: send change to custom address
     if (!std::get_if<CNoDestination>(&coin_control.destChange)) {
         CTxDestination destChange = coin_control.destChange;
-        if (conf_change) {
+        if (conf_change && (has_conf_utxo || has_conf_recipient)) {
             resolve_change_key(destChange);
         }
         scriptChange = GetScriptForDestination(destChange);
@@ -1183,7 +1192,7 @@ static util::Result<CreatedTransactionResult> CreateTransactionInternal(
             error = _("Transaction needs a change address, but we can't generate it.") + Untranslated(" ") + util::ErrorString(op_dest);
 } else {
             dest = *op_dest;
-            if (conf_change) {
+            if (conf_change && (has_conf_utxo || has_conf_recipient)) {
                 resolve_change_key(dest);
             }
             scriptChange = GetScriptForDestination(dest);
@@ -1563,7 +1572,7 @@ CTxOut txout(recipient.nAmount, GetScriptForDestination(recipient.dest));
             }
         }
         // RCPU CT: a v3 transaction spending blinded inputs must carry at
-        // least one blinded output — with all-explicit outputs the Pedersen
+        // least one blinded output 鈥?with all-explicit outputs the Pedersen
         // tally cannot balance (bad-txns-ct-balance) and BlindTransaction
         // fails closed. The exact-spend case (coin selection produced no
         // change) paying only bare rcpu1... recipients hit precisely that
@@ -1583,58 +1592,12 @@ CTxOut txout(recipient.nAmount, GetScriptForDestination(recipient.dest));
             const bool has_conf_recipient = std::any_of(vecSend.begin(), vecSend.end(),
                 [](const CRecipient& r) { return std::get_if<ConfidentialKeyHash>(&r.dest) != nullptr; });
             if (has_blinded_input && !has_conf_recipient) {
-                // Reuse the already-reserved change destination when its
-                // blinding key resolved; otherwise (foreign destChange or a
-                // failed reservation) reserve a fresh confidential address.
-                if (!change_key) {
-                    inj_reservedest = std::make_unique<ReserveDestination>(&wallet, OutputType::CONFIDENTIAL);
-                    if (auto op_dest = inj_reservedest->GetReservedDestination(true)) {
-                        CTxDestination dest{*op_dest};
-                        resolve_change_key(dest);
-                        if (change_key) {
-                            scriptChange = GetScriptForDestination(dest);
-                        }
-                    }
-                }
-                if (change_key && !scriptChange.empty()) {
-                    const CTxOut proto(0, scriptChange);
-                    const CAmount out_dust = GetDustThreshold(proto, wallet.chain().relayDustFee());
-                    SizeComputer sc;
-                    proto.Serialize(sc, false);
-                    const int out_size = sc.size() + EstimatedBlindedOutputDelta(out_dust);
-                    const CAmount out_fee = coin_selection_params.m_effective_feerate.GetFee(out_size);
-                    const CAmount reduction = out_dust + out_fee;
-                    // Fund from the largest recipient output that stays above
-                    // its own dust threshold after the reduction.
-                    std::vector<size_t> order(txNew.vout.size());
-                    std::iota(order.begin(), order.end(), size_t{0});
-                    std::sort(order.begin(), order.end(), [&](size_t a, size_t b) {
-                        return txNew.vout[a].nValue.GetAmount() > txNew.vout[b].nValue.GetAmount();
-                    });
-                    bool funded{false};
-                    for (const size_t oi : order) {
-                        CTxOut& payee = txNew.vout[oi];
-                        if (!payee.nValue.IsExplicit()) continue;
-                        const CAmount before = payee.nValue.GetAmount();
-                        if (before - reduction <= 0) continue;
-                        if (IsDust(CTxOut(before - reduction, payee.scriptPubKey), wallet.chain().relayDustFee())) continue;
-                        payee.nValue = before - reduction;
-                        const unsigned int pos = rng_fast.randrange(txNew.vout.size() + 1);
-                        txNew.vout.insert(txNew.vout.begin() + pos, CTxOut(out_dust, scriptChange));
-                        change_pos = pos;
-                        // Track where the reduced payee ended up: inserting at
-                        // pos shifts every output from pos onwards by one.
-                        injected_change_funding_pos = (pos <= oi) ? oi + 1 : oi;
-                        current_fee = result.GetSelectedValue() - CalculateOutputValue(txNew);
-                        funded = true;
-                        break;
-                    }
-                    if (!funded) {
-                        return util::Error{_("Spending confidential inputs requires a blinded balancing output, but no recipient output can fund the dust change")};
-                    }
-                }
-                // No wallet-owned confidential change key available: fall
-                // through and let BlindTransaction fail closed as before.
+                // RCPU M-3: do not silently reduce the recipient to fund a
+                // dust balancing output. The old fallback changed the payee
+                // amount after fee calculation and could break sendall's
+                // "empty the wallet" semantics. Require an explicit change
+                // output or a confidential recipient instead.
+                return util::Error{_("Confidential inputs cannot pay an explicit recipient without a confidential change output; add change or use a confidential recipient")};
             }
         }
 std::vector<uint256> output_blinds, output_nonces;
@@ -1644,8 +1607,8 @@ std::vector<uint256> output_blinds, output_nonces;
         // key cannot be resolved (e.g. a foreign P2WPKH/P2PKH address this
         // wallet does not own) is emitted as an explicit plaintext output
         // (H-1: Path A is no longer used from the wallet).
-        // Resolved pubkey (rcpux1 / own change) → Path C (0x04).
-        // Unresolved pubkey (bare rcpu1) → explicit plaintext output
+        // Resolved pubkey (rcpux1 / own change) 鈫?Path C (0x04).
+        // Unresolved pubkey (bare rcpu1) 鈫?explicit plaintext output
         // (H-1 policy: never fall back to Path A from the wallet; a bare
         // address gets an unblinded output instead of a rewind-nonce
         // commitment). Explicit outputs keep their plaintext value, empty
@@ -1682,7 +1645,7 @@ std::vector<std::optional<CPubKey>> recipient_keys;
                 // (nonce 0x04, path C) and the sender's record keeps the
                 // rcpux1 address. The change slot is never matched against
                 // vecSend: with no resolved change key it is emitted explicit
-                // (plaintext) — never Path A. Fee / empty-script outputs are
+                // (plaintext) 鈥?never Path A. Fee / empty-script outputs are
                 // appended after BlindTransaction and can never reach this
                 // vector.
                 if (change_pos && *change_pos == vi) {
@@ -1707,7 +1670,7 @@ std::vector<std::optional<CPubKey>> recipient_keys;
                     }
                 }
                 // No pubkey (bare rcpu1 / foreign script / unresolvable change
-                // key): H-1 policy — emit an explicit plaintext output instead
+                // key): H-1 policy 鈥?emit an explicit plaintext output instead
                 // of falling back to Path A (0x02 rewind-nonce commitment).
                 // BlindTransaction keeps such outputs unblinded (plaintext
                 // value, empty nonce, no range proof); they do not take part
@@ -2041,3 +2004,4 @@ util::Result<CreatedTransactionResult> FundTransaction(CWallet& wallet, const CM
     return res;
 }
 } // namespace wallet
+

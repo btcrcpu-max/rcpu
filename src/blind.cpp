@@ -88,6 +88,12 @@ std::memcpy(&nc.vchCommitment[1], nonce.begin(), 32);
 
 } // namespace
 
+// The wallet's rangeproofs use min_bits=0, so a value v produces
+// max_value = 2^bit_length(v)-1. Values at or above 2^57 already exceed
+// MAX_MONEY (2.1e17 sat) and are rejected by the consensus rangeproof bound;
+// reject them before building a transaction with a generic blinding failure.
+static constexpr CAmount MAX_WALLET_CT_OUTPUT_VALUE = CAmount{1} << 57;
+
 // Derive the Path B range-proof nonce: the ECDH shared secret between a
 // private key and a public key, using the copy-X32 hash callback (no SHA256).
 // Frozen by the regression vectors in doc/ct-path-c.md Appendix A; declared
@@ -220,6 +226,11 @@ bool BlindTransaction(const std::vector<uint256>& input_blinds, CMutableTransact
     if (n == 0) {
         return false;
     }
+    if (!tx.vin.empty() && input_blinds.size() != tx.vin.size()) {
+        // A mismatched blind vector would shift npositive and produce an
+        // unspendable/unbalanced transaction; fail closed.
+        return false;
+    }
     if (!recipient_keys.empty() && recipient_keys.size() != n) {
         // Per-output recipient key list must line up with the outputs.
         return false;
@@ -259,6 +270,25 @@ bool BlindTransaction(const std::vector<uint256>& input_blinds, CMutableTransact
         return true;
     }
 
+    // RCPU M-2: an all-explicit input set contributes only zero blinds. A
+    // single confidential output would then have to use blind 0 to balance,
+    // leaking the amount (C = v*H). Require at least two confidential outputs
+    // (for example recipient + confidential change) or fail closed; merely
+    // randomising the only blind would break the Pedersen tally.
+    bool any_input_blind = false;
+    for (const uint256& b : input_blinds) {
+        if (!b.IsNull()) { any_input_blind = true; break; }
+    }
+    if (!tx.vin.empty() && !input_blinds.empty() && !any_input_blind) {
+        size_t confidential_outputs = 0;
+        for (size_t i = 0; i < n; ++i) {
+            if (!tx.vout[i].IsFee() && !is_explicit(i)) ++confidential_outputs;
+        }
+        if (confidential_outputs == 1) {
+            return false;
+        }
+    }
+
     // Random blinds for all but the balancing output.
     for (size_t i = 0; i < last_ct; ++i) {
         if (tx.vout[i].IsFee() || is_explicit(i)) continue;
@@ -288,6 +318,11 @@ bool BlindTransaction(const std::vector<uint256>& input_blinds, CMutableTransact
         if (tx.vout[i].IsFee() || is_explicit(i)) continue;
         const CAmount amount = tx.vout[i].nValue.GetAmount();
         if (amount < 0 || !MoneyRange(amount)) {
+            return false;
+        }
+        // RCPU M-5: wallet-side early rejection of values whose rangeproof
+        // max_value would exceed MAX_MONEY.
+        if (amount >= MAX_WALLET_CT_OUTPUT_VALUE) {
             return false;
         }
 
