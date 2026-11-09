@@ -327,7 +327,7 @@ class WalletConfidentialTest(BitcoinTestFramework):
         self.generatetoaddress(node, 1, mixer.getnewaddress("", "bech32"))
         assert_equal(sweepall.getbalance(), Decimal("0.2"))
         assert_raises_rpc_error(
-            -6,
+            -4,
             "Confidential inputs cannot pay an explicit recipient without a confidential change output",
             sweepall.sendall, [mixer.getnewaddress("", "bech32")],
         )
@@ -390,5 +390,6 @@ class WalletConfidentialTest(BitcoinTestFramework):
 
 if __name__ == "__main__":
     WalletConfidentialTest().main()
+
 
 
