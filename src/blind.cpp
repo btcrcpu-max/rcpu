@@ -312,6 +312,14 @@ bool BlindTransaction(const std::vector<uint256>& input_blinds, CMutableTransact
                                              input_blinds.size())) {
         return false;
     }
+    // RCPU M-2: a non-zero input blind vector is not sufficient. Input blinds
+    // can cancel each other out (for example the b / -b pair produced by wallet
+    // change), leaving the balancing blind at zero and the commitment at
+    // C = v*H. Fail closed instead of emitting an unblinded "confidential"
+    // output.
+    if (output_blinds[last_ct].IsNull()) {
+        return false;
+    }
 
     // Blind each output.
     for (size_t i = 0; i < n; ++i) {

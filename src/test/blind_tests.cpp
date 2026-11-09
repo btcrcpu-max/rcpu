@@ -372,6 +372,25 @@ BOOST_AUTO_TEST_CASE(blind_tx_single_ct_zero_input_blind_fails)
     BOOST_CHECK(!BlindTransaction(in_blinds, tx, out_blinds, out_nonces));
 }
 
+// Paired input blinds (b and -b) sum to zero, so the per-input "all zero"
+// check does not catch them and the balancing output would get blind 0
+// (C = v*H). The guard on the balancing blind must fail closed.
+BOOST_AUTO_TEST_CASE(blind_tx_paired_input_blinds_cancel_fails)
+{
+    const uint256 b = uint256::ONE;
+    // -1 mod n == n - 1, a valid non-zero scalar.
+    const uint256 neg_b = uint256S("fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364140");
+
+    CMutableTransaction tx;
+    tx.vin.emplace_back(COutPoint(Txid::FromUint256(uint256::ONE), 0));
+    tx.vin.emplace_back(COutPoint(Txid::FromUint256(uint256::ONE), 1));
+    tx.vout.push_back(MakeExplicitOut(1000));
+
+    std::vector<uint256> in_blinds{b, neg_b};
+    std::vector<uint256> out_blinds, out_nonces;
+    BOOST_CHECK(!BlindTransaction(in_blinds, tx, out_blinds, out_nonces));
+}
+
 BOOST_AUTO_TEST_CASE(blind_tx_empty_vout)
 {
     CMutableTransaction tx;
