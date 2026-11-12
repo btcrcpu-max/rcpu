@@ -1099,7 +1099,13 @@ static util::Result<CreatedTransactionResult> CreateTransactionInternal(
     // confidential output (blind 0 leaks the amount). If a confidential
     // recipient is present, make the change confidential too so the blind
     // sum has a random pair instead of relying on a zero blind.
-    if (conf_change && has_conf_recipient) {
+    // RCPU M-2b: the mirror case is a confidential input set paying only
+    // explicit outputs. With no blinded output to carry the inputs' blind
+    // factors, BlindTransaction() refuses the transaction and the user sees
+    // "Confidential transaction blinding failed" instead of a spend. Promote
+    // the change to confidential whenever the inputs are confidential, even
+    // if the caller asked for a plaintext change type.
+    if (conf_change && (has_conf_recipient || has_conf_utxo)) {
         change_type = OutputType::CONFIDENTIAL;
     }
     ReserveDestination reservedest(&wallet, change_type);
