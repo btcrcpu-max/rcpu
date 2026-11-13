@@ -1411,6 +1411,22 @@ CTxOut txout(recipient.nAmount, GetScriptForDestination(recipient.dest));
             });
     }
 
+    // RCPU M-2c: `has_conf_utxo` above is a wallet-level flag, so an
+    // all-explicit spend from a mixed wallet (explicit + confidential UTXOs)
+    // still reserved a confidential change. With an explicit recipient that
+    // leaves a single confidential output (the change) whose balancing blind
+    // can only be zero; BlindTransaction()/the M-2 guard then fail closed
+    // with "Confidential transaction blinding failed". Decide from the coins
+    // this transaction actually selected: if neither the selected inputs nor
+    // the recipient are confidential, keep the change explicit so the
+    // explicit input blinds (all zero) and explicit outputs still balance.
+    const bool has_conf_selected = std::any_of(selected_coins.begin(), selected_coins.end(),
+        [](const std::shared_ptr<COutput>& coin) { return !coin->txout.nValue.IsExplicit(); });
+    if (conf_change && !has_conf_selected && !has_conf_recipient) {
+        change_key_dest.reset();
+        change_key.reset();
+    }
+
     // The sequence number is set to non-maxint so that DiscourageFeeSniping
     // works.
     //
