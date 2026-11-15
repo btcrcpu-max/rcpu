@@ -19,6 +19,7 @@
 #include <util/strencodings.h>
 
 #include <algorithm>
+#include <cstring>
 #include <optional>
 #include <vector>
 
@@ -377,9 +378,18 @@ BOOST_AUTO_TEST_CASE(blind_tx_single_ct_zero_input_blind_fails)
 // (C = v*H). The guard on the balancing blind must fail closed.
 BOOST_AUTO_TEST_CASE(blind_tx_paired_input_blinds_cancel_fails)
 {
-    const uint256 b = uint256::ONE;
-    // -1 mod n == n - 1, a valid non-zero scalar.
-    const uint256 neg_b = uint256S("fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364140");
+    // secp256k1 scalar bytes are big-endian. Build scalar 1 and -1 mod n
+    // directly in the byte representation consumed by blind_sum.
+    unsigned char one32[32] = {};
+    one32[31] = 1;
+    static const unsigned char neg32[32] = {
+        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xfe,
+        0xba, 0xae, 0xdc, 0xe6, 0xaf, 0x48, 0xa0, 0x3b,
+        0xbf, 0xd2, 0x5e, 0x8c, 0xd0, 0x36, 0x41, 0x40};
+    uint256 b, neg_b;
+    std::memcpy(b.begin(), one32, 32);
+    std::memcpy(neg_b.begin(), neg32, 32);
 
     CMutableTransaction tx;
     tx.vin.emplace_back(COutPoint(Txid::FromUint256(uint256::ONE), 0));
@@ -518,7 +528,7 @@ BOOST_AUTO_TEST_CASE(blind_tx_path_b_missing_key_fails_closed)
     CMutableTransaction tx;
     tx.vout.push_back(MakeExplicitOut(123456789));
 
-    std::vector<uint256> in_blinds(1);
+    std::vector<uint256> in_blinds(1, uint256::ONE);
     std::vector<uint256> out_blinds, out_nonces;
 
     // Engaged key list but this output has no key and no explicit marker:
@@ -543,7 +553,10 @@ BOOST_AUTO_TEST_CASE(blind_tx_path_b_missing_key_fails_closed)
     CMutableTransaction tx_plain;
     tx_plain.vout.push_back(MakeExplicitOut(123456789));
     std::vector<bool> keep_explicit = {true};
-    BOOST_REQUIRE(BlindTransaction(in_blinds, tx_plain, out_blinds, out_nonces, keys_with_nullopt, &keep_explicit));
+    // An all-explicit transaction cannot carry a non-zero input blind; use
+    // the explicit-input case for this sub-test.
+    std::vector<uint256> zero_in_blinds(1);
+    BOOST_REQUIRE(BlindTransaction(zero_in_blinds, tx_plain, out_blinds, out_nonces, keys_with_nullopt, &keep_explicit));
     BOOST_CHECK(tx_plain.vout[0].nValue.IsExplicit());
     BOOST_CHECK_EQUAL(tx_plain.vout[0].nValue.GetAmount(), 123456789);
     BOOST_CHECK(tx_plain.vout[0].nNonce.vchCommitment.empty());
@@ -569,7 +582,7 @@ BOOST_AUTO_TEST_CASE(blind_tx_path_b_mixed_keyed_and_plaintext)
     tx.vout.push_back(MakeExplicitOut(123456789));
     tx.vout.push_back(MakeExplicitOut(50000000));
 
-    std::vector<uint256> in_blinds(1);
+    std::vector<uint256> in_blinds(1, uint256::ONE);
     std::vector<uint256> out_blinds, out_nonces;
     std::vector<std::optional<CPubKey>> recipient_keys = {recv_pub, std::nullopt};
     std::vector<bool> keep_explicit = {false, true};
@@ -609,7 +622,7 @@ BOOST_AUTO_TEST_CASE(blind_tx_path_b_fee_exempt)
     tx.vout.push_back(MakeExplicitOut(123456789));
     tx.vout.push_back(MakeFeeOut(10000));
 
-    std::vector<uint256> in_blinds(1);
+    std::vector<uint256> in_blinds(1, uint256::ONE);
     std::vector<uint256> out_blinds, out_nonces;
     std::vector<std::optional<CPubKey>> recipient_keys = {recv_pub, std::nullopt};
     BOOST_REQUIRE(BlindTransaction(in_blinds, tx, out_blinds, out_nonces, recipient_keys));
