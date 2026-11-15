@@ -1,1 +1,13 @@
 src/clientversion.cpp export-subst
+
+# Keep source and workflow text files LF in the repository.
+*.cpp text eol=lf
+*.h text eol=lf
+*.hpp text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.md text eol=lf
+*.py text eol=lf
+*.sh text eol=lf
+*.ac text eol=lf
+*.am text eol=lf
