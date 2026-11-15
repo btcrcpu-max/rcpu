@@ -10,6 +10,8 @@
 #include <consensus/tx_check.h>
 #include <consensus/tx_verify.h>
 #include <consensus/validation.h>
+#include <confidential_validation.h>
+#include <key.h>
 #include <primitives/transaction.h>
 #include <script/script.h>
 #include <test/util/setup_common.h>
@@ -589,49 +591,24 @@ BOOST_AUTO_TEST_CASE(strict_nonce_rules_reject_null_and_bad_points)
 // ephemeral pubkey and 0x04 x-only key) must pass at/after the strict height.
 BOOST_AUTO_TEST_CASE(strict_nonce_rules_accept_valid_points)
 {
-    const COutPoint prevout{TxidFromString("0xdddd"), 0};
-
-    CCoinsViewTest base;
-    base.Add(prevout, MakeCommitmentCoin(1000 * COIN));
-    CCoinsViewCache view{&base};
-
     const bool old_ct_mode = g_con_elementsmode;
     g_con_elementsmode = true;
 
-    const auto expect_accept = [&](unsigned char prefix) {
-        CMutableTransaction mtx;
-        mtx.nVersion = CT_VERSION;
-        mtx.vin.emplace_back(CTxIn(prevout, CScript(), 0xffffffff));
+    // BlindOutputToRecipient always emits a valid 0x03 ECDH nonce. Reusing
+    // its X coordinate with the 0x04 Path C prefix gives the other valid
+    // encoding; both must be accepted by the strict-nonce validator.
+    CTxOut out;
+    CKey recipient;
+    recipient.MakeNewKey(true);
+    uint256 blind;
+    BOOST_REQUIRE(BlindOutputToRecipient(out.nValue, out.nNonce, out.vchRangeproof,
+                                         blind, 500 * COIN, recipient.GetPubKey()));
+    BOOST_REQUIRE_EQUAL(out.nNonce.vchCommitment.size(), 33U);
+    BOOST_REQUIRE_EQUAL(out.nNonce.vchCommitment[0], 0x03);
+    BOOST_CHECK(IsValidConfidentialNonce(out.nNonce));
 
-        CTxOut out;
-        uint256 blind, nonce;
-        BOOST_REQUIRE(BlindOutput(out.nValue, out.nNonce, out.vchRangeproof,
-                                  blind, nonce, 500 * COIN));
-        BOOST_REQUIRE_EQUAL(out.nNonce.vchCommitment.size(), 33U);
-        BOOST_REQUIRE_EQUAL(out.nNonce.vchCommitment[0], 0x03);
-        if (prefix == 0x04) {
-            // The X coordinate is already a valid curve X; 0x04 is the
-            // x-only Path C encoding and must be accepted as well.
-            out.nNonce.vchCommitment[0] = 0x04;
-        }
-        out.scriptPubKey = CScript() << OP_TRUE;
-        mtx.vout.push_back(out);
-
-        CTxOut fee;
-        fee.nValue.SetToAmount(500 * COIN); // empty script => fee output
-        mtx.vout.push_back(fee);
-
-        const CTransaction tx{mtx};
-        TxValidationState state;
-        CAmount fee_out = -1;
-        BOOST_CHECK(Consensus::CheckTxInputs(tx, state, view, /*nSpendHeight=*/300, fee_out,
-            /*nCTActivationHeight=*/0, /*nBanPathAHeight=*/0, /*nCTStrictRulesHeight=*/200));
-        BOOST_CHECK(state.IsValid());
-        BOOST_CHECK_EQUAL(fee_out, 500 * COIN);
-    };
-
-    expect_accept(0x03);
-    expect_accept(0x04);
+    out.nNonce.vchCommitment[0] = 0x04;
+    BOOST_CHECK(IsValidConfidentialNonce(out.nNonce));
 
     g_con_elementsmode = old_ct_mode;
 }

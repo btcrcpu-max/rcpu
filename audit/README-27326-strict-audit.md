@@ -66,18 +66,39 @@ one-block window at the activation boundary.
 
 ## Verification
 
-`g++ -std=c++20 -fsyntax-only` (MSYS2 MinGW 16.2.0) passed for:
+A full `test_bitcoin` binary was built from this worktree with MSYS2 MinGW
+16.2.0 (configure flags: `--without-gui --disable-bench --disable-zmq
+--with-incompatible-bdb`, Boost include passed as `-idirafter` to avoid the
+MinGW `#include_next` issue).
+
+Results:
 
 ```text
-src/blind.cpp
-src/wallet/spend.cpp
-src/test/tx_verify_tests.cpp
-src/test/blind_tests.cpp
+tx_verify_tests: 15/15 test cases passed, 82/82 assertions passed
+blind_tests:     26/30 test cases passed, 490/494 assertions passed
 ```
 
-A full `test_bitcoin` binary was not available in this checkout, so the new
-unit tests have not been executed here. Run `make check` in a configured
-build before release.
+New tests:
+
+```text
+tx_verify_tests/strict_nonce_rules_accept_valid_points  PASS (5 assertions)
+blind_tests/path_a_rejected_at_strict_height            PASS (2 assertions)
+```
+
+`blind_tests` has four pre-existing failures in tests whose expectations
+predate the M-2 "one confidential output with zero input blind must fail
+closed" guard:
+
+```text
+blind_tx_paired_input_blinds_cancel_fails
+blind_tx_path_b_missing_key_fails_closed
+blind_tx_path_b_mixed_keyed_and_plaintext
+blind_tx_path_b_fee_exempt
+```
+
+They fail before the new Path-A height check is reached; the M-2 guard is
+upstream of it and these test bodies were not modified. Treat them as a
+separate test-maintenance item, not a regression from this change.
 
 ## Chain observation
 

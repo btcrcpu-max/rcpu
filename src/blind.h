@@ -133,7 +133,7 @@ std::optional<CAmount> GetOutputAmount(const CTxOut& txout);
  * @param[in] nSpendHeight   height at which the transaction will be mined.
  *                           Used only to reject Path A once the strict CT rules
  *                           are active; callers that do not know the height can
- *                           leave the default 0 (legacy behavior).
+ *                           leave the default -1 (legacy behavior).
  * @param[in] nCTStrictRulesHeight strict CT activation height. Path A (0x02)
  *                           is rejected when nSpendHeight reaches this value.
  * @return true on success
@@ -143,7 +143,7 @@ bool BlindTransaction(const std::vector<uint256>& input_blinds, CMutableTransact
                       const std::vector<std::optional<CPubKey>>& recipient_keys = {},
                       const std::vector<bool>* explicit_outputs = nullptr,
                       bool use_path_c = false,
-                      int nSpendHeight = 0,
+                      int nSpendHeight = -1,
                       int nCTStrictRulesHeight = std::numeric_limits<int>::max());
 
 /**
