@@ -219,7 +219,9 @@ bool BlindTransaction(const std::vector<uint256>& input_blinds, CMutableTransact
                       std::vector<uint256>& output_blinds, std::vector<uint256>& output_nonces,
                       const std::vector<std::optional<CPubKey>>& recipient_keys,
                       const std::vector<bool>* explicit_outputs,
-                      bool use_path_c)
+                      bool use_path_c,
+                      int nSpendHeight,
+                      int nCTStrictRulesHeight)
 {
     secp256k1_context* ctx = GetBlindContext();
     const size_t n = tx.vout.size();
@@ -388,6 +390,12 @@ bool BlindTransaction(const std::vector<uint256>& input_blinds, CMutableTransact
             // -ctlegacy=1 (empty recipient_keys). Amount is committed, not
             // explicit. Anyone who rewinds 0x02 can read it. nBanPathAHeight
             // = 12748 on mainnet (v1.1.10); banned from genesis on testnet.
+            // From nCTStrictRulesHeight the nonce must be a real curve point,
+            // so 0x02 is consensus-invalid. Fail closed here as well, even for
+            // callers that bypass the wallet's explicit-output handling.
+            if (nSpendHeight >= 0 && nSpendHeight >= nCTStrictRulesHeight) {
+                return false;
+            }
             Rand32(output_nonces[i]);
             SetNonce(tx.vout[i].nNonce, output_nonces[i]);
             nonce = output_nonces[i];

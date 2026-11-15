@@ -10,6 +10,8 @@
 #include <consensus/tx_check.h>
 #include <consensus/tx_verify.h>
 #include <consensus/validation.h>
+#include <confidential_validation.h>
+#include <key.h>
 #include <primitives/transaction.h>
 #include <script/script.h>
 #include <test/util/setup_common.h>
@@ -581,6 +583,32 @@ BOOST_AUTO_TEST_CASE(strict_nonce_rules_reject_null_and_bad_points)
     std::vector<unsigned char> off_curve{0x03};
     off_curve.insert(off_curve.end(), 32, 0xff);
     expect_reject(off_curve, "bad-ct-nonce-point");
+
+    g_con_elementsmode = old_ct_mode;
+}
+
+// RCPU M-1 positive coverage: both valid nonce encodings (0x03 compressed
+// ephemeral pubkey and 0x04 x-only key) must pass at/after the strict height.
+BOOST_AUTO_TEST_CASE(strict_nonce_rules_accept_valid_points)
+{
+    const bool old_ct_mode = g_con_elementsmode;
+    g_con_elementsmode = true;
+
+    // BlindOutputToRecipient always emits a valid 0x03 ECDH nonce. Reusing
+    // its X coordinate with the 0x04 Path C prefix gives the other valid
+    // encoding; both must be accepted by the strict-nonce validator.
+    CTxOut out;
+    CKey recipient;
+    recipient.MakeNewKey(true);
+    uint256 blind;
+    BOOST_REQUIRE(BlindOutputToRecipient(out.nValue, out.nNonce, out.vchRangeproof,
+                                         blind, 500 * COIN, recipient.GetPubKey()));
+    BOOST_REQUIRE_EQUAL(out.nNonce.vchCommitment.size(), 33U);
+    BOOST_REQUIRE_EQUAL(out.nNonce.vchCommitment[0], 0x03);
+    BOOST_CHECK(IsValidConfidentialNonce(out.nNonce));
+
+    out.nNonce.vchCommitment[0] = 0x04;
+    BOOST_CHECK(IsValidConfidentialNonce(out.nNonce));
 
     g_con_elementsmode = old_ct_mode;
 }
