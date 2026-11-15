@@ -1405,7 +1405,11 @@ CTxOut txout(recipient.nAmount, GetScriptForDestination(recipient.dest));
            result.GetWaste(),
            result.GetSelectedValue());
 
-    const CAmount change_amount = result.GetChange(coin_selection_params.min_viable_change, coin_selection_params.m_change_fee);
+    // RCPU R-1: a confidential change output is required to balance blinded
+    // inputs; it must not be dropped merely because it is below the explicit
+    // change dust threshold. Keep M-1's min_viable_change for explicit change.
+    const CAmount min_change = change_type == OutputType::CONFIDENTIAL ? 0 : coin_selection_params.min_viable_change;
+    const CAmount change_amount = result.GetChange(min_change, coin_selection_params.m_change_fee);
     if (change_amount > 0) {
         CTxOut newTxOut(change_amount, scriptChange);
         if (!change_pos) {
@@ -1623,19 +1627,15 @@ CTxOut txout(recipient.nAmount, GetScriptForDestination(recipient.dest));
                 input_blinds[bi] = unblinded_blind;
             }
         }
-        // RCPU CT: a v3 transaction spending blinded inputs must carry at
-        // least one blinded output 鈥?with all-explicit outputs the Pedersen
+        // RCPU M-3/R-1: a v3 transaction spending blinded inputs must carry
+        // at least one blinded output. With all-explicit outputs the Pedersen
         // tally cannot balance (bad-txns-ct-balance) and BlindTransaction
-        // fails closed. The exact-spend case (coin selection produced no
-        // change) paying only bare rcpu1... recipients hit precisely that
-        // failure ("Confidential transaction blinding failed"). Fix it at the
-        // wallet layer: inject a dust-sized wallet-owned confidential change
-        // output, funded from the largest recipient output (dust value plus
-        // the marginal fee for the added output size), so the blind sum has
-        // a balancing output. Consensus behavior is untouched; wallets that
-        // cannot resolve a confidential change key fall through to the
-        // existing fail-closed error. An explicit (foreign) change output
-        // requested via coin control is NOT overridden here.
+        // fails closed. A positive change amount is kept by the R-1 rule above
+        // even when it is below the explicit dust threshold. If coin selection
+        // produced no change at all while paying only bare rcpu1... recipients,
+        // fail with an actionable error instead of silently reducing the
+        // recipient to fund an injected dust output. An explicit (foreign)
+        // change output requested via coin control is not overridden here.
         if (conf_change && !change_pos) {
             bool has_blinded_input{false};
             for (const uint256& b : input_blinds) {
