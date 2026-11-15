@@ -1583,5 +1583,23 @@ BOOST_FIXTURE_TEST_CASE(wallet_coinsresult_test, BasicTestingSetup)
     }
 }
 
+// RCPU M-1: change below the minimum viable amount must be forgone rather
+// than inserted as a dust output.
+BOOST_AUTO_TEST_CASE(get_change_respects_min_viable)
+{
+    const COutPoint outpoint{Txid::FromUint256(uint256::ONE), 0};
+    const CTxOut txout(1000, CScript() << OP_TRUE);
+    auto coin = std::make_shared<COutput>(outpoint, txout, /*depth=*/1, /*input_bytes=*/68,
+                                          /*spendable=*/true, /*solvable=*/true, /*safe=*/true,
+                                          /*time=*/0, /*from_me=*/false, /*feerate=*/CFeeRate(0));
+
+    SelectionResult result(/*target=*/900, SelectionAlgorithm::MANUAL);
+    result.AddInputs({coin}, /*subtract_fee_outputs=*/false);
+
+    BOOST_CHECK_EQUAL(result.GetChange(/*min_viable_change=*/200, /*change_fee=*/0), 0);
+    BOOST_CHECK_EQUAL(result.GetChange(/*min_viable_change=*/100, /*change_fee=*/0), 100);
+    BOOST_CHECK_EQUAL(result.GetChange(/*min_viable_change=*/50, /*change_fee=*/0), 100);
+}
+
 BOOST_AUTO_TEST_SUITE_END()
 } // namespace wallet
