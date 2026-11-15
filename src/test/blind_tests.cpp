@@ -1260,4 +1260,33 @@ BOOST_AUTO_TEST_CASE(estimated_blinded_size_matches_signature)
     }
 }
 
+
+// RCPU: Path A (0x02 plaintext nonce) must fail closed once the strict CT
+// rules are active, even for callers that do not pass recipient keys.
+BOOST_AUTO_TEST_CASE(path_a_rejected_at_strict_height)
+{
+    const auto make_tx = [] {
+        CMutableTransaction tx;
+        tx.nVersion = CT_VERSION;
+        tx.vin.resize(1);
+        tx.vin[0].prevout = COutPoint(Txid::FromUint256(uint256::ONE), 0);
+        tx.vout.emplace_back(1000, CScript() << OP_TRUE);
+        tx.vout.emplace_back(2000, CScript() << OP_TRUE);
+        return tx;
+    };
+    uint256 in_blind;
+    in_blind.begin()[0] = 1;
+
+    CMutableTransaction pre = make_tx();
+    std::vector<uint256> pre_out_blinds, pre_out_nonces;
+    BOOST_REQUIRE(BlindTransaction({in_blind}, pre, pre_out_blinds, pre_out_nonces,
+                                   {}, nullptr, false, /*nSpendHeight=*/199,
+                                   /*nCTStrictRulesHeight=*/200));
+
+    CMutableTransaction strict = make_tx();
+    std::vector<uint256> strict_out_blinds, strict_out_nonces;
+    BOOST_CHECK(!BlindTransaction({in_blind}, strict, strict_out_blinds, strict_out_nonces,
+                                  {}, nullptr, false, /*nSpendHeight=*/200,
+                                  /*nCTStrictRulesHeight=*/200));
+}
 BOOST_AUTO_TEST_SUITE_END()

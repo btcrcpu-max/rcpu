@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2021-2022 The Bitcoin Core developers
+// Copyright (c) 2021-2022 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -1732,15 +1732,18 @@ std::vector<std::optional<CPubKey>> recipient_keys;
                                   all_outputs_explicit && all_inputs_explicit;
         txNew.nVersion = use_plain_v2 ? CTransaction::CURRENT_VERSION : CT_VERSION;
         if (txNew.nVersion == CT_VERSION) {
+            const auto& consensus = Params().GetConsensus();
+            // The transaction will be mined at tip + 1. Using the tip height
+            // here would leave a one-block window at the strict height where
+            // -ctlegacy can still build a consensus-invalid Path-A tx.
+            const int spend_height = wallet.GetLastBlockHeight() + 1;
             if (gArgs.GetBoolArg("-ctlegacy", false)) {
-                const auto& consensus = Params().GetConsensus();
-                const int height = wallet.GetLastBlockHeight();
                 // nBanPathAHeight covers the historical 0x02 ban; the stricter
                 // M-1 rule (nCTStrictRulesHeight) also rejects 0x02 because it
                 // is not a valid nonce point. Refuse Path A at either height,
                 // otherwise -ctlegacy could build a consensus-invalid tx on
                 // regtest (nBanPathAHeight=INT_MAX, strict height=0).
-                if (height >= consensus.nBanPathAHeight || height >= consensus.nCTStrictRulesHeight) {
+                if (spend_height >= consensus.nBanPathAHeight || spend_height >= consensus.nCTStrictRulesHeight) {
                     return util::Error{_("Path-A (plaintext-nonce) outputs are banned at this height; use a confidential rcpux1... address instead of -ctlegacy")};
                 }
             }
@@ -1776,7 +1779,9 @@ std::vector<std::optional<CPubKey>> recipient_keys;
                 }
                 if (!BlindTransaction(input_blinds, txNew, output_blinds, output_nonces, recipient_keys,
                                       explicit_outputs.empty() ? nullptr : &explicit_outputs,
-                                      /*use_path_c=*/true)) {
+                                      /*use_path_c=*/true,
+                                      spend_height,
+                                      consensus.nCTStrictRulesHeight)) {
                     return util::Error{_("Confidential transaction blinding failed")};
                 }
                 const CAmount paid_fee = result.GetSelectedValue() - total_output_value();

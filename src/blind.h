@@ -14,6 +14,7 @@
 #include <uint256.h>
 
 #include <optional>
+#include <limits>
 #include <vector>
 
 class CKey;
@@ -128,13 +129,22 @@ std::optional<CAmount> GetOutputAmount(const CTxOut& txout);
  *                           emit plaintext (non-CT) outputs to recipients whose
  *                           public key is unknown instead of falling back to
  *                           the legacy plaintext-nonce path A.
+ * @param[in] use_path_c     use the 0x04 x-only Path C nonce encoding.
+ * @param[in] nSpendHeight   height at which the transaction will be mined.
+ *                           Used only to reject Path A once the strict CT rules
+ *                           are active; callers that do not know the height can
+ *                           leave the default 0 (legacy behavior).
+ * @param[in] nCTStrictRulesHeight strict CT activation height. Path A (0x02)
+ *                           is rejected when nSpendHeight reaches this value.
  * @return true on success
  */
 bool BlindTransaction(const std::vector<uint256>& input_blinds, CMutableTransaction& tx,
                       std::vector<uint256>& output_blinds, std::vector<uint256>& output_nonces,
                       const std::vector<std::optional<CPubKey>>& recipient_keys = {},
                       const std::vector<bool>* explicit_outputs = nullptr,
-                      bool use_path_c = false);
+                      bool use_path_c = false,
+                      int nSpendHeight = 0,
+                      int nCTStrictRulesHeight = std::numeric_limits<int>::max());
 
 /**
  * Blind an output to a specific recipient using ECDH. The nonce commitment
