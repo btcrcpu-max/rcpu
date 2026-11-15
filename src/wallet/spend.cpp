@@ -438,6 +438,12 @@ CoinsResult AvailableCoins(const CWallet& wallet,
                 continue;
             }
 
+            // A wallet without a confidential spkman cannot derive blinded
+            // change. Do not auto-select confidential UTXOs for it.
+            if (params.skip_confidential && !output.nValue.IsExplicit()) {
+                continue;
+            }
+
             if (!allow_used_addresses && wallet.IsSpentKey(output.scriptPubKey)) {
                 continue;
             }
@@ -1094,7 +1100,20 @@ static util::Result<CreatedTransactionResult> CreateTransactionInternal(
     const bool conf_change{g_con_elementsmode && !gArgs.GetBoolArg("-ctlegacy", false)};
     const bool has_conf_recipient = std::any_of(vecSend.begin(), vecSend.end(),
         [](const CRecipient& r) { return std::get_if<ConfidentialKeyHash>(&r.dest) != nullptr; });
+    // A legacy/imported-key wallet has no confidential descriptor manager and
+    // therefore cannot derive a blinded change destination. Do not force a
+    // confidential change for it: that used to fail in ReserveDestination and
+    // made otherwise spendable wallets unusable whenever they held any blinded
+    // UTXO. Confidential recipients still need a blinded change/input pair, so
+    // fail early with an actionable error instead.
+    const bool has_conf_spkman = wallet.GetScriptPubKeyMan(OutputType::CONFIDENTIAL, /*internal=*/true) != nullptr;
+    if (conf_change && !has_conf_spkman && has_conf_recipient) {
+        return util::Error{_("This wallet cannot create confidential change. Use a descriptor wallet with confidential support, or send to a non-confidential address.")};
+    }
     OutputType change_type = wallet.TransactionChangeType(coin_control.m_change_type ? *coin_control.m_change_type : wallet.m_default_change_type, vecSend, has_conf_utxo);
+    if (change_type == OutputType::CONFIDENTIAL && !has_conf_spkman) {
+        return util::Error{_("Confidential change was requested, but this wallet has no confidential descriptor.")};
+    }
     // RCPU M-2: an all-explicit input set must not end up with a single
     // confidential output (blind 0 leaks the amount). If a confidential
     // recipient is present, make the change confidential too so the blind
@@ -1105,7 +1124,7 @@ static util::Result<CreatedTransactionResult> CreateTransactionInternal(
     // "Confidential transaction blinding failed" instead of a spend. Promote
     // the change to confidential whenever the inputs are confidential, even
     // if the caller asked for a plaintext change type.
-    if (conf_change && (has_conf_recipient || has_conf_utxo)) {
+    if (conf_change && has_conf_spkman && (has_conf_recipient || has_conf_utxo)) {
         change_type = OutputType::CONFIDENTIAL;
     }
     ReserveDestination reservedest(&wallet, change_type);
@@ -1178,7 +1197,7 @@ static util::Result<CreatedTransactionResult> CreateTransactionInternal(
     // coin control: send change to custom address
     if (!std::get_if<CNoDestination>(&coin_control.destChange)) {
         CTxDestination destChange = coin_control.destChange;
-        if (conf_change && (has_conf_utxo || has_conf_recipient)) {
+        if (change_type == OutputType::CONFIDENTIAL) {
             resolve_change_key(destChange);
         }
         scriptChange = GetScriptForDestination(destChange);
@@ -1198,7 +1217,7 @@ static util::Result<CreatedTransactionResult> CreateTransactionInternal(
             error = _("Transaction needs a change address, but we can't generate it.") + Untranslated(" ") + util::ErrorString(op_dest);
 } else {
             dest = *op_dest;
-            if (conf_change && (has_conf_utxo || has_conf_recipient)) {
+            if (change_type == OutputType::CONFIDENTIAL) {
                 resolve_change_key(dest);
             }
             scriptChange = GetScriptForDestination(dest);
@@ -1319,6 +1338,13 @@ CTxOut txout(recipient.nAmount, GetScriptForDestination(recipient.dest));
         auto res_fetch_inputs = FetchSelectedInputs(wallet, coin_control, coin_selection_params);
         if (!res_fetch_inputs) return util::Error{util::ErrorString(res_fetch_inputs)};
         preset_inputs = *res_fetch_inputs;
+        if (!has_conf_spkman) {
+            for (const auto& coin : preset_inputs.coins) {
+                if (!coin->txout.nValue.IsExplicit()) {
+                    return util::Error{_("A confidential input was preselected, but this wallet has no confidential descriptor to create blinded change.")};
+                }
+            }
+        }
     }
 
     // Fetch wallet available coins if "other inputs" are
@@ -1327,6 +1353,10 @@ CTxOut txout(recipient.nAmount, GetScriptForDestination(recipient.dest));
     if (coin_control.m_allow_other_inputs) {
         CoinFilterParams coins_filter;
         coins_filter.skip_unconfirmed_ct = true;
+        // Without a confidential spkman we cannot build blinded change; keep
+        // confidential UTXOs out of auto-selection so explicit funds remain
+        // spendable instead of failing later on a forced CONFIDENTIAL change.
+        coins_filter.skip_confidential = !has_conf_spkman;
         available_coins = AvailableCoins(wallet, &coin_control, coin_selection_params.m_effective_feerate, coins_filter);
     }
 

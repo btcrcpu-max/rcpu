@@ -985,7 +985,7 @@ CAmount SelectionResult::GetChange(const CAmount min_viable_change, const CAmoun
                            ? GetSelectedEffectiveValue() - m_target - change_fee
                            : GetSelectedValue() - m_target;
 
-    if (change <= 0) {
+    if (change < min_viable_change) {
         return 0;
     }
 

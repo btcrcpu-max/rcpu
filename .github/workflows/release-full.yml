@@ -386,6 +386,7 @@ jobs:
             # SmartScreen; release managers should set the secrets.
             if [ -n "${WINDOWS_SIGNING_CERT:-}" ]; then
               echo "Signing $EXE with Authenticode"
+              trap 'rm -f /tmp/rcpu-sign.pfx' EXIT
               printf '%s' "$WINDOWS_SIGNING_CERT" | base64 -d > /tmp/rcpu-sign.pfx
               osslsigncode sign -pkcs12 /tmp/rcpu-sign.pfx \
                 -pass "${WINDOWS_SIGNING_PASSWORD}" \
@@ -395,6 +396,7 @@ jobs:
               mv "${EXE}.signed" "$EXE"
               osslsigncode verify -in "$EXE"
               rm -f /tmp/rcpu-sign.pfx
+              trap - EXIT
             else
               echo "WARNING: WINDOWS_SIGNING_CERT not configured; installer will be unsigned"
             fi

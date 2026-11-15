@@ -85,6 +85,10 @@ struct CoinFilterParams {
     // spending an unconfirmed parent cannot pass the v3 policy until the
     // parent confirms, so such inputs would never broadcast.
     bool skip_unconfirmed_ct{false};
+    // Set to true when the wallet has no confidential scriptPubKeyManager
+    // (legacy/imported-key wallet). Such a wallet cannot derive a blinded
+    // change output, so confidential UTXOs must not be auto-selected.
+    bool skip_confidential{false};
 };
 
 /**
