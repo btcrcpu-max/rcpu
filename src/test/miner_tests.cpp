@@ -10,6 +10,7 @@
 #include <consensus/tx_verify.h>
 #include <node/miner.h>
 #include <policy/policy.h>
+#include <test/util/mining.h>
 #include <test/util/random.h>
 #include <test/util/txmempool.h>
 #include <txmempool.h>
@@ -29,7 +30,7 @@ using node::BlockAssembler;
 using node::CBlockTemplate;
 
 namespace miner_tests {
-struct MinerTestingSetup : public TestingSetup {
+struct MinerTestingSetup : public RegTestingSetup {
     void TestPackageSelection(const CScript& scriptPubKey, const std::vector<CTransactionRef>& txFirst) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
     void TestBasicMining(const CScript& scriptPubKey, const std::vector<CTransactionRef>& txFirst, int baseheight) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
     void TestPrioritisedMining(const CScript& scriptPubKey, const std::vector<CTransactionRef>& txFirst) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
@@ -115,6 +116,7 @@ void MinerTestingSetup::TestPackageSelection(const CScript& scriptPubKey, const 
     tx.vin[0].prevout.hash = txFirst[0]->GetHash();
     tx.vin[0].prevout.n = 0;
     tx.vout.resize(1);
+    tx.vout[0].scriptPubKey = CScript() << OP_TRUE;
     tx.vout[0].nValue = 5000000000LL - 1000;
     // This tx has a low fee: 1000 satoshis
     Txid hashParentTx = tx.GetHash(); // save this txid for later use
@@ -179,6 +181,7 @@ void MinerTestingSetup::TestPackageSelection(const CScript& scriptPubKey, const 
     tx.vout.resize(2);
     tx.vout[0].nValue = 5000000000LL - 100000000;
     tx.vout[1].nValue = 100000000; // 1BTC output
+    tx.vout[1].scriptPubKey = CScript() << OP_TRUE;
     Txid hashFreeTx2 = tx.GetHash();
     tx_mempool.addUnchecked(entry.Fee(0).SpendsCoinbase(true).FromTx(tx));
 
@@ -236,6 +239,10 @@ void MinerTestingSetup::TestBasicMining(const CScript& scriptPubKey, const std::
         tx.vin[0].prevout.n = 0;
         tx.vout.resize(1);
         tx.vout[0].nValue = BLOCKSUBSIDY;
+        // RCPU treats an explicit output with an empty script as a fee output
+        // and does not add it to the UTXO set. These transactions form a chain,
+        // so their outputs must remain spendable by the following transaction.
+        tx.vout[0].scriptPubKey = CScript() << OP_TRUE;
         for (unsigned int i = 0; i < 1001; ++i) {
             tx.vout[0].nValue = tx.vout[0].nValue.GetAmount() -  LOWFEE;
             hash = tx.GetHash();
@@ -501,15 +508,14 @@ void MinerTestingSetup::TestBasicMining(const CScript& scriptPubKey, const std::
     tx.vin[0].nSequence = CTxIn::SEQUENCE_LOCKTIME_TYPE_FLAG | 1;
     BOOST_CHECK(!TestSequenceLocks(CTransaction{tx}, tx_mempool)); // Sequence locks fail
 
-    auto pblocktemplate = AssemblerForTest(tx_mempool).CreateNewBlock(scriptPubKey);
-    BOOST_CHECK(pblocktemplate);
+    std::unique_ptr<CBlockTemplate> pblocktemplate;
+    // RCPU activates CSV from height 1, so a template containing the relative
+    // locked transactions added above is rejected by BIP68 block validation.
+    BOOST_CHECK_EXCEPTION(AssemblerForTest(tx_mempool).CreateNewBlock(scriptPubKey), std::runtime_error, HasReason("bad-txns-nonfinal"));
 
-    // None of the of the absolute height/time locked tx should have made
-    // it into the template because we still check IsFinalTx in CreateNewBlock,
-    // but relative locked txs will if inconsistently added to mempool.
-    // For now these will still generate a valid template until BIP68 soft fork
-    BOOST_CHECK_EQUAL(pblocktemplate->block.vtx.size(), 3U);
-    // However if we advance height by 1 and time by SEQUENCE_LOCK_TIME, all of them should be mined
+    // None of the absolute height/time locked tx should have made it into the
+    // template. If we advance height by 1 and time by SEQUENCE_LOCK_TIME, all
+    // of the relative locked transactions become valid and should be mined.
     for (int i = 0; i < CBlockIndex::nMedianTimeSpan; ++i) {
         CBlockIndex* ancestor{Assert(m_node.chainman->ActiveChain().Tip()->GetAncestor(m_node.chainman->ActiveChain().Tip()->nHeight - i))};
         ancestor->nTime += SEQUENCE_LOCK_TIME; // Trick the MedianTimePast
@@ -535,6 +541,7 @@ void MinerTestingSetup::TestPrioritisedMining(const CScript& scriptPubKey, const
     tx.vin[0].prevout.n = 0;
     tx.vin[0].scriptSig = CScript() << OP_1;
     tx.vout.resize(1);
+    tx.vout[0].scriptPubKey = CScript() << OP_TRUE;
     tx.vout[0].nValue = 5000000000LL; // 0 fee
     uint256 hashFreePrioritisedTx = tx.GetHash();
     tx_mempool.addUnchecked(entry.Fee(0).Time(Now<NodeSeconds>()).SpendsCoinbase(true).FromTx(tx));
@@ -617,15 +624,22 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity)
     std::vector<CTransactionRef> txFirst;
     for (const auto& bi : BLOCKINFO) {
         CBlock *pblock = &pblocktemplate->block; // pointer for convenience
+        int mining_height;
+        uint32_t prev_block_time;
         {
             LOCK(cs_main);
+            mining_height = m_node.chainman->ActiveChain().Height() + 1;
+            prev_block_time = m_node.chainman->ActiveChain().Tip()->GetBlockTime();
             pblock->nVersion = VERSIONBITS_TOP_BITS;
             pblock->nTime = m_node.chainman->ActiveChain().Tip()->GetMedianTimePast()+1;
             CMutableTransaction txCoinbase(*pblock->vtx[0]);
             txCoinbase.nVersion = 1;
             txCoinbase.vin[0].scriptSig = CScript{} << (m_node.chainman->ActiveChain().Height() + 1) << bi.extranonce;
-            txCoinbase.vout.resize(1); // Ignore the (optional) segwit commitment added by CreateNewBlock (as the hardcoded nonces don't account for this)
-            txCoinbase.vout[0].scriptPubKey = CScript();
+            txCoinbase.vout.resize(1); // Ignore the optional segwit commitment; the block is solved again below.
+            // The spends below deliberately use synthetic scriptSigs to exercise
+            // miner policy, not signatures. Keep their coinbase inputs valid
+            // under RCPU's always-active DERSIG rule.
+            txCoinbase.vout[0].scriptPubKey = CScript() << OP_TRUE;
             pblock->vtx[0] = MakeTransactionRef(std::move(txCoinbase));
             if (txFirst.size() == 0)
                 baseheight = m_node.chainman->ActiveChain().Height();
@@ -634,6 +648,7 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity)
             pblock->hashMerkleRoot = BlockMerkleRoot(*pblock);
             pblock->nNonce = bi.nonce;
         }
+        BOOST_REQUIRE(SolveBlock(*pblock, mining_height, m_node.chainman->GetConsensus(), prev_block_time));
         std::shared_ptr<const CBlock> shared_pblock = std::make_shared<const CBlock>(*pblock);
         BOOST_CHECK(Assert(m_node.chainman)->ProcessNewBlock(shared_pblock, true, true, nullptr));
         pblock->hashPrevBlock = pblock->GetHash();

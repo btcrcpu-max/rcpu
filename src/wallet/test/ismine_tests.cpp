@@ -17,7 +17,12 @@
 
 
 namespace wallet {
-BOOST_FIXTURE_TEST_SUITE(ismine_tests, BasicTestingSetup)
+
+struct IsMineTestingSetup : public BasicTestingSetup {
+    IsMineTestingSetup() : BasicTestingSetup{ChainType::TESTNET} {}
+};
+
+BOOST_FIXTURE_TEST_SUITE(ismine_tests, IsMineTestingSetup)
 
 wallet::ScriptPubKeyMan* CreateDescriptor(CWallet& keystore, const std::string& desc_str, const bool success)
 {
@@ -718,6 +723,19 @@ BOOST_AUTO_TEST_CASE(ismine_standard)
         BOOST_CHECK_EQUAL(result, ISMINE_NO);
         BOOST_CHECK(keystore.GetLegacyScriptPubKeyMan()->GetScriptPubKeys().count(scriptPubKey) == 0);
     }
+}
+
+BOOST_AUTO_TEST_CASE(ismine_rcpu_mainnet_wif_disabled)
+{
+    SelectParams(ChainType::RCPUMAIN);
+    const CKey key{GenerateRandomKey(/*compressed=*/true)};
+    BOOST_CHECK(EncodeSecret(key).empty());
+    {
+        CWallet keystore(m_node.chain.get(), "", CreateMockableWalletDatabase());
+        auto spk_manager = CreateDescriptor(keystore, "pk(" + EncodeSecret(key) + ")", false);
+        BOOST_CHECK_EQUAL(spk_manager, nullptr);
+    }
+    SelectParams(ChainType::TESTNET);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

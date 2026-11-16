@@ -7,17 +7,25 @@
 
 #include <node/miner.h>
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
 
 class CBlock;
+class CBlockHeader;
 class CChainParams;
 class COutPoint;
 class CScript;
+namespace Consensus {
+struct Params;
+} // namespace Consensus
 namespace node {
 struct NodeContext;
 } // namespace node
+
+/** Solve a test header with the PoW algorithm selected by its height and version. */
+bool SolveBlock(CBlockHeader& block, int64_t height, const Consensus::Params& params, uint32_t prev_block_time = 0);
 
 /** Create a blockchain, starting from genesis */
 std::vector<std::shared_ptr<CBlock>> CreateBlockChain(size_t total_height, const CChainParams& params);

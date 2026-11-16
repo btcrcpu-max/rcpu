@@ -54,6 +54,7 @@ BOOST_AUTO_TEST_CASE(compressed_header_roundtrip_preserves_hash_randomx)
     orig.hashRandomX = uint256S("0x33c450e0152826e3a8948b01464cf9182344a1544b3ddcf6153dd04b62938d01");
 
     const uint256 prev_hash = uint256S("0x1111111111111111111111111111111111111111111111111111111111111111");
+    orig.hashPrevBlock = prev_hash;
 
     // Compress and restore: every field, including hashRandomX, must survive
     // the round trip.

@@ -17,8 +17,46 @@
 #include <validationinterface.h>
 #include <versionbits.h>
 
+#include <limits>
+
 using node::BlockAssembler;
 using node::NodeContext;
+
+bool SolveBlock(CBlockHeader& block, int64_t height, const Consensus::Params& params, uint32_t prev_block_time)
+{
+    if (!params.fPowRandomX) {
+        while (!CheckProofOfWork(block.GetHash(), block.nBits, params)) {
+            if (block.nNonce == std::numeric_limits<uint32_t>::max()) return false;
+            ++block.nNonce;
+        }
+        return true;
+    }
+
+    const std::optional<PowAlgo> algo{GetPowAlgoForHeader(height, block.nVersion, params)};
+    if (!algo) return false;
+
+    const auto check_pow = [&](POWVerifyMode mode, uint256* out_hash) {
+        switch (*algo) {
+        case PowAlgo::RandomX:
+            return CheckProofOfWorkRandomX(block, params, mode, out_hash, prev_block_time);
+        case PowAlgo::Etchash:
+            return CheckProofOfWorkEtchash(block, height, params, mode, out_hash);
+        case PowAlgo::QHash:
+            return CheckProofOfWorkQHash(block, params, mode, out_hash);
+        }
+        return false;
+    };
+
+    while (true) {
+        uint256 solved;
+        if (check_pow(POW_VERIFY_MINING, &solved)) {
+            block.hashRandomX = solved;
+            return check_pow(POW_VERIFY_FULL, nullptr);
+        }
+        if (block.nNonce == std::numeric_limits<uint32_t>::max()) return false;
+        ++block.nNonce;
+    }
+}
 
 COutPoint generatetoaddress(const NodeContext& node, const std::string& address)
 {
@@ -52,10 +90,8 @@ std::vector<std::shared_ptr<CBlock>> CreateBlockChain(size_t total_height, const
         block.nBits = params.GenesisBlock().nBits;
         block.nNonce = 0;
 
-        while (!CheckProofOfWork(block.GetHash(), block.nBits, params.GetConsensus())) {
-            ++block.nNonce;
-            assert(block.nNonce);
-        }
+        const uint32_t prev_block_time{height >= 1 ? ret.at(height - 1)->nTime : params.GenesisBlock().nTime};
+        assert(SolveBlock(block, height + 1, params.GetConsensus(), prev_block_time));
     }
     return ret;
 }
@@ -86,13 +122,11 @@ protected:
 
 COutPoint MineBlock(const NodeContext& node, std::shared_ptr<CBlock>& block)
 {
-    while (!CheckProofOfWork(block->GetHash(), block->nBits, Params().GetConsensus())) {
-        ++block->nNonce;
-        assert(block->nNonce);
-    }
-
     auto& chainman{*Assert(node.chainman)};
     const auto old_height = WITH_LOCK(chainman.GetMutex(), return chainman.ActiveHeight());
+    const uint32_t prev_block_time = WITH_LOCK(chainman.GetMutex(), return chainman.ActiveChain().Tip()->GetBlockTime());
+    if (!SolveBlock(*block, old_height + 1, Params().GetConsensus(), prev_block_time)) return {};
+
     bool new_block;
     BlockValidationStateCatcher bvsc{block->GetHash()};
     RegisterValidationInterface(&bvsc);

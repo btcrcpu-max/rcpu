@@ -369,8 +369,9 @@ BOOST_AUTO_TEST_CASE(util_ParseMoney)
     BOOST_CHECK_EQUAL(ParseMoney("0.00000001 ").value(), COIN/100000000);
     BOOST_CHECK_EQUAL(ParseMoney(" 0.00000001").value(), COIN/100000000);
 
-    // Parsing amount that cannot be represented should fail
-    BOOST_CHECK(!ParseMoney("100000000.00"));
+    // RCPU accepts its full per-output range, but rejects one satoshi above it.
+    BOOST_CHECK_EQUAL(ParseMoney(FormatMoney(MAX_MONEY)).value(), MAX_MONEY);
+    BOOST_CHECK(!ParseMoney(FormatMoney(MAX_MONEY + 1)));
     BOOST_CHECK(!ParseMoney("0.000000001"));
 
     // Parsing empty string should fail

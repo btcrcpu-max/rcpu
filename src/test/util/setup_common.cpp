@@ -45,6 +45,7 @@
 #include <scheduler.h>
 #include <script/sigcache.h>
 #include <streams.h>
+#include <test/util/mining.h>
 #include <test/util/net.h>
 #include <test/util/random.h>
 #include <test/util/txmempool.h>
@@ -327,7 +328,16 @@ CBlock TestChain100Setup::CreateBlock(
     }
     RegenerateCommitments(block, *Assert(m_node.chainman));
 
-    while (!CheckProofOfWork(block.GetHash(), block.nBits, m_node.chainman->GetConsensus())) ++block.nNonce;
+    int block_height;
+    uint32_t prev_block_time;
+    {
+        LOCK(::cs_main);
+        const CBlockIndex* prev_block{Assert(m_node.chainman)->m_blockman.LookupBlockIndex(block.hashPrevBlock)};
+        Assert(prev_block);
+        block_height = prev_block->nHeight + 1;
+        prev_block_time = prev_block->GetBlockTime();
+    }
+    Assert(SolveBlock(block, block_height, m_node.chainman->GetConsensus(), prev_block_time));
 
     return block;
 }

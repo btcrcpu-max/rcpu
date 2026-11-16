@@ -172,6 +172,15 @@ BOOST_AUTO_TEST_CASE(sighash_from_data)
             continue;
         }
         if (test.size() == 1) continue; // comment
+        if (test.size() != 5 && test.size() != 6) {
+            BOOST_ERROR("Bad test: " << strTest);
+            continue;
+        }
+        const bool sighash_only{test.size() == 6};
+        if (sighash_only && (!test[5].isStr() || test[5].get_str() != "SIGHASH_ONLY")) {
+            BOOST_ERROR("Bad test marker: " << strTest);
+            continue;
+        }
 
         std::string raw_tx, raw_script, sigHashHex;
         int nIn, nHashType;
@@ -190,9 +199,11 @@ BOOST_AUTO_TEST_CASE(sighash_from_data)
           DataStream stream(ParseHex(raw_tx));
           stream >> TX_WITH_WITNESS(tx);
 
-          TxValidationState state;
-          BOOST_CHECK_MESSAGE(CheckTransaction(*tx, state), strTest);
-          BOOST_CHECK(state.IsValid());
+          if (!sighash_only) {
+              TxValidationState state;
+              BOOST_CHECK_MESSAGE(CheckTransaction(*tx, state), strTest);
+              BOOST_CHECK(state.IsValid());
+          }
 
           std::vector<unsigned char> raw = ParseHex(raw_script);
           scriptCode.insert(scriptCode.end(), raw.begin(), raw.end());

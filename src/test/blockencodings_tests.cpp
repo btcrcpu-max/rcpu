@@ -7,6 +7,7 @@
 #include <consensus/merkle.h>
 #include <pow.h>
 #include <streams.h>
+#include <test/util/mining.h>
 #include <test/util/random.h>
 #include <test/util/txmempool.h>
 
@@ -25,6 +26,7 @@ static CBlock BuildBlockTestCase() {
     tx.vin[0].scriptSig.resize(10);
     tx.vout.resize(1);
     tx.vout[0].nValue = 42;
+    tx.vout[0].scriptPubKey = CScript() << OP_TRUE;
 
     block.vtx.resize(3);
     block.vtx[0] = MakeTransactionRef(tx);
@@ -46,7 +48,7 @@ static CBlock BuildBlockTestCase() {
     bool mutated;
     block.hashMerkleRoot = BlockMerkleRoot(block, &mutated);
     assert(!mutated);
-    while (!CheckProofOfWork(block.GetHash(), block.nBits, Params().GetConsensus())) ++block.nNonce;
+    BOOST_REQUIRE(SolveBlock(block, 1, Params().GetConsensus()));
     return block;
 }
 
@@ -266,6 +268,7 @@ BOOST_AUTO_TEST_CASE(EmptyBlockRoundTripTest)
     coinbase.vin[0].scriptSig.resize(10);
     coinbase.vout.resize(1);
     coinbase.vout[0].nValue = 42;
+    coinbase.vout[0].scriptPubKey = CScript() << OP_TRUE;
 
     CBlock block;
     block.vtx.resize(1);
@@ -277,7 +280,7 @@ BOOST_AUTO_TEST_CASE(EmptyBlockRoundTripTest)
     bool mutated;
     block.hashMerkleRoot = BlockMerkleRoot(block, &mutated);
     assert(!mutated);
-    while (!CheckProofOfWork(block.GetHash(), block.nBits, Params().GetConsensus())) ++block.nNonce;
+    BOOST_REQUIRE(SolveBlock(block, 1, Params().GetConsensus()));
 
     // Test simple header round-trip with only coinbase
     {

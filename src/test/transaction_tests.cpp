@@ -202,9 +202,14 @@ BOOST_AUTO_TEST_CASE(tx_valid)
         std::string strTest = test.write();
         if (test[0].isArray())
         {
-            if (test.size() != 3 || !test[1].isStr() || !test[2].isStr())
+            if ((test.size() != 3 && test.size() != 4) || !test[1].isStr() || !test[2].isStr())
             {
                 BOOST_ERROR("Bad test: " << strTest);
+                continue;
+            }
+            const bool script_only{test.size() == 4};
+            if (script_only && (!test[3].isStr() || test[3].get_str() != "SCRIPT_ONLY")) {
+                BOOST_ERROR("Bad test marker: " << strTest);
                 continue;
             }
 
@@ -241,9 +246,11 @@ BOOST_AUTO_TEST_CASE(tx_valid)
             DataStream stream(ParseHex(transaction));
             CTransaction tx(deserialize, TX_WITH_WITNESS, stream);
 
-            TxValidationState state;
-            BOOST_CHECK_MESSAGE(CheckTransaction(tx, state), strTest);
-            BOOST_CHECK(state.IsValid());
+            if (!script_only) {
+                TxValidationState state;
+                BOOST_CHECK_MESSAGE(CheckTransaction(tx, state), strTest);
+                BOOST_CHECK(state.IsValid());
+            }
 
             PrecomputedTransactionData txdata(tx);
             unsigned int verify_flags = ParseScriptFlags(test[2].get_str());

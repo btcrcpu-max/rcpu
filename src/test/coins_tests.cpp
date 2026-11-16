@@ -185,7 +185,7 @@ void SimulationTest(CCoinsView* base, bool fake_best_block)
                     added_an_unspendable_entry = true;
                 } else {
                     // Random sizes so we can test memory usage accounting
-                    newcoin.out.scriptPubKey.assign(InsecureRandBits(6), 0);
+                    newcoin.out.scriptPubKey.assign(1 + InsecureRandBits(6), 0);
                     (coin.IsSpent() ? added_an_entry : updated_an_entry) = true;
                     coin = newcoin;
                 }
@@ -335,7 +335,7 @@ BOOST_AUTO_TEST_CASE(updatecoins_simulation_test)
             tx.vin.resize(1);
             tx.vout.resize(1);
             tx.vout[0].nValue = i; //Keep txs unique unless intended to duplicate
-            tx.vout[0].scriptPubKey.assign(InsecureRand32() & 0x3F, 0); // Random sizes so we can test memory usage accounting
+            tx.vout[0].scriptPubKey.assign(1 + (InsecureRand32() & 0x3F), 0); // Random sizes so we can test memory usage accounting
             const int height{int(InsecureRand32() >> 1)};
             Coin old_coin;
 
@@ -503,8 +503,8 @@ BOOST_AUTO_TEST_CASE(updatecoins_simulation_test)
 
 BOOST_AUTO_TEST_CASE(ccoins_serialization)
 {
-    // Good example
-    DataStream ss1{ParseHex("97f23c835800816115944e077fe7c803cfa57f29b36bf87c1d35")};
+    // Good example (RCPU explicit value, null nonce, empty rangeproof)
+    DataStream ss1{ParseHex("97f23c" "09" "01" "0000000df8475800" "00" "00" "00" "816115944e077fe7c803cfa57f29b36bf87c1d35")};
     Coin cc1;
     ss1 >> cc1;
     BOOST_CHECK_EQUAL(cc1.fCoinBase, false);
@@ -513,7 +513,7 @@ BOOST_AUTO_TEST_CASE(ccoins_serialization)
     BOOST_CHECK_EQUAL(HexStr(cc1.out.scriptPubKey), HexStr(GetScriptForDestination(PKHash(uint160(ParseHex("816115944e077fe7c803cfa57f29b36bf87c1d35"))))));
 
     // Good example
-    DataStream ss2{ParseHex("8ddf77bbd123008c988f1a4a4de2161e0f50aac7f17e7f9555caa4")};
+    DataStream ss2{ParseHex("8ddf77" "09" "01" "000000000001af3d" "00" "00" "00" "8c988f1a4a4de2161e0f50aac7f17e7f9555caa4")};
     Coin cc2;
     ss2 >> cc2;
     BOOST_CHECK_EQUAL(cc2.fCoinBase, true);
@@ -522,7 +522,7 @@ BOOST_AUTO_TEST_CASE(ccoins_serialization)
     BOOST_CHECK_EQUAL(HexStr(cc2.out.scriptPubKey), HexStr(GetScriptForDestination(PKHash(uint160(ParseHex("8c988f1a4a4de2161e0f50aac7f17e7f9555caa4"))))));
 
     // Smallest possible example
-    DataStream ss3{ParseHex("000006")};
+    DataStream ss3{ParseHex("00" "09" "01" "0000000000000000" "00" "00" "06")};
     Coin cc3;
     ss3 >> cc3;
     BOOST_CHECK_EQUAL(cc3.fCoinBase, false);
@@ -531,7 +531,7 @@ BOOST_AUTO_TEST_CASE(ccoins_serialization)
     BOOST_CHECK_EQUAL(cc3.out.scriptPubKey.size(), 0U);
 
     // scriptPubKey that ends beyond the end of the stream
-    DataStream ss4{ParseHex("000007")};
+    DataStream ss4{ParseHex("00" "09" "01" "0000000000000000" "00" "00" "07")};
     try {
         Coin cc4;
         ss4 >> cc4;
@@ -544,7 +544,7 @@ BOOST_AUTO_TEST_CASE(ccoins_serialization)
     uint64_t x = 3000000000ULL;
     tmp << VARINT(x);
     BOOST_CHECK_EQUAL(HexStr(tmp), "8a95c0bb00");
-    DataStream ss5{ParseHex("00008a95c0bb00")};
+    DataStream ss5{ParseHex("00" "09" "01" "0000000000000000" "00" "00" "8a95c0bb00")};
     try {
         Coin cc5;
         ss5 >> cc5;
@@ -745,6 +745,7 @@ static void CheckAddCoinBase(CAmount base_value, CAmount cache_value, CAmount mo
     try {
         CTxOut output;
         output.nValue = modify_value;
+        output.scriptPubKey = CScript() << OP_TRUE;
         test.cache.AddCoin(OUTPOINT, Coin(std::move(output), 1, coinbase), coinbase);
         test.cache.SelfTest();
         GetCoinsMapEntry(test.cache.map(), result_value, result_flags);
@@ -889,6 +890,7 @@ Coin MakeCoin()
 {
     Coin coin;
     coin.out.nValue = InsecureRand32();
+    coin.out.scriptPubKey = CScript() << OP_TRUE;
     coin.nHeight = InsecureRandRange(4096);
     coin.fCoinBase = 0;
     return coin;

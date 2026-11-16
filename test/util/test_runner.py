@@ -78,6 +78,20 @@ def bctest(testDir, testObj, buildenv):
         execprog = os.getenv("BITCOINUTIL", default=execprog)
     elif testObj["exec"] == "./bitcoin-tx":
         execprog = os.getenv("BITCOINTX", default=execprog)
+    # !RCPU: the fork renamed the command-line tools (bitcoin-tx -> rcpu-tx,
+    # bitcoin-util -> rcpu-util), but bitcoin-util-test.json still names the
+    # upstream binaries, which are never built here. Fall back to the
+    # PACKAGE_NAME-prefixed binary when the upstream-named one does not exist,
+    # so `make check` exercises the same tests instead of failing every case
+    # with OSError. An explicit BITCOINTX/BITCOINUTIL override still wins when
+    # that path exists.
+    if not os.path.exists(execprog) and testObj["exec"].startswith("./bitcoin-"):
+        fork_execprog = os.path.join(
+            buildenv["BUILDDIR"], "src",
+            buildenv["PACKAGE_NAME"] + testObj["exec"][len("./bitcoin"):] + buildenv["EXEEXT"])
+        if os.path.exists(fork_execprog):
+            execprog = fork_execprog
+    # !RCPU END
 
     execargs = testObj['args']
     execrun = [execprog] + execargs

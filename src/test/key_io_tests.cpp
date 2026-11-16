@@ -13,6 +13,8 @@
 #include <util/chaintype.h>
 #include <util/strencodings.h>
 
+#include <stdexcept>
+
 #include <boost/test/unit_test.hpp>
 
 #include <univalue.h>
@@ -25,7 +27,7 @@ BOOST_AUTO_TEST_CASE(key_io_valid_parse)
     UniValue tests = read_json(json_tests::key_io_valid);
     CKey privkey;
     CTxDestination destination;
-    SelectParams(ChainType::MAIN);
+    SelectParams(ChainType::RCPUMAIN);
 
     for (unsigned int idx = 0; idx < tests.size(); idx++) {
         const UniValue& test = tests[idx];
@@ -114,7 +116,7 @@ BOOST_AUTO_TEST_CASE(key_io_valid_gen)
         }
     }
 
-    SelectParams(ChainType::MAIN);
+    SelectParams(ChainType::RCPUMAIN);
 }
 
 
@@ -136,7 +138,7 @@ BOOST_AUTO_TEST_CASE(key_io_invalid)
         std::string exp_base58string = test[0].get_str();
 
         // must be invalid as public and as private key
-        for (const auto& chain : {ChainType::MAIN, ChainType::TESTNET, ChainType::SIGNET, ChainType::REGTEST}) {
+        for (const auto& chain : {ChainType::RCPUMAIN, ChainType::TESTNET, ChainType::SIGNET, ChainType::REGTEST}) {
             SelectParams(chain);
             destination = DecodeDestination(exp_base58string);
             BOOST_CHECK_MESSAGE(!IsValidDestination(destination), "IsValid pubkey in mainnet:" + strTest);
@@ -144,6 +146,23 @@ BOOST_AUTO_TEST_CASE(key_io_invalid)
             BOOST_CHECK_MESSAGE(!privkey.IsValid(), "IsValid privkey in mainnet:" + strTest);
         }
     }
+}
+
+BOOST_AUTO_TEST_CASE(key_io_mainnet_disabled)
+{
+    BOOST_CHECK_THROW(SelectParams(ChainType::MAIN), std::runtime_error);
+    SelectParams(ChainType::RCPUMAIN);
+
+    CKey key;
+    key.MakeNewKey(true);
+    BOOST_REQUIRE(key.IsValid());
+    BOOST_CHECK(EncodeSecret(key).empty());
+
+    const std::string test_wif{"92ZdE5HoLafywnTBbzPxbvRmp75pSfzvdU3XaZGh1cToipgdHVh"};
+    SelectParams(ChainType::TESTNET);
+    BOOST_REQUIRE(DecodeSecret(test_wif).IsValid());
+    SelectParams(ChainType::RCPUMAIN);
+    BOOST_CHECK(!DecodeSecret(test_wif).IsValid());
 }
 
 // RCPU CT: confidential address (rcpux1...) round-trip and validation tests.

@@ -721,7 +721,7 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_snapshot_completion_hash_mismatch, Sna
     Coin badcoin;
     badcoin.out.nValue = InsecureRand32();
     badcoin.nHeight = 1;
-    badcoin.out.scriptPubKey.assign(InsecureRandBits(6), 0);
+    badcoin.out.scriptPubKey.assign(1 + InsecureRandBits(6), 0);
     Txid txid = Txid::FromUint256(InsecureRand256());
     ibd_coins.AddCoin(COutPoint(txid, 0), std::move(badcoin), false);
 

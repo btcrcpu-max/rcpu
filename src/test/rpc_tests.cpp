@@ -3,6 +3,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <chainparamsbase.h>
 #include <core_io.h>
 #include <interfaces/chain.h>
 #include <node/context.h>
@@ -551,10 +552,11 @@ BOOST_AUTO_TEST_CASE(help_example)
 {
     // test different argument types
     const RPCArgList& args = {{"foo", "bar"}, {"b", true}, {"n", 1}};
+    const std::string rpc_url{strprintf("http://127.0.0.1:%d/", CreateBaseChainParams(ChainType::RCPUMAIN)->RPCPort())};
     // !RCPU
     BOOST_CHECK_EQUAL(HelpExampleCliNamed("test", args), "> rcpu-cli -named test foo=bar b=true n=1\n");
     // !RCPU END
-    BOOST_CHECK_EQUAL(HelpExampleRpcNamed("test", args), "> curl --user myusername --data-binary '{\"jsonrpc\": \"1.0\", \"id\": \"curltest\", \"method\": \"test\", \"params\": {\"foo\":\"bar\",\"b\":true,\"n\":1}}' -H 'content-type: text/plain;' http://127.0.0.1:8332/\n");
+    BOOST_CHECK_EQUAL(HelpExampleRpcNamed("test", args), "> curl --user myusername --data-binary '{\"jsonrpc\": \"1.0\", \"id\": \"curltest\", \"method\": \"test\", \"params\": {\"foo\":\"bar\",\"b\":true,\"n\":1}}' -H 'content-type: text/plain;' " + rpc_url + "\n");
 
     // test shell escape
     // !RCPU
@@ -571,7 +573,7 @@ BOOST_AUTO_TEST_CASE(help_example)
     // !RCPU
     BOOST_CHECK_EQUAL(HelpExampleCliNamed("test", {{"name", obj_value}}), "> rcpu-cli -named test name='{\"foo\":\"bar\",\"b\":false,\"n\":1}'\n");
     // !RCPU END
-    BOOST_CHECK_EQUAL(HelpExampleRpcNamed("test", {{"name", obj_value}}), "> curl --user myusername --data-binary '{\"jsonrpc\": \"1.0\", \"id\": \"curltest\", \"method\": \"test\", \"params\": {\"name\":{\"foo\":\"bar\",\"b\":false,\"n\":1}}}' -H 'content-type: text/plain;' http://127.0.0.1:8332/\n");
+    BOOST_CHECK_EQUAL(HelpExampleRpcNamed("test", {{"name", obj_value}}), "> curl --user myusername --data-binary '{\"jsonrpc\": \"1.0\", \"id\": \"curltest\", \"method\": \"test\", \"params\": {\"name\":{\"foo\":\"bar\",\"b\":false,\"n\":1}}}' -H 'content-type: text/plain;' " + rpc_url + "\n");
 
     // test array params
     UniValue arr_value(UniValue::VARR);
@@ -581,7 +583,7 @@ BOOST_AUTO_TEST_CASE(help_example)
     // !RCPU
     BOOST_CHECK_EQUAL(HelpExampleCliNamed("test", {{"name", arr_value}}), "> rcpu-cli -named test name='[\"bar\",false,1]'\n");
     // !RCPU END
-    BOOST_CHECK_EQUAL(HelpExampleRpcNamed("test", {{"name", arr_value}}), "> curl --user myusername --data-binary '{\"jsonrpc\": \"1.0\", \"id\": \"curltest\", \"method\": \"test\", \"params\": {\"name\":[\"bar\",false,1]}}' -H 'content-type: text/plain;' http://127.0.0.1:8332/\n");
+    BOOST_CHECK_EQUAL(HelpExampleRpcNamed("test", {{"name", arr_value}}), "> curl --user myusername --data-binary '{\"jsonrpc\": \"1.0\", \"id\": \"curltest\", \"method\": \"test\", \"params\": {\"name\":[\"bar\",false,1]}}' -H 'content-type: text/plain;' " + rpc_url + "\n");
 
     // test types don't matter for shell
     BOOST_CHECK_EQUAL(HelpExampleCliNamed("foo", {{"arg", true}}), HelpExampleCliNamed("foo", {{"arg", "true"}}));

@@ -26,7 +26,7 @@ BOOST_FIXTURE_TEST_SUITE(blockmanager_tests, BasicTestingSetup)
 
 BOOST_AUTO_TEST_CASE(blockmanager_find_block_pos)
 {
-    const auto params {CreateChainParams(ArgsManager{}, ChainType::MAIN)};
+    const auto params {CreateChainParams(ArgsManager{}, ChainType::RCPUMAIN)};
     KernelNotifications notifications{*Assert(m_node.shutdown), m_node.exit_status};
     const BlockManager::Options blockman_opts{
         .chainparams = *params,
@@ -145,13 +145,16 @@ BOOST_AUTO_TEST_CASE(blockmanager_flush_block_file)
     // Test blocks with no transactions, not even a coinbase
     CBlock block1;
     block1.nVersion = 1;
+    block1.hashPrevBlock = uint256S("0x01");
     CBlock block2;
     block2.nVersion = 2;
+    block2.hashPrevBlock = uint256S("0x02");
     CBlock block3;
     block3.nVersion = 3;
+    block3.hashPrevBlock = uint256S("0x03");
 
-    // They are 80 bytes header + 1 byte 0x00 for vtx length
-    constexpr int TEST_BLOCK_SIZE{81};
+    // Include RCPU's extended header and the empty transaction vector.
+    const size_t TEST_BLOCK_SIZE{::GetSerializeSize(TX_WITH_WITNESS(block1))};
 
     // Blockstore is empty
     BOOST_CHECK_EQUAL(blockman.CalculateCurrentUsage(), 0);

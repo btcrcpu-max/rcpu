@@ -32,6 +32,7 @@ Interesting starting states could be loading a snapshot when the current chain t
 - TODO: Not an ancestor or a descendant of the snapshot block and has more work
 
 """
+from decimal import Decimal
 from shutil import rmtree
 
 from test_framework.messages import tx_from_hex
@@ -100,10 +101,10 @@ class AssumeutxoTest(BitcoinTestFramework):
 
         self.log.info("  - snapshot file with alternated UTXO data")
         cases = [
-            [b"\xff" * 32, 0, "7d52155c9a9fdc4525b637ef6170568e5dad6fabd0b1fdbb9432010b8453095b"],  # wrong outpoint hash
-            [(1).to_bytes(4, "little"), 32, "9f4d897031ab8547665b4153317ae2fdbf0130c7840b66427ebc48b881cb80ad"],  # wrong outpoint index
-            [b"\x81", 36, "3da966ba9826fb6d2604260e01607b55ba44e1a5de298606b08704bc62570ea8"],  # wrong coin code VARINT((coinbase ? 1 : 0) | (height << 1))
-            [b"\x80", 36, "091e893b3ccb4334378709578025356c8bcb0a623f37c7c4e493133c988648e5"],  # another wrong coin code
+            [b"\xff" * 32, 0, "5d0e3d8680469504bed9734173e97beb6c0c8705da238da0e65b4a3f08eece95"],  # wrong outpoint hash
+            [(1).to_bytes(4, "little"), 32, "0399d1fea0f4273915d965787b7fac9ab95547247e737b1a04ce731f8d950626"],  # wrong outpoint index
+            [b"\x81", 36, None],  # wrong coin code VARINT((coinbase ? 1 : 0) | (height << 1)), rejected as invalid height
+            [b"\x80", 36, None],  # another wrong coin code, also rejected as invalid height
         ]
 
         for content, offset, wrong_hash in cases:
@@ -111,7 +112,10 @@ class AssumeutxoTest(BitcoinTestFramework):
                 f.write(valid_snapshot_contents[:(32 + 8 + offset)])
                 f.write(content)
                 f.write(valid_snapshot_contents[(32 + 8 + offset + len(content)):])
-            expected_error(log_msg=f"[snapshot] bad snapshot content hash: expected a4bf3407ccb2cc0145c49ebba8fa91199f8a3903daf0883875941497d2493c27, got {wrong_hash}")
+            if wrong_hash is None:
+                expected_error(log_msg="[snapshot] bad snapshot data after deserializing 2 coins")
+            else:
+                expected_error(log_msg=f"[snapshot] bad snapshot content hash: expected 6dad33292199300266d2737375664977625b883472144f1d08d997aaad090dca, got {wrong_hash}")
 
     def test_invalid_chainstate_scenarios(self):
         self.log.info("Test different scenarios of invalid snapshot chainstate in datadir")
@@ -197,7 +201,7 @@ class AssumeutxoTest(BitcoinTestFramework):
 
         assert_equal(
             dump_output['txoutset_hash'],
-            "a4bf3407ccb2cc0145c49ebba8fa91199f8a3903daf0883875941497d2493c27")
+            "6dad33292199300266d2737375664977625b883472144f1d08d997aaad090dca")
         assert_equal(dump_output["nchaintx"], 334)
         assert_equal(n0.getblockchaininfo()["blocks"], SNAPSHOT_BASE_HEIGHT)
 
@@ -236,7 +240,7 @@ class AssumeutxoTest(BitcoinTestFramework):
         prev_tx = n0.getblock(spend_coin_blockhash, 3)['tx'][0]
         prevout = {"txid": prev_tx['txid'], "vout": 0, "scriptPubKey": prev_tx['vout'][0]['scriptPubKey']['hex']}
         privkey = n0.get_deterministic_priv_key().key
-        raw_tx = n1.createrawtransaction([prevout], {getnewdestination()[2]: 24.99})
+        raw_tx = n1.createrawtransaction([prevout], {getnewdestination()[2]: prev_tx['vout'][0]['value'] - Decimal("0.01")})
         signed_tx = n1.signrawtransactionwithkey(raw_tx, [privkey], [prevout])['hex']
         signed_txid = tx_from_hex(signed_tx).rehash()
 
