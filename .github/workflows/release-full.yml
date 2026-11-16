@@ -348,9 +348,6 @@ jobs:
           ls -l "$BIN"
           echo "OK: Windows rcpud.exe produced"
       - name: Package Windows
-        env:
-          WINDOWS_SIGNING_CERT: ${{ secrets.WINDOWS_SIGNING_CERT }}
-          WINDOWS_SIGNING_PASSWORD: ${{ secrets.WINDOWS_SIGNING_PASSWORD }}
         run: |
           PKGVER=$(sed -n 's/^PACKAGE_VERSION = //p' Makefile | head -1)
           echo "PACKAGE_VERSION=$PKGVER"
@@ -381,25 +378,12 @@ jobs:
             SIZE=$(stat -c%s "$EXE")
             test "$SIZE" -ge 1000000 || { echo "ERROR: $EXE too small ($SIZE bytes)"; exit 1; }
             file "$EXE" || true
-            # Authenticode signing: enabled when the PFX (base64) and password
-            # secrets are configured. Unsigned releases still work but trigger
-            # SmartScreen; release managers should set the secrets.
-            if [ -n "${WINDOWS_SIGNING_CERT:-}" ]; then
-              echo "Signing $EXE with Authenticode"
-              trap 'rm -f /tmp/rcpu-sign.pfx' EXIT
-              printf '%s' "$WINDOWS_SIGNING_CERT" | base64 -d > /tmp/rcpu-sign.pfx
-              osslsigncode sign -pkcs12 /tmp/rcpu-sign.pfx \
-                -pass "${WINDOWS_SIGNING_PASSWORD}" \
-                -n "RCPU Core" -i "https://rcpu.top" \
-                -t "https://timestamp.digicert.com" \
-                -in "$EXE" -out "${EXE}.signed"
-              mv "${EXE}.signed" "$EXE"
-              osslsigncode verify -in "$EXE"
-              rm -f /tmp/rcpu-sign.pfx
-              trap - EXIT
-            else
-              echo "WARNING: WINDOWS_SIGNING_CERT not configured; installer will be unsigned"
-            fi
+            # Authenticode signing runs in the publish (`release`) job, not
+            # here (R-4): this job executes the cross-compiler, NSIS and the
+            # RandomX archive, so the signing certificate must not share its
+            # environment. The publish job signs the artifact and regenerates
+            # SHA256SUMS-windows.txt before it is gpg-signed.
+            echo "Signing deferred to the release job"
             zip "rcpu-${PKGVER}-win64-setup.zip" "$EXE"
             sha256sum "$EXE" "rcpu-${PKGVER}-win64-setup.zip" > SHA256SUMS-windows.txt
             cat SHA256SUMS-windows.txt
@@ -441,6 +425,66 @@ jobs:
         with:
           name: windows-package
           path: windows/
+      - name: Sign Windows installer (Authenticode)
+        # R-4/L-6: the certificate is used only in this publish job, which
+        # downloads a finished artifact and runs no build toolchain. The
+        # passphrase reaches osslsigncode through a 0600 file (-readpass),
+        # never through argv, and every temporary secret is removed on exit.
+        env:
+          WINDOWS_SIGNING_CERT: ${{ secrets.WINDOWS_SIGNING_CERT }}
+          WINDOWS_SIGNING_PASSWORD: ${{ secrets.WINDOWS_SIGNING_PASSWORD }}
+        run: |
+          if [ -z "${WINDOWS_SIGNING_CERT:-}" ]; then
+            echo "WARNING: WINDOWS_SIGNING_CERT not configured; Windows artifacts stay unsigned"
+            exit 0
+          fi
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq osslsigncode
+          umask 077
+          PFX="$RUNNER_TEMP/rcpu-sign.pfx"
+          PASSFILE="$RUNNER_TEMP/rcpu-sign.pass"
+          trap 'rm -f "$PFX" "$PASSFILE"' EXIT
+          printf '%s' "$WINDOWS_SIGNING_CERT" | base64 -d > "$PFX"
+          printf '%s' "$WINDOWS_SIGNING_PASSWORD" > "$PASSFILE"
+          signed=0
+          for EXE in windows/*-win64-setup.exe; do
+            [ -e "$EXE" ] || continue
+            test -s "$EXE" || { echo "ERROR: $EXE is empty"; exit 1; }
+            echo "Signing $EXE with Authenticode"
+            osslsigncode sign -pkcs12 "$PFX" -readpass "$PASSFILE" \
+              -n "RCPU Core" -i "https://rcpu.top" \
+              -t "https://timestamp.digicert.com" \
+              -in "$EXE" -out "${EXE}.signed"
+            mv "${EXE}.signed" "$EXE"
+            osslsigncode verify -in "$EXE"
+            signed=$((signed + 1))
+          done
+          if [ "$signed" -eq 0 ]; then
+            echo "WARNING: no Windows installer to sign; portable zip stays unsigned"
+            exit 0
+          fi
+          # The setup ZIP was built before signing, so it still contains the
+          # unsigned EXE. The ZIP is what users download, therefore it must be
+          # rebuilt from the signed binary; otherwise the EXE inside is still
+          # unsigned even though the standalone one is.
+          for ZIP in windows/*-win64-setup.zip; do
+            [ -e "$ZIP" ] || continue
+            EXE="${ZIP%-setup.zip}-setup.exe"
+            [ -f "$EXE" ] || { echo "ERROR: $EXE missing for $ZIP"; exit 1; }
+            ( cd windows && rm -f "$(basename "$ZIP")" && zip -q "$(basename "$ZIP")" "$(basename "$EXE")" )
+            echo "Rebuilt $ZIP from the signed installer"
+          done
+          # The signature changes the file, so the checksums must be rebuilt
+          # here, before SHA256SUMS.txt is merged and gpg-signed below.
+          (
+            cd windows
+            rm -f SHA256SUMS-windows.txt
+            for f in *.exe *.zip; do
+              [ -e "$f" ] || continue
+              sha256sum "$f"
+            done > SHA256SUMS-windows.txt
+            cat SHA256SUMS-windows.txt
+          )
       - name: Merge checksums
         run: |
           cat linux/SHA256SUMS-linux.txt windows/SHA256SUMS-windows.txt > SHA256SUMS.txt
