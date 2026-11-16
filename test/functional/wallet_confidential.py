@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 # Copyright (c) 2026 The RCPU Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
@@ -463,22 +463,34 @@ class WalletConfidentialTest(BitcoinTestFramework):
         # inside ReserveDestination, and the wallet must keep working for plain
         # explicit payments.
         self.log.info("Legacy wallet reports the confidential-change migration path")
-        node.createwallet(wallet_name="legacyw", descriptors=False)
-        legacyw = node.get_wallet_rpc("legacyw")
-        legacy_bech32 = legacyw.getnewaddress("", "bech32")
-        mixer.sendtoaddress(legacy_bech32, Decimal("0.5"))
-        self.generatetoaddress(node, 1, mixer.getnewaddress("", "bech32"))
+        # Ubuntu CI builds without BDB (libdb 5.3 is not the 4.8 ABI), so
+        # createwallet(descriptors=False) fails there. Skip only the legacy
+        # assertions in that case; the BECH32 fallback itself is exercised by
+        # 7g/7h and by the descriptor wallets below.
+        legacy_supported = True
         try:
-            legacyw.send(
-                [{bech32_addr: Decimal("0.1")}],
-                options={"change_type": "confidential"},
-            )
-            raise AssertionError("legacy wallet unexpectedly built a confidential change")
+            node.createwallet(wallet_name="legacyw", descriptors=False)
         except JSONRPCException as e:
-            assert "has no confidential descriptor" in e.error["message"], e.error
-        # The same wallet still pays explicit addresses normally.
-        txid_legacy = legacyw.send([{bech32_addr: Decimal("0.1")}])["txid"]
-        assert txid_legacy in node.getrawmempool(), txid_legacy
+            if "Compiled without bdb support" not in e.error["message"]:
+                raise
+            legacy_supported = False
+            self.log.info("Node was built without BDB; skipping the legacy-wallet assertions")
+        if legacy_supported:
+            legacyw = node.get_wallet_rpc("legacyw")
+            legacy_bech32 = legacyw.getnewaddress("", "bech32")
+            mixer.sendtoaddress(legacy_bech32, Decimal("0.5"))
+            self.generatetoaddress(node, 1, mixer.getnewaddress("", "bech32"))
+            try:
+                legacyw.send(
+                    [{bech32_addr: Decimal("0.1")}],
+                    options={"change_type": "confidential"},
+                )
+                raise AssertionError("legacy wallet unexpectedly built a confidential change")
+            except JSONRPCException as e:
+                assert "has no confidential descriptor" in e.error["message"], e.error
+            # The same wallet still pays explicit addresses normally.
+            txid_legacy = legacyw.send([{bech32_addr: Decimal("0.1")}])["txid"]
+            assert txid_legacy in node.getrawmempool(), txid_legacy
 
         # ---- 8. -ctlegacy=1 usable below nBanPathAHeight (runtime probe) ----
         # H-1: the wallet refuses -ctlegacy=1 once the tip has reached the
