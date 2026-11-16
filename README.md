@@ -28,6 +28,19 @@ dual-algo** mode alongside RandomX.
 > `powLimit`-difficulty blocks. Consensus parameters, PoW algorithms, rewards
 > and the CT rules are otherwise unchanged.
 
+
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org).
+
+- Authors / committers: [@btcrcpu-max](https://github.com/btcrcpu-max)
+- Reviewers: [@btcrcpu-max](https://github.com/btcrcpu-max); external pull requests require maintainer review before merge.
+- Approvers: [@btcrcpu-max](https://github.com/btcrcpu-max)
+
+Only artifacts built by GitHub Actions from tagged commits in this repository are submitted for signing. No locally built or third-party binaries are signed.
+
+Privacy policy: [PRIVACY.md](PRIVACY.md).
+
 | Parameter | Value |
 |---|---|
 | P2P Port | **7227** |
