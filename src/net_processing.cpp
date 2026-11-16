@@ -2632,6 +2632,37 @@ bool PeerManagerImpl::CheckHeadersPoW(const std::vector<CBlockHeader>& headers, 
         return false;
     }
 
+    // H-4 (audit 2026-11-16): a batch can consist of a long prefix that is
+    // already in the block index plus a single new header. The caller's
+    // "already validated" fast path only looks at headers.back(), so such a
+    // batch reaches this function and HasValidProofOfWork would re-verify the
+    // whole prefix: 1999 public Etchash headers + one bogus child costs ~2-4 s
+    // of HashimotoLight per 224 KB message, before the peer is banned. Verify
+    // only the suffix after the last known header; the prefix was already
+    // PoW-checked when it was accepted into the block index.
+    //
+    // A continuous batch whose last known header is at index k has all of
+    // headers[0..k] in the index (a header cannot be indexed without its
+    // ancestors). If nothing is known, fall back to chain_start and the full
+    // batch.
+    int64_t nStartHeight = chain_start->nHeight + 1;
+    size_t first_unknown = 0;
+    {
+        LOCK(::cs_main);
+        first_unknown = m_chainman.m_blockman.FindFirstUnknownHeader(headers);
+        if (first_unknown > 0) {
+            const CBlockIndex* pindex_last_known =
+                m_chainman.m_blockman.LookupBlockIndex(headers[first_unknown - 1].GetHash());
+            if (pindex_last_known != nullptr) {
+                nStartHeight = pindex_last_known->nHeight + 1;
+            }
+        }
+    }
+    LogPrint(BCLog::NET, "CheckHeadersPoW: %u of %u headers already known; verifying %u\n",
+             static_cast<unsigned int>(first_unknown),
+             static_cast<unsigned int>(headers.size()),
+             static_cast<unsigned int>(headers.size() - first_unknown));
+
     // P1-1 + R1: charge the per-peer header PoW budget BEFORE HasValidProofOfWork.
     // A known/ancestor batch never reaches this function (the caller skips it),
     // so replaying public Etchash headers cannot burn hashimoto CPU.
@@ -2644,7 +2675,7 @@ bool PeerManagerImpl::CheckHeadersPoW(const std::vector<CBlockHeader>& headers, 
     // The weight threshold is heuristic; can be tuned by mainnet observations.
     static constexpr int64_t HEADER_WEIGHT_ETCHASH{10};
     int64_t weighted_cost = 0;
-    int64_t h = chain_start->nHeight + 1;
+    int64_t h = nStartHeight;
 
     // !RCPU: During IBD / large headers catch-up, do not apply the 10x Etchash
     // weight. Honest nodes that are far behind will otherwise exhaust the
@@ -2653,8 +2684,8 @@ bool PeerManagerImpl::CheckHeadersPoW(const std::vector<CBlockHeader>& headers, 
     // replay of already-validated headers; new headers still require valid PoW.
     const bool in_ibd = m_chainman.IsInitialBlockDownload();
 
-    for (const auto& hdr : headers) {
-        const auto algo = GetPowAlgoForHeader(h, hdr.nVersion, consensusParams);
+    for (size_t i = first_unknown; i < headers.size(); ++i) {
+        const auto algo = GetPowAlgoForHeader(h, headers[i].nVersion, consensusParams);
         if (algo && *algo == PowAlgo::Etchash && !in_ibd) {
             weighted_cost += HEADER_WEIGHT_ETCHASH;
         } else {
@@ -2672,12 +2703,16 @@ bool PeerManagerImpl::CheckHeadersPoW(const std::vector<CBlockHeader>& headers, 
     }
 
     // Do these headers have proof-of-work matching what's claimed?
-    // The first header builds on chain_start, so its height is known and the
-    // height-derived Etchash algorithm can be verified (and no longer
-    // mis-classified as invalid PoW after activation).
-    if (!HasValidProofOfWork(headers, consensusParams, chain_start->nHeight + 1)) {
-        Misbehaving(peer, 100, "header with invalid proof of work");
-        return false;
+    // Only the suffix after the last known header is unverified. Its first
+    // element builds on the last known header, so the height-derived Etchash
+    // algorithm can still be checked (and is no longer mis-classified as
+    // invalid PoW after activation).
+    if (first_unknown < headers.size()) {
+        const std::vector<CBlockHeader> unknown(headers.begin() + first_unknown, headers.end());
+        if (!HasValidProofOfWork(unknown, consensusParams, nStartHeight)) {
+            Misbehaving(peer, 100, "header with invalid proof of work");
+            return false;
+        }
     }
 
     return true;

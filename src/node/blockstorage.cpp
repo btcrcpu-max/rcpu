@@ -257,6 +257,20 @@ const CBlockIndex* BlockManager::LookupBlockIndex(const uint256& hash) const
     return it == m_block_index.end() ? nullptr : &it->second;
 }
 
+size_t BlockManager::FindFirstUnknownHeader(const std::vector<CBlockHeader>& headers) const
+{
+    AssertLockHeld(cs_main);
+    // A header cannot be indexed without its ancestors, so if headers[i] is
+    // known and the batch is continuous, headers[0..i] are known as well.
+    // Scan from the end to find the longest known prefix in O(n) lookups.
+    for (size_t i = headers.size(); i > 0; --i) {
+        if (LookupBlockIndex(headers[i - 1].GetHash()) != nullptr) {
+            return i;
+        }
+    }
+    return 0;
+}
+
 CBlockIndex* BlockManager::AddToBlockIndex(const CBlockHeader& block, CBlockIndex*& best_header)
 {
     AssertLockHeld(cs_main);

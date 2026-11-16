@@ -204,4 +204,36 @@ BOOST_AUTO_TEST_CASE(blockmanager_flush_block_file)
     BOOST_CHECK_EQUAL(read_block.nVersion, 2);
 }
 
+// H-4 regression: a continuous batch with a long known prefix and one new
+// child must report only the child as unknown, so header PoW verification can
+// skip the prefix instead of re-running HashimotoLight on public headers.
+BOOST_FIXTURE_TEST_CASE(blockmanager_find_first_unknown_header, TestChain100Setup)
+{
+    const auto& chainman = Assert(m_node.chainman);
+    auto& blockman = chainman->m_blockman;
+    const CChain& active_chain = chainman->ActiveChain();
+
+    std::vector<CBlockHeader> headers;
+    for (int i = 1; i <= 50; ++i) {
+        headers.push_back(active_chain[i]->GetBlockHeader());
+    }
+
+    // Every header is already in the block index.
+    BOOST_CHECK_EQUAL(WITH_LOCK(::cs_main, return blockman.FindFirstUnknownHeader(headers)), headers.size());
+
+    // Append one child that is not indexed: only that child is unknown.
+    CBlockHeader unknown_child = headers.back();
+    unknown_child.hashPrevBlock = headers.back().GetHash();
+    unknown_child.nNonce = headers.back().nNonce + 1;
+    headers.push_back(unknown_child);
+    BOOST_CHECK_EQUAL(WITH_LOCK(::cs_main, return blockman.FindFirstUnknownHeader(headers)), headers.size() - 1);
+
+    // A batch that shares nothing with the index returns 0.
+    std::vector<CBlockHeader> unknown_headers(3);
+    for (auto& header : unknown_headers) {
+        header.nVersion = 4;
+    }
+    BOOST_CHECK_EQUAL(WITH_LOCK(::cs_main, return blockman.FindFirstUnknownHeader(unknown_headers)), 0U);
+}
+
 BOOST_AUTO_TEST_SUITE_END()

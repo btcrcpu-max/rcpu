@@ -306,6 +306,13 @@ public:
     CBlockIndex* LookupBlockIndex(const uint256& hash) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
     const CBlockIndex* LookupBlockIndex(const uint256& hash) const EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 
+    /** Return the index of the first header in a continuous batch that is not
+     *  yet in the block index. Returns headers.size() if every header is
+     *  already known and 0 if none is. The caller must guarantee that the
+     *  batch is continuous (each header builds on the previous one): with that
+     *  property, everything before the last known header is known too. */
+    size_t FindFirstUnknownHeader(const std::vector<CBlockHeader>& headers) const EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+
     /** Get block file info entry for one block file */
     CBlockFileInfo* GetBlockFileInfo(size_t n);
 

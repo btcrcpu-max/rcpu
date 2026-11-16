@@ -76,6 +76,15 @@ jobs:
           mkdir build && cd build
           cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF
           make -j$(nproc)
+      - name: Parity gate - native RandomX must reproduce chain hash (A2000 + A4000)
+        # M-2: the Linux release binary is what most nodes run; gate the exact
+        # librandomx.a that will be linked, exactly like the Windows job.
+        run: |
+          set -euo pipefail
+          g++ -std=c++17 -O2 -pthread -I/tmp/RandomX-1.2.1/src -o /tmp/parity \
+            "$GITHUB_WORKSPACE/contrib/devtools/rx_parity_gate.cpp" \
+            /tmp/RandomX-1.2.1/build/librandomx.a
+          /tmp/parity || { echo "PARITY GATE FAILED"; exit 1; }
       - name: Upload RandomX Linux artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
@@ -222,10 +231,10 @@ jobs:
           }
           set -o pipefail
           ./src/test/test_bitcoin --log_level=test_suite \
-            --run_test=coinbase_confidential_tests,confidential_validation_tests,tx_verify_tests \
+            --run_test=coinbase_confidential_tests,confidential_validation_tests,tx_verify_tests,randomx_tests,pow_tests,dualalgo_tests \
             2>&1 | tee /tmp/rcpu-consensus.log
           # Fail closed if a suite name is typo'd or silently skipped.
-          for suite in coinbase_confidential_tests confidential_validation_tests tx_verify_tests; do
+          for suite in coinbase_confidential_tests confidential_validation_tests tx_verify_tests randomx_tests pow_tests dualalgo_tests; do
             grep -q "$suite" /tmp/rcpu-consensus.log || {
               echo "suite not executed: $suite"
               exit 1
@@ -425,6 +434,14 @@ jobs:
         with:
           name: windows-package
           path: windows/
+      - name: Install osslsigncode (no signing secrets in this step)
+        # M-5: install the tool before any signing secret is placed in the
+        # environment, so a compromised apt mirror/PATH cannot read the PFX or
+        # its passphrase.
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq osslsigncode unzip
+          osslsigncode --version
       - name: Sign Windows installer (Authenticode)
         # R-4/L-6: the certificate is used only in this publish job, which
         # downloads a finished artifact and runs no build toolchain. The
@@ -434,12 +451,12 @@ jobs:
           WINDOWS_SIGNING_CERT: ${{ secrets.WINDOWS_SIGNING_CERT }}
           WINDOWS_SIGNING_PASSWORD: ${{ secrets.WINDOWS_SIGNING_PASSWORD }}
         run: |
+          # H-3: a tag release must never publish unsigned Windows binaries.
+          # Fail closed instead of warning-and-continuing.
           if [ -z "${WINDOWS_SIGNING_CERT:-}" ]; then
-            echo "WARNING: WINDOWS_SIGNING_CERT not configured; Windows artifacts stay unsigned"
-            exit 0
+            echo "ERROR: WINDOWS_SIGNING_CERT is not configured; refusing to publish an unsigned Windows release"
+            exit 1
           fi
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq osslsigncode
           umask 077
           PFX="$RUNNER_TEMP/rcpu-sign.pfx"
           PASSFILE="$RUNNER_TEMP/rcpu-sign.pass"
@@ -460,8 +477,8 @@ jobs:
             signed=$((signed + 1))
           done
           if [ "$signed" -eq 0 ]; then
-            echo "WARNING: no Windows installer to sign; portable zip stays unsigned"
-            exit 0
+            echo "ERROR: no Windows installer (*-win64-setup.exe) was found to sign; refusing to publish"
+            exit 1
           fi
           # The setup ZIP was built before signing, so it still contains the
           # unsigned EXE. The ZIP is what users download, therefore it must be
@@ -473,6 +490,35 @@ jobs:
             [ -f "$EXE" ] || { echo "ERROR: $EXE missing for $ZIP"; exit 1; }
             ( cd windows && rm -f "$(basename "$ZIP")" && zip -q "$(basename "$ZIP")" "$(basename "$EXE")" )
             echo "Rebuilt $ZIP from the signed installer"
+          done
+          # H-3 follow-up: the portable ZIP used to ship entirely unsigned
+          # EXEs because the signing loop only matched *-setup.exe. Unpack it,
+          # sign every PE binary, rebuild the ZIP, and verify each signature.
+          for ZIP in windows/*-win64-portable.zip; do
+            [ -e "$ZIP" ] || continue
+            ZIP_ABS="$PWD/$ZIP"
+            TMP="$RUNNER_TEMP/portable-$$"
+            rm -rf "$TMP"; mkdir -p "$TMP"
+            unzip -q "$ZIP" -d "$TMP"
+            portable_signed=0
+            while IFS= read -r -d '' EXE; do
+              echo "Signing portable binary $EXE"
+              osslsigncode sign -pkcs12 "$PFX" -readpass "$PASSFILE" \
+                -n "RCPU Core" -i "https://rcpu.top" \
+                -t "https://timestamp.digicert.com" \
+                -in "$EXE" -out "${EXE}.signed"
+              mv "${EXE}.signed" "$EXE"
+              osslsigncode verify -in "$EXE"
+              portable_signed=$((portable_signed + 1))
+            done < <(find "$TMP" -type f -iname '*.exe' -print0)
+            if [ "$portable_signed" -eq 0 ]; then
+              echo "ERROR: $ZIP contains no EXE to sign; refusing to publish an unsigned portable package"
+              exit 1
+            fi
+            rm -f "$ZIP_ABS"
+            ( cd "$TMP" && find . -type f -print | zip -q -j "$ZIP_ABS" -@ )
+            rm -rf "$TMP"
+            echo "Rebuilt $ZIP with $portable_signed signed EXE(s)"
           done
           # The signature changes the file, so the checksums must be rebuilt
           # here, before SHA256SUMS.txt is merged and gpg-signed below.
