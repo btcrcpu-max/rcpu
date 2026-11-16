@@ -620,11 +620,9 @@ consensus.fPowRandomX = true;
         consensus.nDualAlgoTargetSpacing = 10 * 60;
         // H-1: re-anchor an algorithm whose last block is older than 12h,
         // discarding banked lateness and allowing at most an 8x one-step drop.
-        // INT_MAX keeps the rule inactive in source: it is a hard fork, so the
-        // release manager MUST set this to TIP + 2016 (and announce it) at
-        // release time. An accidental default activation is worse than a late
-        // fix because old nodes would fork without notice.
-        consensus.nDualAlgoLatenessFixHeight = std::numeric_limits<int>::max();
+        // Activated at height 29909 = tip 27893 + 2016 (2026-11-16). This is a
+        // hard fork: all nodes/pools must upgrade before this height.
+        consensus.nDualAlgoLatenessFixHeight = 29909;
         consensus.nDualAlgoReanchorGap = 12 * 60 * 60;
         consensus.nDualAlgoMaxDrop = 8;
         // !RCPU (dual-algo etchash): the bit-30 algorithm is Etchash (ECIP-1099
@@ -789,7 +787,7 @@ consensus.fPowRandomX = true;
         consensus.nDualAlgoTargetSpacing = 10 * 60;
         // H-1: see the mainnet comment. Testnet activates with its own
         // TIP + 2016 at release; INT_MAX keeps the source default inactive.
-        consensus.nDualAlgoLatenessFixHeight = std::numeric_limits<int>::max();
+        consensus.nDualAlgoLatenessFixHeight = 29909;
         consensus.nDualAlgoReanchorGap = 12 * 60 * 60;
         consensus.nDualAlgoMaxDrop = 8;
         // !RCPU (dual-algo etchash): testnet mirrors mainnet etchash params.

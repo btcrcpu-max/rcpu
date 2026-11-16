@@ -20,6 +20,14 @@ dual-algo** mode alongside RandomX.
 > Miners need `rcpuminer` **1.0.27+** (1.0.28 recommended); pools need the
 > matching Miningcore plugin with the v1.4 domain.
 
+> **v1.4.14 HARD FORK AT BLOCK 29,909 (expected 2026-11-23).**
+> All nodes and pools must upgrade before this height. The dual-algo
+> difficulty now re-anchors an algorithm whose last block is older than 12
+> hours, capping the one-time target increase at 8x. This removes the
+> unbounded lateness credit that could otherwise be released as
+> `powLimit`-difficulty blocks. Consensus parameters, PoW algorithms, rewards
+> and the CT rules are otherwise unchanged.
+
 | Parameter | Value |
 |---|---|
 | P2P Port | **7227** |

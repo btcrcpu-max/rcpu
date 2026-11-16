@@ -32,6 +32,9 @@ They are listed here so other docs have one place to copy from.
 | ASERT half-life | **2 days (172,800 s)** | `src/kernel/chainparams.cpp` (`nASERTHalfLife`) |
 | PoW algorithm | RandomX (pre-dual-algo); RandomX + Etchash after height 21000 | `src/kernel/chainparams.cpp` (`fPowRandomX`, `fDualAlgoEtchash`) |
 | Dual-algo activation height | **21,000** (mainnet & testnet); **150** (regtest); `INT_MAX` = never (default) | `src/kernel/chainparams.cpp` (`nDualAlgoActivationHeight`) |
+| H-1 re-anchor activation height | **29,909** (mainnet & testnet); **0** (regtest) | `src/kernel/chainparams.cpp` (`nDualAlgoLatenessFixHeight`) |
+| H-1 re-anchor gap | **12 h** (mainnet/testnet); 1 h (regtest) | `src/kernel/chainparams.cpp` (`nDualAlgoReanchorGap`) |
+| H-1 maximum one-step drop | **8x** | `src/kernel/chainparams.cpp` (`nDualAlgoMaxDrop`) |
 | Dual-algo target spacing | 600 s (10 min) per algorithm | `src/kernel/chainparams.cpp` (`nDualAlgoTargetSpacing`) |
 | Etchash version bit | **bit 30** (`0x40000000`, `BLOCK_VERSION_QHASH`) | `src/primitives/block.h` |
 | Etchash epoch length | **6000** blocks (mainnet/testnet); 10 (regtest) | `src/kernel/chainparams.cpp` (`nEtchashEpochLength`) |
