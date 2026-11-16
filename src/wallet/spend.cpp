@@ -1112,7 +1112,18 @@ static util::Result<CreatedTransactionResult> CreateTransactionInternal(
     }
     OutputType change_type = wallet.TransactionChangeType(coin_control.m_change_type ? *coin_control.m_change_type : wallet.m_default_change_type, vecSend, has_conf_utxo);
     if (change_type == OutputType::CONFIDENTIAL && !has_conf_spkman) {
-        return util::Error{_("Confidential change was requested, but this wallet has no confidential descriptor.")};
+        // RCPU R-8: DEFAULT_ADDRESS_TYPE is CONFIDENTIAL, so a wallet without a
+        // confidential descriptor inherits a CONFIDENTIAL change type even when
+        // nobody asked for one: BDB/legacy wallets, imported-key wallets, and a
+        // descriptor wallet whose 85h managers were not backfilled yet. Failing
+        // here made such wallets unable to build any transaction at all, because
+        // the check runs before the change amount is known. Error only on an
+        // explicit request; otherwise use plaintext bech32 change, which every
+        // wallet that reached this point can derive.
+        if (coin_control.m_change_type) {
+            return util::Error{_("Confidential change was requested, but this wallet has no confidential descriptor.")};
+        }
+        change_type = OutputType::BECH32;
     }
     // RCPU M-2: an all-explicit input set must not end up with a single
     // confidential output (blind 0 leaks the amount). If a confidential

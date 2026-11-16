@@ -476,6 +476,9 @@ class WalletConfidentialTest(BitcoinTestFramework):
             raise AssertionError("legacy wallet unexpectedly built a confidential change")
         except JSONRPCException as e:
             assert "has no confidential descriptor" in e.error["message"], e.error
+        # The same wallet still pays explicit addresses normally.
+        txid_legacy = legacyw.send([{bech32_addr: Decimal("0.1")}])["txid"]
+        assert txid_legacy in node.getrawmempool(), txid_legacy
 
         # ---- 8. -ctlegacy=1 usable below nBanPathAHeight (runtime probe) ----
         # H-1: the wallet refuses -ctlegacy=1 once the tip has reached the
