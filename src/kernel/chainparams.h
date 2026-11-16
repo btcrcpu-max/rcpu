@@ -38,6 +38,7 @@ struct CCheckpointData {
 };
 
 struct AssumeutxoHash : public BaseHash<uint256> {
+    AssumeutxoHash() = default;
     explicit AssumeutxoHash(const uint256& hash) : BaseHash(hash) {}
 };
 
@@ -49,8 +50,15 @@ struct AssumeutxoHash : public BaseHash<uint256> {
 struct AssumeutxoData {
     int height;
 
-    //! The expected hash of the deserialized UTXO set.
+    //! The expected hash of the deserialized UTXO set (legacy
+    //! hash_serialized_3; kept for non-CT chains and backward compatibility).
     AssumeutxoHash hash_serialized;
+
+    //! RCPU CT-aware UTXO set hash (hash_serialized_4). When set, snapshot
+    //! validation uses this instead of hash_serialized and the commitment
+    //! commits to the full CTxOut (commitment, nonce, rangeproof). CT chains
+    //! MUST set this before populating m_assumeutxo_data.
+    std::optional<AssumeutxoHash> hash_serialized_ct;
 
     //! Used to populate the nChainTx value, which is used during BlockManager::LoadBlockIndex().
     //!

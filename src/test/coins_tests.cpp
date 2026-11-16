@@ -5,6 +5,7 @@
 #include <addresstype.h>
 #include <clientversion.h>
 #include <coins.h>
+#include <kernel/coinstats.h>
 #include <streams.h>
 #include <test/util/poolresourcetester.h>
 #include <test/util/random.h>
@@ -15,6 +16,7 @@
 #include <undo.h>
 #include <util/strencodings.h>
 
+#include <cstddef>
 #include <map>
 #include <vector>
 
@@ -1138,6 +1140,32 @@ BOOST_AUTO_TEST_CASE(fee_output_not_added_to_utxo)
     COutPoint normal_point(Txid::FromUint256(uint256S("0xbeef")), 0);
     view.AddCoin(normal_point, Coin(normal_out, /*nHeightIn=*/100, /*fCoinBaseIn=*/false), false);
     BOOST_CHECK(view.HaveCoin(normal_point));
+}
+
+// H-2: hash_serialized_3 ignores the CT fields of a coin, so two coins that
+// differ only in nonce/rangeproof serialize identically. hash_serialized_4
+// must commit to them; otherwise a tampered assumeutxo snapshot could pass.
+BOOST_AUTO_TEST_CASE(coinstats_ct_hash_commits_to_ct_fields)
+{
+    const COutPoint outpoint(Txid::FromUint256(uint256::ONE), 0);
+    const Coin base_coin(CTxOut(1000, CScript() << OP_TRUE), /*nHeightIn=*/1, /*fCoinBaseIn=*/false);
+    Coin ct_coin = base_coin;
+    ct_coin.out.nNonce.vchCommitment.assign(33, 0x04);
+    ct_coin.out.vchRangeproof = {0xde, 0xad};
+
+    auto serialize = [&](const Coin& coin, bool f_ct) {
+        DataStream ss;
+        kernel::SerializeCoinForHash(ss, outpoint, coin, f_ct);
+        return std::vector<std::byte>(ss.begin(), ss.end());
+    };
+
+    const auto legacy_base = serialize(base_coin, /*f_ct=*/false);
+    const auto legacy_ct = serialize(ct_coin, /*f_ct=*/false);
+    const auto ct_base = serialize(base_coin, /*f_ct=*/true);
+    const auto ct_with = serialize(ct_coin, /*f_ct=*/true);
+
+    BOOST_CHECK(legacy_base == legacy_ct); // legacy hash ignores CT fields
+    BOOST_CHECK(ct_base != ct_with);       // hash_serialized_4 commits to them
 }
 
 BOOST_AUTO_TEST_SUITE_END()

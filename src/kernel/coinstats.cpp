@@ -48,33 +48,47 @@ uint64_t GetBogoSize(const CScript& script_pub_key)
 }
 
 template <typename T>
-static void TxOutSer(T& ss, const COutPoint& outpoint, const Coin& coin)
+static void TxOutSer(T& ss, const COutPoint& outpoint, const Coin& coin, bool f_ct)
 {
     ss << outpoint;
     ss << static_cast<uint32_t>((coin.nHeight << 1) + coin.fCoinBase);
-    coin.out.Serialize(ss, false);
+    // f_ct=false is the legacy hash_serialized_3 construction; f_ct=true is
+    // the CT-aware construction that commits to commitment/nonce/rangeproof.
+    coin.out.Serialize(ss, f_ct);
 }
 
-static void ApplyCoinHash(HashWriter& ss, const COutPoint& outpoint, const Coin& coin)
+void SerializeCoinForHash(DataStream& ss, const COutPoint& outpoint, const Coin& coin, bool f_ct)
 {
-    TxOutSer(ss, outpoint, coin);
+    TxOutSer(ss, outpoint, coin, f_ct);
+}
+
+static void ApplyCoinHash(HashWriter& ss, const COutPoint& outpoint, const Coin& coin, bool f_ct)
+{
+    TxOutSer(ss, outpoint, coin, f_ct);
 }
 
 void ApplyCoinHash(MuHash3072& muhash, const COutPoint& outpoint, const Coin& coin)
 {
     DataStream ss{};
-    TxOutSer(ss, outpoint, coin);
+    TxOutSer(ss, outpoint, coin, /*f_ct=*/false);
     muhash.Insert(MakeUCharSpan(ss));
 }
 
 void RemoveCoinHash(MuHash3072& muhash, const COutPoint& outpoint, const Coin& coin)
 {
     DataStream ss{};
-    TxOutSer(ss, outpoint, coin);
+    TxOutSer(ss, outpoint, coin, /*f_ct=*/false);
     muhash.Remove(MakeUCharSpan(ss));
 }
 
-static void ApplyCoinHash(std::nullptr_t, const COutPoint& outpoint, const Coin& coin) {}
+static void ApplyCoinHash(MuHash3072& muhash, const COutPoint& outpoint, const Coin& coin, bool f_ct)
+{
+    DataStream ss{};
+    TxOutSer(ss, outpoint, coin, f_ct);
+    muhash.Insert(MakeUCharSpan(ss));
+}
+
+static void ApplyCoinHash(std::nullptr_t, const COutPoint& outpoint, const Coin& coin, bool /*f_ct*/) {}
 
 //! Warning: be very careful when changing this! assumeutxo and UTXO snapshot
 //! validation commitments are reliant on the hash constructed by this
@@ -89,12 +103,12 @@ static void ApplyCoinHash(std::nullptr_t, const COutPoint& outpoint, const Coin&
 //! construction could cause a previously invalid (and potentially malicious)
 //! UTXO snapshot to be considered valid.
 template <typename T>
-static void ApplyHash(T& hash_obj, const Txid& hash, const std::map<uint32_t, Coin>& outputs)
+static void ApplyHash(T& hash_obj, const Txid& hash, const std::map<uint32_t, Coin>& outputs, bool f_ct)
 {
     for (auto it = outputs.begin(); it != outputs.end(); ++it) {
         COutPoint outpoint = COutPoint(hash, it->first);
         Coin coin = it->second;
-        ApplyCoinHash(hash_obj, outpoint, coin);
+        ApplyCoinHash(hash_obj, outpoint, coin, f_ct);
     }
 }
 
@@ -124,7 +138,7 @@ static void ApplyStats(CCoinsStats& stats, const uint256& hash, const std::map<u
 
 //! Calculate statistics about the unspent transaction output set
 template <typename T>
-static bool ComputeUTXOStats(CCoinsView* view, CCoinsStats& stats, T hash_obj, const std::function<void()>& interruption_point)
+static bool ComputeUTXOStats(CCoinsView* view, CCoinsStats& stats, T hash_obj, const std::function<void()>& interruption_point, bool f_ct)
 {
     std::unique_ptr<CCoinsViewCursor> pcursor(view->Cursor());
     assert(pcursor);
@@ -138,7 +152,7 @@ static bool ComputeUTXOStats(CCoinsView* view, CCoinsStats& stats, T hash_obj, c
         if (pcursor->GetKey(key) && pcursor->GetValue(coin)) {
             if (!outputs.empty() && key.hash != prevkey) {
                 ApplyStats(stats, prevkey, outputs);
-                ApplyHash(hash_obj, prevkey, outputs);
+                ApplyHash(hash_obj, prevkey, outputs, f_ct);
                 outputs.clear();
             }
             prevkey = key.hash;
@@ -151,7 +165,7 @@ static bool ComputeUTXOStats(CCoinsView* view, CCoinsStats& stats, T hash_obj, c
     }
     if (!outputs.empty()) {
         ApplyStats(stats, prevkey, outputs);
-        ApplyHash(hash_obj, prevkey, outputs);
+        ApplyHash(hash_obj, prevkey, outputs, f_ct);
     }
 
     FinalizeHash(hash_obj, stats);
@@ -170,14 +184,18 @@ std::optional<CCoinsStats> ComputeUTXOStats(CoinStatsHashType hash_type, CCoinsV
         switch (hash_type) {
         case(CoinStatsHashType::HASH_SERIALIZED): {
             HashWriter ss{};
-            return ComputeUTXOStats(view, stats, ss, interruption_point);
+            return ComputeUTXOStats(view, stats, ss, interruption_point, /*f_ct=*/false);
+        }
+        case(CoinStatsHashType::HASH_SERIALIZED_CT): {
+            HashWriter ss{};
+            return ComputeUTXOStats(view, stats, ss, interruption_point, /*f_ct=*/true);
         }
         case(CoinStatsHashType::MUHASH): {
             MuHash3072 muhash;
-            return ComputeUTXOStats(view, stats, muhash, interruption_point);
+            return ComputeUTXOStats(view, stats, muhash, interruption_point, /*f_ct=*/false);
         }
         case(CoinStatsHashType::NONE): {
-            return ComputeUTXOStats(view, stats, nullptr, interruption_point);
+            return ComputeUTXOStats(view, stats, nullptr, interruption_point, /*f_ct=*/false);
         }
         } // no default case, so the compiler can warn about missing cases
         assert(false);

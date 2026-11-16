@@ -68,6 +68,27 @@ old/new targets against a live node's headers before tagging.
 **This is a hard fork.** All nodes/pools must upgrade before the activation
 height; see the design doc for rollout and test plan.
 
+### 5. H-2 — CT-aware `hash_serialized_4` for assumeutxo
+
+Files: `src/kernel/coinstats.{h,cpp}`, `src/kernel/chainparams.h`,
+`src/validation.cpp`, `src/rpc/blockchain.cpp`, `src/test/coins_tests.cpp`.
+
+- New `CoinStatsHashType::HASH_SERIALIZED_CT`: serializes the full `CTxOut`
+  (`nValue`, `nNonce`, `vchRangeproof`, script) instead of only the explicit
+  amount and script. Exposed as `gettxoutsetinfo` hash type
+  `hash_serialized_4` and `kernel::SerializeCoinForHash`.
+- `AssumeutxoData` gains optional `hash_serialized_ct`. When set, snapshot
+  load and background validation use `hash_serialized_4` and compare against
+  it; a CT chain (g_con_elementsmode) with no `hash_serialized_ct` is refused
+  rather than falling back to the CT-blind legacy hash.
+- The legacy `hash_serialized_3` path is byte-for-byte unchanged.
+- Unit test `coins_tests/coinstats_ct_hash_commits_to_ct_fields`: two coins
+  differing only in nonce/rangeproof have equal legacy hashes but different
+  `hash_serialized_4` hashes.
+- RCPU `m_assumeutxo_data` remains empty; when it is populated, the release
+  must fill both `blockhash`/`nChainTx` and `hash_serialized_ct` from a synced
+  node's `gettxoutsetinfo hash_serialized_4`.
+
 ## Validation performed
 
 - `python -c "yaml.safe_load(open('.github/workflows/release-full.yml'))"` —
@@ -83,28 +104,40 @@ height; see the design doc for rollout and test plan.
   `cs_main` is held for the lookup; the suffix height is derived from the last
   known header.
 
-Not run here (no configured build tree in this workspace):
+Verified on the S1 build machine (Linux, 4 vCPU, `efcd82c` + this series):
 
 ```bash
-# C++ unit test
-make -C src test/test_bitcoin
+# build
+make -C src -j4 test/test_bitcoin          # success
+
+# named regression tests
 ./src/test/test_bitcoin --run_test=blockmanager_tests/blockmanager_find_first_unknown_header
-
-# H-1 re-anchor unit test
 ./src/test/test_bitcoin --run_test=dualalgo_tests/dual_algo_reanchor_discards_banked_lateness
+./src/test/test_bitcoin --run_test=coins_tests/coinstats_ct_hash_commits_to_ct_fields
 
-# Full affected suites
-./src/test/test_bitcoin --run_test=blockmanager_tests,dualalgo_tests,pow_tests
-
-# Workflow syntax (optional)
-python3 -c "import yaml; yaml.safe_load(open('.github/workflows/release-full.yml'))"
+# broader affected suites
+./src/test/test_bitcoin \
+  --run_test=dualalgo_tests,blockmanager_tests,coins_tests,pow_tests,tx_verify_tests,confidential_validation_tests
 ```
+
+Result: all three named tests pass; the broader run is `Running 85 test cases...
+*** No errors detected` (exit 0). Two test-only compile errors were found and
+fixed during this build: `base_uint<256>::GetCompact` (H-1 test) and
+`DataStream`'s `std::byte` value type (H-2 test).
+
+Mainnet replay against a synced S1 node (tip 27,883):
+
+- with `--fix-height 29899` (TIP + 2016): 0 old/new mismatches, 0 re-anchors;
+- with `--fix-height 21000`: exactly 1 historical re-anchor at height 27,104,
+  after a 14.36h Etchash gap; the resume target is ~1.23x the last Etchash
+  target, far below the 8x cap and not `powLimit`;
+- see `RCPU-S1-VERIFICATION-2026-11-16.md` for the full log.
 
 ## Follow-up
 
 - Add a functional P2P test once the test framework supports RCPU's 112-byte
   header (`test_framework/messages.py::CBlockHeader` currently serializes only
   80 bytes).
-- H-2 (assumeutxo hash) should be fixed before any `m_assumeutxo_data` is
-  populated; it is intentionally not part of this series because it needs a
-  new hash type and a reindex/snapshot policy.
+- H-2 is implemented, but no RCPU `m_assumeutxo_data` is populated. When one
+  is added, fill `hash_serialized_ct` from `gettxoutsetinfo hash_serialized_4`
+  on a synced node; legacy `hash_serialized_3` must not be used for CT chains.

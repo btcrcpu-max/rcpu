@@ -5821,6 +5821,29 @@ static void SnapshotUTXOHashBreakpoint(const util::SignalInterrupt& interrupt)
     if (interrupt) throw StopHashingException();
 }
 
+// RCPU H-2: choose the assumeutxo commitment scheme. CT chains must use the
+// CT-aware hash_serialized_4, which commits to commitment/nonce/rangeproof;
+// the legacy hash_serialized_3 deliberately ignores those fields and would
+// let a tampered snapshot through. Non-CT chains keep the legacy hash.
+static bool GetAssumeutxoHash(const AssumeutxoData& au_data,
+                              CoinStatsHashType& hash_type,
+                              AssumeutxoHash& expected)
+{
+    if (au_data.hash_serialized_ct.has_value()) {
+        hash_type = CoinStatsHashType::HASH_SERIALIZED_CT;
+        expected = *au_data.hash_serialized_ct;
+        return true;
+    }
+    if (g_con_elementsmode) {
+        LogPrintf("[snapshot] CT chain has no hash_serialized_4 for this "
+                  "assumeutxo height; refusing to load a legacy-hashed snapshot\n");
+        return false;
+    }
+    hash_type = CoinStatsHashType::HASH_SERIALIZED;
+    expected = au_data.hash_serialized;
+    return true;
+}
+
 bool ChainstateManager::PopulateAndValidateSnapshot(
     Chainstate& snapshot_chainstate,
     AutoFile& coins_file,
@@ -5852,6 +5875,11 @@ bool ChainstateManager::PopulateAndValidateSnapshot(
     }
 
     const AssumeutxoData& au_data = *maybe_au_data;
+    CoinStatsHashType assumeutxo_hash_type;
+    AssumeutxoHash expected_hash;
+    if (!GetAssumeutxoHash(au_data, assumeutxo_hash_type, expected_hash)) {
+        return false;
+    }
 
     // This work comparison is a duplicate check with the one performed later in
     // ActivateSnapshot(), but is done so that we avoid doing the long work of staging
@@ -5965,7 +5993,7 @@ bool ChainstateManager::PopulateAndValidateSnapshot(
 
     try {
         maybe_stats = ComputeUTXOStats(
-            CoinStatsHashType::HASH_SERIALIZED, snapshot_coinsdb, m_blockman, [&interrupt = m_interrupt] { SnapshotUTXOHashBreakpoint(interrupt); });
+            assumeutxo_hash_type, snapshot_coinsdb, m_blockman, [&interrupt = m_interrupt] { SnapshotUTXOHashBreakpoint(interrupt); });
     } catch (StopHashingException const&) {
         return false;
     }
@@ -5975,9 +6003,9 @@ bool ChainstateManager::PopulateAndValidateSnapshot(
     }
 
     // Assert that the deserialized chainstate contents match the expected assumeutxo value.
-    if (AssumeutxoHash{maybe_stats->hashSerialized} != au_data.hash_serialized) {
+    if (AssumeutxoHash{maybe_stats->hashSerialized} != expected_hash) {
         LogPrintf("[snapshot] bad snapshot content hash: expected %s, got %s\n",
-            au_data.hash_serialized.ToString(), maybe_stats->hashSerialized.ToString());
+            expected_hash.ToString(), maybe_stats->hashSerialized.ToString());
         return false;
     }
 
@@ -6134,12 +6162,18 @@ SnapshotCompletionResult ChainstateManager::MaybeCompleteSnapshotValidation()
     }
 
     const AssumeutxoData& au_data = *maybe_au_data;
+    CoinStatsHashType assumeutxo_hash_type;
+    AssumeutxoHash expected_hash;
+    if (!GetAssumeutxoHash(au_data, assumeutxo_hash_type, expected_hash)) {
+        handle_invalid_snapshot();
+        return SnapshotCompletionResult::MISSING_CHAINPARAMS;
+    }
     std::optional<CCoinsStats> maybe_ibd_stats;
     LogPrintf("[snapshot] computing UTXO stats for background chainstate to validate "
         "snapshot - this could take a few minutes\n");
     try {
         maybe_ibd_stats = ComputeUTXOStats(
-            CoinStatsHashType::HASH_SERIALIZED,
+            assumeutxo_hash_type,
             &ibd_coins_db,
             m_blockman,
             [&interrupt = m_interrupt] { SnapshotUTXOHashBreakpoint(interrupt); });
@@ -6164,10 +6198,10 @@ SnapshotCompletionResult ChainstateManager::MaybeCompleteSnapshotValidation()
     // TODO: For belt-and-suspenders, we could cache the UTXO set
     // hash for the snapshot when it's loaded in its chainstate's leveldb. We could then
     // reference that here for an additional check.
-    if (AssumeutxoHash{ibd_stats.hashSerialized} != au_data.hash_serialized) {
+    if (AssumeutxoHash{ibd_stats.hashSerialized} != expected_hash) {
         LogPrintf("[snapshot] hash mismatch: actual=%s, expected=%s\n",
             ibd_stats.hashSerialized.ToString(),
-            au_data.hash_serialized.ToString());
+            expected_hash.ToString());
         handle_invalid_snapshot();
         return SnapshotCompletionResult::HASH_MISMATCH;
     }

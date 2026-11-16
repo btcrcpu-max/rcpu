@@ -25,6 +25,9 @@ class BlockManager;
 namespace kernel {
 enum class CoinStatsHashType {
     HASH_SERIALIZED,
+    //! RCPU CT-aware serialized hash (hash_serialized_4): commits to the full
+    //! CTxOut, including Pedersen commitment, nonce and rangeproof.
+    HASH_SERIALIZED_CT,
     MUHASH,
     NONE,
 };
@@ -86,6 +89,11 @@ uint64_t GetBogoSize(const CScript& script_pub_key);
 
 void ApplyCoinHash(MuHash3072& muhash, const COutPoint& outpoint, const Coin& coin);
 void RemoveCoinHash(MuHash3072& muhash, const COutPoint& outpoint, const Coin& coin);
+
+//! RCPU: serialize one coin exactly as the given serialized-hash scheme does.
+//! f_ct=false is hash_serialized_3; f_ct=true is hash_serialized_4 (full CTxOut).
+//! Exposed for tests and external UTXO-hash analysis tools.
+void SerializeCoinForHash(DataStream& ss, const COutPoint& outpoint, const Coin& coin, bool f_ct);
 
 std::optional<CCoinsStats> ComputeUTXOStats(CoinStatsHashType hash_type, CCoinsView* view, node::BlockManager& blockman, const std::function<void()>& interruption_point = {});
 } // namespace kernel
