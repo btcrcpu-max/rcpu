@@ -71,7 +71,7 @@ and is not the block date. Do not change either value.
 
 - **RandomX Proof-of-Work**: CPU-optimized, ASIC/GPU resistant (primary algorithm)
 - **Etchash Dual-Algorithm** (height ≥ 21,000): ECIP-1099-style light verification
-  on version-bit-30 blocks, in free competition with RandomX (`fDualAlgoEtchash`)
+  on version-bit-30 blocks, in free competition with RandomX
 - **Confidential Transactions**: Pedersen commitments from genesis
 - **ASERT Difficulty Adjustment**: 2-day half-life, adjusts every block
 - **5-minute block time**: 288 blocks per day

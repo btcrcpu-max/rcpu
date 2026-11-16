@@ -157,15 +157,14 @@ struct Params {
     uint32_t nRandomXEpochDuration{0};
 
     // !RCPU (dual-algo)
-    // Height at which dual-algo free competition (RandomX + a second
-    // algorithm) activates. Blocks at height >= this value may set
-    // BLOCK_VERSION_QHASH (bit 30) in nVersion and are then verified with the
-    // second algorithm (Etchash when fDualAlgoEtchash is true, legacy qhash
-    // otherwise) against its difficulty state; blocks without the bit are
-    // verified with RandomX against the RandomX difficulty state. At height <
-    // this value the bit is completely ignored (RandomX-only rules, identical
-    // to the pre-fork code paths). The default (INT_MAX) means "never active"
-    // for chains that do not opt in.
+    // Height at which dual-algo free competition (RandomX + Etchash)
+    // activates. Blocks at height >= this value may set BLOCK_VERSION_QHASH
+    // (bit 30) in nVersion and are then verified with Etchash against its
+    // difficulty state; blocks without the bit are verified with RandomX
+    // against the RandomX difficulty state. At height < this value the bit is
+    // completely ignored (RandomX-only rules, identical to the pre-fork code
+    // paths). The default (INT_MAX) means "never active" for chains that do
+    // not opt in.
     int nDualAlgoActivationHeight{std::numeric_limits<int>::max()};
 
     // Post-activation target spacing for EACH algorithm (seconds). Both
@@ -191,15 +190,6 @@ struct Params {
     // multiplier. 1 means no increase; 8 means at most 8x easier in one step.
     uint32_t nDualAlgoMaxDrop{8};
     // !RCPU (H-1 lateness fix) END
-
-    // !RCPU (dual-algo etchash)
-    // When true, the second algorithm selected by BLOCK_VERSION_QHASH (bit 30)
-    // is Etchash (ECIP-1099 light verification) instead of qhash. The bit-30
-    // semantics and the per-algo difficulty machinery are unchanged; this flag
-    // only swaps which PoW function validates a bit-30 block at/after
-    // nDualAlgoActivationHeight. False keeps the legacy qhash path as a
-    // fallback. The bit stays ignored below the activation height either way.
-    bool fDualAlgoEtchash{false};
 
     // Blocks per etchash epoch. epoch = (height - nDualAlgoActivationHeight)
     // / nEtchashEpochLength; the seed is keccak256^epoch(32 zero bytes) and

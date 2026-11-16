@@ -41,8 +41,6 @@ bool SolveBlock(CBlockHeader& block, int64_t height, const Consensus::Params& pa
             return CheckProofOfWorkRandomX(block, params, mode, out_hash, prev_block_time);
         case PowAlgo::Etchash:
             return CheckProofOfWorkEtchash(block, height, params, mode, out_hash);
-        case PowAlgo::QHash:
-            return CheckProofOfWorkQHash(block, params, mode, out_hash);
         }
         return false;
     };

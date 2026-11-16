@@ -159,7 +159,7 @@ dual-algo free competition (see `doc/consensus-params.md`):
 |-----------|---------------|------------------|
 | Activation height | **21,000** (mainnet/testnet); **150** (regtest) | `src/kernel/chainparams.cpp` (`nDualAlgoActivationHeight`) |
 | Version bit | **bit 30** (`0x40000000`, `BLOCK_VERSION_QHASH`) | `src/primitives/block.h` |
-| Second algorithm | **Etchash** (ECIP-1099 light verification, `fDualAlgoEtchash=true`) | `src/kernel/chainparams.cpp`; `src/pow.cpp` (`CheckProofOfWorkEtchash`) |
+| Second algorithm | **Etchash** (ECIP-1099 light verification) | `src/kernel/chainparams.cpp`; `src/pow.cpp` (`CheckProofOfWorkEtchash`) |
 | Etchash epoch length | **6000** blocks | `src/kernel/chainparams.cpp` (`nEtchashEpochLength`) |
 | Target spacing | 600 s (10 min) per algorithm | `src/kernel/chainparams.cpp` (`nDualAlgoTargetSpacing`) |
 

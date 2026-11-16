@@ -75,22 +75,6 @@ void StopRandomXThreads();
 bool CheckProofOfWorkRandomX(const CBlockHeader& block, const Consensus::Params& params, POWVerifyMode mode = POW_VERIFY_FULL, uint256 *outHash = nullptr, uint32_t prevBlockTime = 0);
 
 /**
- * RCPU dual-algo: verify a legacy qPoW ("qhash") block. Used for bit-30
- * (BLOCK_VERSION_QHASH) blocks only when params.fDualAlgoEtchash is false;
- * with fDualAlgoEtchash set (mainnet/testnet current state) bit-30 blocks are
- * instead dispatched to CheckProofOfWorkEtchash and this function remains as
- * fallback for pre-etchash params and test vectors.
- * The block must carry the qhash of the canonical 112-byte header
- * (hashRandomX nulled) in its hashRandomX field and that hash must satisfy
- * the block's nBits target. Semantics mirror CheckProofOfWorkRandomX: in
- * POW_VERIFY_MINING mode the computed hash is returned via outHash even when
- * it misses the target, so pool software can validate shares. qhash has no
- * epochs and no separate commitment, so every mode computes the full (fast)
- * hash.
- */
-bool CheckProofOfWorkQHash(const CBlockHeader& block, const Consensus::Params& params, POWVerifyMode mode = POW_VERIFY_FULL, uint256 *outHash = nullptr);
-
-/**
  * RCPU dual-algo etchash: verify an Etchash (ECIP-1099, light) block. The
  * block must carry, in its hashRandomX field, the etchash result
  * (keccak256(seed64 || digest)) of the canonical 112-byte header
@@ -106,7 +90,7 @@ bool CheckProofOfWorkQHash(const CBlockHeader& block, const Consensus::Params& p
  * nEtchashBigEndianHeight byte-order rule) and skips hashimoto entirely. Full
  * verification runs exactly once per header in AcceptBlockHeader.
  *
- * Semantics mirror CheckProofOfWorkQHash: in POW_VERIFY_MINING mode the
+ * Semantics mirror CheckProofOfWorkRandomX: in POW_VERIFY_MINING mode the
  * computed result is returned via outHash even when it misses the target, so
  * pool software can validate shares.
  */
@@ -118,8 +102,7 @@ bool CheckProofOfWorkEtchash(const CBlockHeader& block, int64_t nHeight, const C
  */
 enum class PowAlgo : uint8_t {
     RandomX, //!< default algorithm (all pre-activation blocks, bit-30 clear)
-    Etchash, //!< bit-30 block at/after activation on etchash chains
-    QHash,   //!< bit-30 block at/after activation on legacy qhash chains
+    Etchash, //!< bit-30 block at/after activation
 };
 
 /**
@@ -128,8 +111,7 @@ enum class PowAlgo : uint8_t {
  *  - bit-30 clear                              -> RandomX
  *  - nHeight < 0 (unknown, bit-30 set)         -> std::nullopt, cannot judge
  *  - nHeight <  nDualAlgoActivationHeight      -> RandomX (the bit is ignored)
- *  - nHeight >= nDualAlgoActivationHeight      -> Etchash or QHash
- *    (per params.fDualAlgoEtchash)
+ *  - nHeight >= nDualAlgoActivationHeight      -> Etchash
  *
  * `std::nullopt` means the caller lacks the height needed to derive the
  * Etchash epoch; such callers must defer the verdict to the authoritative

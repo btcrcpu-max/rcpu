@@ -176,9 +176,6 @@ bool BlockTreeDB::LoadBlockIndexGuts(const Consensus::Params& consensusParams, s
                                  UintToArith256(result_for_target) <= bnTarget;
                         break;
                     }
-                    case PowAlgo::QHash:
-                        pow_ok = CheckProofOfWorkQHash(hdr, consensusParams, POW_VERIFY_COMMITMENT_ONLY);
-                        break;
                     case PowAlgo::RandomX:
                         // Covers "bit-30 clear" and the pre-activation case,
                         // where the bit is consensus-irrelevant and the block
@@ -1126,7 +1123,7 @@ bool BlockManager::ReadBlockFromDisk(CBlock& block, const FlatFilePos& pos) cons
     // consensus. The height is derived from the prev-block index; when that
     // index is unknown (nHeight < 0) the verdict cannot be reached (Etchash
     // epochs are height-derived), so the check is deferred to AcceptBlockHeader
-    // exactly like the context-free CheckBlock does, instead of guessing qhash.
+    // exactly like the context-free CheckBlock does, instead of guessing the algorithm.
     {
         const CBlockHeader hdr{block.GetBlockHeader()};
         int nHeight = -1;
@@ -1141,9 +1138,6 @@ bool BlockManager::ReadBlockFromDisk(CBlock& block, const FlatFilePos& pos) cons
             switch (*pow_algo) {
             case PowAlgo::Etchash:
                 pow_ok = CheckProofOfWorkEtchash(hdr, nHeight, GetConsensus(), POW_VERIFY_COMMITMENT_ONLY);
-                break;
-            case PowAlgo::QHash:
-                pow_ok = CheckProofOfWorkQHash(hdr, GetConsensus(), POW_VERIFY_COMMITMENT_ONLY);
                 break;
             case PowAlgo::RandomX:
                 pow_ok = CheckProofOfWorkRandomX(hdr, GetConsensus(), POW_VERIFY_COMMITMENT_ONLY);
