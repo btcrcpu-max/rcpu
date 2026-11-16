@@ -787,7 +787,7 @@ util::Result<SelectionResult> ChooseSelectionResult(interfaces::Chain& chain, co
         results.push_back(*knapsack_result);
     } else append_error(knapsack_result);
 
-    if (coin_selection_params.m_effective_feerate > CFeeRate{3 * coin_selection_params.m_long_term_feerate}) { // Minimize input set for feerates of at least 3脳LTFRE (default: 30鈥供/vB+)
+    if (coin_selection_params.m_effective_feerate > CFeeRate{3 * coin_selection_params.m_long_term_feerate}) { // Minimize input set for feerates of at least 3x LTFRE (default: 30 sat/vB)
         if (auto cg_result{CoinGrinder(groups.positive_group, nTargetValue, coin_selection_params.m_min_change_target, max_inputs_weight)}) {
             cg_result->ComputeAndSetWaste(coin_selection_params.min_viable_change, coin_selection_params.m_cost_of_change, coin_selection_params.m_change_fee);
             results.push_back(*cg_result);
@@ -1395,6 +1395,18 @@ CTxOut txout(recipient.nAmount, GetScriptForDestination(recipient.dest));
                 return util::Error{_("Insufficient funds: the requested amount is only available in unconfirmed confidential outputs; wait for confirmation and try again")};
             }
         }
+        if (err.empty() && !has_conf_spkman) {
+            // RCPU R-2: without a confidential descriptor this wallet cannot
+            // build blinded change, so its confidential UTXOs are excluded from
+            // auto-selection above and end up unreachable behind a generic
+            // "Insufficient funds". Say what is wrong and how to fix it.
+            const CoinsResult all_coins = AvailableCoinsListUnspent(wallet, nullptr);
+            for (const COutput& coin : all_coins.All()) {
+                if (!coin.txout.nValue.IsExplicit()) {
+                    return util::Error{_("Insufficient funds: this wallet holds confidential outputs but has no confidential descriptor to spend them. Reload the wallet so the confidential key managers are backfilled (see doc/wallet-ct-migration.md), then retry")};
+                }
+            }
+        }
         return util::Error{err.empty() ? _("Insufficient funds") : err};
     }
     const SelectionResult& result = *select_coins_res;
@@ -1405,10 +1417,24 @@ CTxOut txout(recipient.nAmount, GetScriptForDestination(recipient.dest));
            result.GetWaste(),
            result.GetSelectedValue());
 
-    // RCPU R-1: a confidential change output is required to balance blinded
-    // inputs; it must not be dropped merely because it is below the explicit
-    // change dust threshold. Keep M-1's min_viable_change for explicit change.
-    const CAmount min_change = change_type == OutputType::CONFIDENTIAL ? 0 : coin_selection_params.min_viable_change;
+    // RCPU R-1/R-6: whether the change output ends up blinded decides how small
+    // it may be. A blinded change balances blinded inputs and must not be
+    // dropped merely because it is below the explicit dust threshold, while an
+    // explicit change must keep M-1's min_viable_change so a sub-dust remainder
+    // is folded into the fee. Decide from the coins this transaction actually
+    // selected: `change_type` is only a wallet-level hint (it is promoted as
+    // soon as the wallet holds any blinded UTXO) and does not tell whether the
+    // change will really be blinded.
+    std::vector<std::shared_ptr<COutput>> selected_coins = result.GetShuffledInputVector();
+    const bool has_conf_selected = std::any_of(selected_coins.begin(), selected_coins.end(),
+        [](const std::shared_ptr<COutput>& coin) { return !coin->txout.nValue.IsExplicit(); });
+    // `change_key_dest` is the value the blinding loop actually keys off (see the
+    // change branch below): coin control can name a change address this wallet
+    // does not own, in which case resolve_change_key() leaves it unset and the
+    // change stays a plaintext output even though change_type is CONFIDENTIAL.
+    const bool change_blinded = conf_change && has_conf_spkman && change_key_dest.has_value() &&
+                                (has_conf_selected || has_conf_recipient);
+    const CAmount min_change = change_blinded ? 0 : coin_selection_params.min_viable_change;
     const CAmount change_amount = result.GetChange(min_change, coin_selection_params.m_change_fee);
     if (change_amount > 0) {
         CTxOut newTxOut(change_amount, scriptChange);
@@ -1424,8 +1450,6 @@ CTxOut txout(recipient.nAmount, GetScriptForDestination(recipient.dest));
     }
 
     // Shuffle selected coins and fill in final vin
-    std::vector<std::shared_ptr<COutput>> selected_coins = result.GetShuffledInputVector();
-
     if (coin_control.HasSelected() && coin_control.HasSelectedOrder()) {
         // When there are preselected inputs, we need to move them to be the first UTXOs
         // and have them be in the order selected. We can use stable_sort for this, where we
@@ -1445,18 +1469,16 @@ CTxOut txout(recipient.nAmount, GetScriptForDestination(recipient.dest));
             });
     }
 
-    // RCPU M-2c: `has_conf_utxo` above is a wallet-level flag, so an
-    // all-explicit spend from a mixed wallet (explicit + confidential UTXOs)
-    // still reserved a confidential change. With an explicit recipient that
-    // leaves a single confidential output (the change) whose balancing blind
-    // can only be zero; BlindTransaction()/the M-2 guard then fail closed
-    // with "Confidential transaction blinding failed". Decide from the coins
-    // this transaction actually selected: if neither the selected inputs nor
-    // the recipient are confidential, keep the change explicit so the
-    // explicit input blinds (all zero) and explicit outputs still balance.
-    const bool has_conf_selected = std::any_of(selected_coins.begin(), selected_coins.end(),
-        [](const std::shared_ptr<COutput>& coin) { return !coin->txout.nValue.IsExplicit(); });
-    if (conf_change && !has_conf_selected && !has_conf_recipient) {
+    // RCPU M-2c/R-6: `has_conf_utxo` is a wallet-level flag, so an all-explicit
+    // spend from a mixed wallet (explicit + confidential UTXOs) still reserves
+    // a confidential change. With no blinded input and an explicit recipient
+    // that leaves a single confidential output (the change) whose balancing
+    // blind can only be zero; BlindTransaction()/the M-2 guard then fail closed
+    // with "Confidential transaction blinding failed". If the change will not
+    // be blinded, keep it explicit so the explicit input blinds (all zero) and
+    // the explicit outputs still balance. Reuse `change_blinded` from above so
+    // the threshold and the demotion share one source of truth.
+    if (!change_blinded) {
         change_key_dest.reset();
         change_key.reset();
     }
@@ -1652,15 +1674,15 @@ CTxOut txout(recipient.nAmount, GetScriptForDestination(recipient.dest));
                 return util::Error{_("Confidential inputs cannot pay an explicit recipient without a confidential change output; add change or use a confidential recipient")};
             }
         }
-std::vector<uint256> output_blinds, output_nonces;
+        std::vector<uint256> output_blinds, output_nonces;
         // RCPU CT: every output whose recipient public key can be resolved
         // (change, own scripts, imported keys) is blinded via recipient-ECDH
         // path C (0x04 || X nonce, HKDF rewind nonce); a payee whose public
         // key cannot be resolved (e.g. a foreign P2WPKH/P2PKH address this
         // wallet does not own) is emitted as an explicit plaintext output
         // (H-1: Path A is no longer used from the wallet).
-        // Resolved pubkey (rcpux1 / own change) 鈫?Path C (0x04).
-        // Unresolved pubkey (bare rcpu1) 鈫?explicit plaintext output
+        // Resolved pubkey (rcpux1 / own change) -> Path C (0x04).
+        // Unresolved pubkey (bare rcpu1) -> explicit plaintext output
         // (H-1 policy: never fall back to Path A from the wallet; a bare
         // address gets an unblinded output instead of a rewind-nonce
         // commitment). Explicit outputs keep their plaintext value, empty
@@ -1669,7 +1691,7 @@ std::vector<uint256> output_blinds, output_nonces;
         // below nBanPathAHeight for compatibility, refused at/after it).
         // 1.0.18 restores address-to-address transfers: sending must
         // never fail just because the recipient's public key is unknown.
-std::vector<std::optional<CPubKey>> recipient_keys;
+        std::vector<std::optional<CPubKey>> recipient_keys;
         std::vector<bool> explicit_outputs;
         if (!gArgs.GetBoolArg("-ctlegacy", false)) {
             recipient_keys.reserve(txNew.vout.size());
@@ -1697,7 +1719,7 @@ std::vector<std::optional<CPubKey>> recipient_keys;
                 // (nonce 0x04, path C) and the sender's record keeps the
                 // rcpux1 address. The change slot is never matched against
                 // vecSend: with no resolved change key it is emitted explicit
-                // (plaintext) 鈥?never Path A. Fee / empty-script outputs are
+                // (plaintext) -- never Path A. Fee / empty-script outputs are
                 // appended after BlindTransaction and can never reach this
                 // vector.
                 if (change_pos && *change_pos == vi) {
@@ -1722,7 +1744,7 @@ std::vector<std::optional<CPubKey>> recipient_keys;
                     }
                 }
                 // No pubkey (bare rcpu1 / foreign script / unresolvable change
-                // key): H-1 policy 鈥?emit an explicit plaintext output instead
+                // key): H-1 policy -- emit an explicit plaintext output instead
                 // of falling back to Path A (0x02 rewind-nonce commitment).
                 // BlindTransaction keeps such outputs unblinded (plaintext
                 // value, empty nonce, no range proof); they do not take part

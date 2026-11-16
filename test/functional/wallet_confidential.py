@@ -25,6 +25,12 @@ remain spendable):
  7e. Exact spend (no planned change) from a confidential UTXO to a bare
     address auto-adds a dust-sized confidential balancing change output
     instead of failing with "Confidential transaction blinding failed".
+ 7g. A mixed wallet (explicit + confidential UTXOs) folds a sub-dust explicit
+    change into the fee instead of building a dust output.
+ 7h. A blinded input paying a bare rcpu1 address keeps a small confidential
+    change (below the explicit dust threshold) and relays.
+ 7i. A legacy wallet holding a blinded UTXO reports the missing confidential
+    descriptor / migration path instead of a bare "Insufficient funds".
  8. -ctlegacy=1 stays usable below nBanPathAHeight (probed at runtime).
 """
 
@@ -340,6 +346,136 @@ class WalletConfidentialTest(BitcoinTestFramework):
         assert_equal(len(conf_payees), 1)  # blinded payee, no balancing change
         self.generatetoaddress(node, 1, mixer.getnewaddress("", "bech32"))
         assert_equal(sweepall.getbalance(), Decimal("0"))
+
+        # ---- 7g. Mixed wallet: sub-dust explicit change must be folded ----
+        # R-6: min_change must follow whether *this* change will be blinded, not
+        # the wallet-level change_type (promoted to CONFIDENTIAL as soon as the
+        # wallet holds any blinded UTXO). For an all-explicit selection the
+        # change is demoted to explicit, so a sub-dust remainder must be folded
+        # into the fee; keeping it would build a dust output that the dust
+        # policy rejects at broadcast time (the original M-1 symptom).
+        self.log.info("Mixed wallet folds a sub-dust explicit change into the fee")
+        try:
+            node.loadwallet("pure")
+        except JSONRPCException:
+            pass  # already loaded
+        # The proxy captured at 7b is stale: sections 7c/7d restarted the node,
+        # which rotates the RPC cookie.
+        pure = node.get_wallet_rpc("pure")
+        node.createwallet(wallet_name="mixed", descriptors=True)
+        mixed = node.get_wallet_rpc("mixed")
+        mixer.sendtoaddress(mixed.getnewaddress("", "confidential"), Decimal("0.2"))
+        self.generatetoaddress(node, 1, mixer.getnewaddress("", "bech32"))
+        pure.sendtoaddress(mixed.getnewaddress("", "bech32"), Decimal("0.3"))
+        self.generatetoaddress(node, 1, pure.getnewaddress("", "bech32"))
+        assert_equal(mixed.getbalance(), Decimal("0.5"))
+
+        explicit_utxos = [u for u in mixed.listunspent()
+                          if isinstance(u["amount"], Decimal) and u["amount"] == Decimal("0.3")]
+        assert_equal(len(explicit_utxos), 1)
+        mixed_utxo = explicit_utxos[0]
+
+        # Sweep the leftover so the fee-adjusted remainder walks across the
+        # dust window; the PSBT is never broadcast, so a single UTXO suffices.
+        dust_explicit = Decimal("0.00000294")  # 294 sat at the default 3 sat/vB
+        folded = 0
+        for leftover in range(1, 800, 5):
+            amount = Decimal("0.3") - Decimal(leftover) / Decimal(100000000)
+            try:
+                funded = mixed.walletcreatefundedpsbt(
+                    [{"txid": mixed_utxo["txid"], "vout": mixed_utxo["vout"]}],
+                    [{bech32_addr: amount}],
+                    0,
+                    {"add_inputs": False, "lockUnspents": False, "fee_rate": 1},
+                    True,
+                )
+            except JSONRPCException:
+                continue
+            vouts = node.decodepsbt(funded["psbt"])["tx"]["vout"]
+            values = [o["value"] for o in vouts]
+            assert all(isinstance(v, Decimal) for v in values), \
+                f"R-6: unexpected blinded output in an all-explicit spend: {values}"
+            assert all(v >= dust_explicit for v in values), \
+                f"R-6: dust output built for leftover {leftover} sat: {values}"
+            if len(vouts) == 1:
+                folded += 1
+        assert folded > 0, "no sweep point folded the change; the R-6 window was not exercised"
+        self.generatetoaddress(node, 1, mixer.getnewaddress("", "bech32"))
+
+        # ---- 7h. Blinded input + bare rcpu1 payee keeps a confidential change ----
+        # R-6 guard rail: the sub-dust fold exercised by 7g may only apply when
+        # the change is explicit. Spending a blinded input to an explicit
+        # recipient needs a blinded change to absorb the input's blind factor,
+        # so that change may be worth less than the explicit dust threshold and
+        # must still be built and relayed.
+        self.log.info("Blinded input + bare rcpu1 payee keeps a confidential change")
+        node.createwallet(wallet_name="ctchange", descriptors=True)
+        ctchange = node.get_wallet_rpc("ctchange")
+        mixer.sendtoaddress(ctchange.getnewaddress("", "confidential"), Decimal("0.2"))
+        self.generatetoaddress(node, 1, mixer.getnewaddress("", "bech32"))
+        assert_equal(ctchange.getbalance(), Decimal("0.2"))
+        ct_utxo = ctchange.listunspent()[0]
+
+        # Walk the payment up until the change stays positive. The first
+        # amounts leave nothing for change, and a blinded input paying an
+        # explicit recipient without change must fail closed (M-3); the first
+        # amount that works keeps a small blinded change.
+        sent = None
+        last_error = None
+        for remainder in range(300, 12000, 200):
+            amount = Decimal("0.2") - Decimal(remainder) / Decimal(100000000)
+            try:
+                res = ctchange.send(
+                    outputs=[{bech32_addr: amount}],
+                    options={"inputs": [{"txid": ct_utxo["txid"], "vout": ct_utxo["vout"]}],
+                             "fee_rate": 1},
+                )
+            except JSONRPCException as exc:
+                last_error = str(exc.error.get("message", ""))
+                continue
+            sent = (res, amount)
+            break
+        assert sent is not None, f"no amount produced a spendable confidential change (last error: {last_error})"
+        res, amount = sent
+        decoded_ct = node.getrawtransaction(res["txid"], True)
+        payee = [o for o in decoded_ct["vout"]
+                 if bech32_addr == o["scriptPubKey"].get("address")
+                 or bech32_addr in o["scriptPubKey"].get("addresses", [])]
+        assert_equal(len(payee), 1)
+        assert_equal(payee[0]["value"], amount)
+        conf_change = [o for o in decoded_ct["vout"] if o["value"] == "confidential"]
+        assert_equal(len(conf_change), 1)
+        # The transaction was accepted by the mempool, i.e. the small blinded
+        # change is not a dust output.
+        node.getmempoolentry(res["txid"])
+        self.generatetoaddress(node, 1, mixer.getnewaddress("", "bech32"))
+        assert ctchange.getbalance() < Decimal("0.0001"), \
+            f"confidential change was not the small remainder: {ctchange.getbalance()}"
+
+        # ---- 7i. Legacy wallet: confidential change refused with a reason ----
+        # H-2/R-2: a BDB (legacy) wallet has no confidential descriptor, so it
+        # can never derive a blinded change destination. It also cannot *hold* a
+        # blinded UTXO here: Path-A outputs are banned from regtest height 0
+        # (nCTStrictRulesHeight=0), and a Path-B/C output needs a recipient
+        # descriptor it does not have. What stays reachable — and is what a
+        # migrating user actually hits — is the refusal to build confidential
+        # change: it must name the missing descriptor instead of failing later
+        # inside ReserveDestination, and the wallet must keep working for plain
+        # explicit payments.
+        self.log.info("Legacy wallet reports the confidential-change migration path")
+        node.createwallet(wallet_name="legacyw", descriptors=False)
+        legacyw = node.get_wallet_rpc("legacyw")
+        legacy_bech32 = legacyw.getnewaddress("", "bech32")
+        mixer.sendtoaddress(legacy_bech32, Decimal("0.5"))
+        self.generatetoaddress(node, 1, mixer.getnewaddress("", "bech32"))
+        try:
+            legacyw.send(
+                [{bech32_addr: Decimal("0.1")}],
+                options={"change_type": "confidential"},
+            )
+            raise AssertionError("legacy wallet unexpectedly built a confidential change")
+        except JSONRPCException as e:
+            assert "has no confidential descriptor" in e.error["message"], e.error
 
         # ---- 8. -ctlegacy=1 usable below nBanPathAHeight (runtime probe) ----
         # H-1: the wallet refuses -ctlegacy=1 once the tip has reached the
