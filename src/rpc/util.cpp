@@ -179,8 +179,9 @@ std::string HelpExampleCliNamed(const std::string& methodname, const RPCArgList&
 
 std::string HelpExampleRpc(const std::string& methodname, const std::string& args)
 {
+    // !RCPU: RPC help is statically constructed, so use the RCPU mainnet default.
     return "> curl --user myusername --data-binary '{\"jsonrpc\": \"1.0\", \"id\": \"curltest\", "
-        "\"method\": \"" + methodname + "\", \"params\": [" + args + "]}' -H 'content-type: text/plain;' http://127.0.0.1:9962/\n";
+        "\"method\": \"" + methodname + "\", \"params\": [" + args + "]}' -H 'content-type: text/plain;' http://127.0.0.1:7337/\n";
 }
 
 std::string HelpExampleRpcNamed(const std::string& methodname, const RPCArgList& args)
@@ -190,8 +191,9 @@ std::string HelpExampleRpcNamed(const std::string& methodname, const RPCArgList&
         params.pushKV(param.first, param.second);
     }
 
+    // !RCPU: RPC help is statically constructed, so use the RCPU mainnet default.
     return "> curl --user myusername --data-binary '{\"jsonrpc\": \"1.0\", \"id\": \"curltest\", "
-           "\"method\": \"" + methodname + "\", \"params\": " + params.write() + "}' -H 'content-type: text/plain;' http://127.0.0.1:9962/\n";
+           "\"method\": \"" + methodname + "\", \"params\": " + params.write() + "}' -H 'content-type: text/plain;' http://127.0.0.1:7337/\n";
 }
 
 // Converts a hex string to a public key if possible
