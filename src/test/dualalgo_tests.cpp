@@ -746,6 +746,92 @@ BOOST_AUTO_TEST_CASE(dual_algo_difficulty_cache_matches_chain_walk)
     BOOST_CHECK(randomx_cached != etchash_cached);
 }
 
+// !RCPU (H-1): an algorithm that has been idle for longer than
+// nDualAlgoReanchorGap must not release the banked lateness as powLimit
+// blocks. The resume block may drop by at most nDualAlgoMaxDrop; the next
+// block anchors on the resume block, so the drop is not carried forward.
+BOOST_AUTO_TEST_CASE(dual_algo_reanchor_discards_banked_lateness)
+{
+    Consensus::Params params;
+    params.powLimit = uint256S("0x7fffffff00000000000000000000000000000000000000000000000000000000");
+    params.nDualAlgoActivationHeight = 150;
+    params.nDualAlgoTargetSpacing = 600;
+    params.nPowTargetSpacing = 300;
+    params.nASERTHalfLife = 2 * 24 * 60 * 60;
+    params.fDualAlgoEtchash = true;
+    params.nEtchashEpochLength = 10;
+    params.fPowAllowMinDifficultyBlocks = false;
+    params.fPowNoRetargeting = false;
+    params.nDualAlgoLatenessFixHeight = 160;
+    params.nDualAlgoReanchorGap = 12 * 60 * 60;
+    params.nDualAlgoMaxDrop = 8;
+
+    std::vector<std::unique_ptr<CBlockIndex>> chain;
+    const int64_t nBaseTime{1710000000};
+    for (int height = 140; height <= 159; ++height) {
+        auto index = std::make_unique<CBlockIndex>();
+        index->nHeight = height;
+        index->pprev = chain.empty() ? nullptr : chain.back().get();
+        index->nTime = nBaseTime + (height - 140) * 300;
+        index->nBits = 0x1f00ffff;
+        // One Etchash block at activation, then RandomX only: the Etchash
+        // branch is idle for the whole 60-day interval below.
+        index->nVersion = (height == 150) ? BLOCK_VERSION_QHASH : 0;
+        index->nChainWork = (index->pprev ? index->pprev->nChainWork : arith_uint256(0)) + GetBlockProof(*index);
+        index->nSecondAlgoCount = ComputeSecondAlgoCount(*index, params.nDualAlgoActivationHeight);
+        UpdateDualAlgoState(*index, params);
+        chain.push_back(std::move(index));
+    }
+
+    // Jump the tip's timestamp forward by 60 days: with a 2-day half-life the
+    // old formula releases this as powLimit, far above the 12h threshold.
+    chain.back()->nTime = nBaseTime + 60 * 24 * 60 * 60;
+    CBlockIndex* tip = chain.back().get();
+    BOOST_CHECK_EQUAL(tip->nLastEtchashHeight, 150);
+    BOOST_CHECK_EQUAL(tip->nLastRandomXHeight, 159);
+    BOOST_CHECK_EQUAL(tip->nAsertAnchorEtchashHeight, 149);
+
+    CBlockHeader header;
+    header.nTime = tip->nTime + 600;
+    header.nVersion = BLOCK_VERSION_QHASH;
+
+    // Old rule (no fix active): the 60-day bank is released at powLimit.
+    params.nDualAlgoLatenessFixHeight = std::numeric_limits<int>::max();
+    const uint32_t old_bits{GetNextWorkRequired(tip, &header, params)};
+    BOOST_CHECK_EQUAL(old_bits, UintToArith256(params.powLimit).GetCompact());
+
+    // New rule: re-anchor to the last Etchash block and cap the drop at 8x.
+    params.nDualAlgoLatenessFixHeight = 160;
+    const uint32_t resume_bits{GetNextWorkRequired(tip, &header, params)};
+    arith_uint256 refTarget;
+    refTarget.SetCompact(0x1f00ffff);
+    const arith_uint256 maxDrop{params.nDualAlgoMaxDrop};
+    const arith_uint256 expected = refTarget * maxDrop;
+    BOOST_CHECK_EQUAL(resume_bits, expected.GetCompact());
+    BOOST_CHECK(resume_bits != UintToArith256(params.powLimit).GetCompact());
+
+    // The resume block becomes the new anchor. The next Etchash block must
+    // not fall back to the activation anchor (which would re-release the bank).
+    auto resume = std::make_unique<CBlockIndex>();
+    resume->nHeight = 160;
+    resume->pprev = tip;
+    resume->nTime = header.nTime;
+    resume->nBits = resume_bits;
+    resume->nVersion = BLOCK_VERSION_QHASH;
+    resume->nChainWork = tip->nChainWork + GetBlockProof(*resume);
+    resume->nSecondAlgoCount = ComputeSecondAlgoCount(*resume, params.nDualAlgoActivationHeight);
+    UpdateDualAlgoState(*resume, params);
+    BOOST_CHECK_EQUAL(resume->nLastEtchashHeight, 160);
+    BOOST_CHECK_EQUAL(resume->nAsertAnchorEtchashHeight, 160);
+
+    CBlockHeader next_header;
+    next_header.nTime = resume->nTime + 600;
+    next_header.nVersion = BLOCK_VERSION_QHASH;
+    const uint32_t next_bits{GetNextWorkRequired(resume.get(), &next_header, params)};
+    BOOST_CHECK(next_bits != UintToArith256(params.powLimit).GetCompact());
+    BOOST_CHECK(next_bits <= resume_bits);
+}
+
 // !RCPU (dual-algo PoW dispatch): qhash 链 (fDualAlgoEtchash=false) 的
 // HasValidProofOfWork() 行为边界。helper 统一 dispatch 后，该函数在
 // 高度已知场景不再宽松地同时接受 qhash 和 RandomX 证明，而是严格跟随

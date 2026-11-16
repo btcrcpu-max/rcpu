@@ -43,20 +43,41 @@ File: `.github/workflows/release-full.yml`.
 - The Linux release “consensus gate” additionally runs `randomx_tests`,
   `pow_tests` and `dualalgo_tests`, and fails if any suite did not execute.
 
-### 4. H-1 — design only
+### 4. H-1 — Option B implemented (consensus change)
 
-File: `doc/h1-dualalgo-asert-lateness-cap.md`.
+Files: `src/consensus/params.h`, `src/chain.h`, `src/pow.{h,cpp}`,
+`src/node/blockstorage.cpp`, `src/kernel/chainparams.cpp`,
+`src/test/dualalgo_tests.cpp`, `contrib/devtools/dual_algo_replay.py`,
+`doc/h1-dualalgo-asert-lateness-cap.md`.
 
-Proposes bounding per-algorithm ASERT lateness (hard cap, or re-anchor on
-resume) with a new consensus activation height, unit/functional tests and a
-mainnet header replay before tagging. No consensus code is changed in this
-series.
+`GetDualAlgoWorkRequired()` now re-anchors an algorithm whose last block is
+older than `nDualAlgoReanchorGap` (12h mainnet/testnet, 1h regtest) to its
+resume block, discarding the banked lateness. The one-time drop is capped at
+`nDualAlgoMaxDrop` (8x). Per-algorithm last heights/anchors are stored in
+`CBlockIndex` (memory only) and rebuilt in `BlockManager::LoadBlockIndex`,
+like `nSecondAlgoCount`. The new rule activates at
+`nDualAlgoLatenessFixHeight`; mainnet/testnet default to `INT_MAX` in source
+(the release manager must set `TIP + 2016` and announce the hard fork), regtest
+is `0`.
+
+New unit test `dualalgo_tests/dual_algo_reanchor_discards_banked_lateness`
+covers the 60-day idle case (old rule → powLimit, new rule → 8x, next block
+anchored on the resume block). `contrib/devtools/dual_algo_replay.py` compares
+old/new targets against a live node's headers before tagging.
+
+**This is a hard fork.** All nodes/pools must upgrade before the activation
+height; see the design doc for rollout and test plan.
 
 ## Validation performed
 
 - `python -c "yaml.safe_load(open('.github/workflows/release-full.yml'))"` —
   YAML parses; all jobs present.
 - `git diff --check` — no whitespace errors in the touched files.
+- `python -m py_compile contrib/devtools/dual_algo_replay.py` — the replay
+  tool compiles.
+- The H-1 unit-test expectations were cross-checked with a Python port of
+  `CalculateASERT`: old rule on a 60-day gap → `powLimit`; new rule → exactly
+  `8x` the last Etchash target; next block ≤ the resume target.
 - Manual review of the changed C++ against the call graph:
   `CheckHeadersPoW` → `FindFirstUnknownHeader` → `LookupBlockIndex`;
   `cs_main` is held for the lookup; the suffix height is derived from the last
@@ -68,6 +89,9 @@ Not run here (no configured build tree in this workspace):
 # C++ unit test
 make -C src test/test_bitcoin
 ./src/test/test_bitcoin --run_test=blockmanager_tests/blockmanager_find_first_unknown_header
+
+# H-1 re-anchor unit test
+./src/test/test_bitcoin --run_test=dualalgo_tests/dual_algo_reanchor_discards_banked_lateness
 
 # Full affected suites
 ./src/test/test_bitcoin --run_test=blockmanager_tests,dualalgo_tests,pow_tests

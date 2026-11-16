@@ -297,6 +297,7 @@ CBlockIndex* BlockManager::AddToBlockIndex(const CBlockHeader& block, CBlockInde
     pindexNew->nChainWork = (pindexNew->pprev ? pindexNew->pprev->nChainWork : 0) + GetBlockProof(*pindexNew);
     // !RCPU (dual-algo count cache): cumulative bit-30 count from activation.
     pindexNew->nSecondAlgoCount = ComputeSecondAlgoCount(*pindexNew, GetConsensus().nDualAlgoActivationHeight);
+    UpdateDualAlgoState(*pindexNew, GetConsensus());
     pindexNew->RaiseValidity(BLOCK_VALID_TREE);
     if (best_header == nullptr || best_header->nChainWork < pindexNew->nChainWork) {
         best_header = pindexNew;
@@ -515,6 +516,7 @@ bool BlockManager::LoadBlockIndex(const std::optional<uint256>& snapshot_blockha
         // !RCPU (dual-algo count cache): rebuild in height order, the parent is
         // always processed before its children.
         pindex->nSecondAlgoCount = ComputeSecondAlgoCount(*pindex, nDualAlgoActivationHeight);
+        UpdateDualAlgoState(*pindex, GetConsensus());
 
         // We can link the chain of blocks for which we've received transactions at some point, or
         // blocks that are assumed-valid on the basis of snapshot load (see

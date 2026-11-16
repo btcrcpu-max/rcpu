@@ -200,6 +200,27 @@ uint32_t GetNextASERTWorkRequired(const CBlockIndex *pindexPrev,
  */
 int64_t ComputeSecondAlgoCount(const CBlockIndex& index, int nDualAlgoActivationHeight);
 
+/**
+ * RCPU dual-algo H-1: cumulative number of blocks of one algorithm from
+ * nDualAlgoActivationHeight up to and including `index` (0 before activation).
+ * Uses nSecondAlgoCount for the bit-30 count and derives the RandomX count
+ * from the total number of post-activation blocks. Falls back to a chain walk
+ * when nSecondAlgoCount is not available (-1).
+ */
+int64_t CumulativeAlgoCount(const CBlockIndex& index, bool fQhash, int nDualAlgoActivationHeight);
+
+/**
+ * RCPU dual-algo H-1: update the per-algorithm last-block heights and ASERT
+ * anchors for a newly indexed block. Called from BlockManager::AddToBlockIndex
+ * and rebuilt by BlockManager::LoadBlockIndex, exactly like nSecondAlgoCount.
+ *
+ * Before nDualAlgoLatenessFixHeight the anchor stays at the activation block
+ * (nDualAlgoActivationHeight - 1). At/after it, if the gap since the last block
+ * of this algorithm exceeds nDualAlgoReanchorGap, the block itself becomes the
+ * new anchor, discarding the banked lateness.
+ */
+void UpdateDualAlgoState(CBlockIndex& index, const Consensus::Params& params);
+
 // !RCPU END
 
 #endif // BITCOIN_POW_H

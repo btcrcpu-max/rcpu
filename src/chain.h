@@ -183,6 +183,20 @@ public:
     //! BlockManager::AddToBlockIndex and rebuilt by BlockManager::LoadBlockIndex,
     //! same lifecycle as nChainWork.
     int64_t nSecondAlgoCount{-1};
+
+    //! (memory only) Height of the last block mined with each algorithm at or
+    //! below this block (-1 when the algorithm has no block since activation).
+    //! Maintained together with nSecondAlgoCount.
+    int32_t nLastRandomXHeight{-1};
+    int32_t nLastEtchashHeight{-1};
+
+    //! (memory only) Height of the ASERT anchor currently in effect for each
+    //! algorithm. Before the first re-anchor this is nDualAlgoActivationHeight
+    //! - 1 (the original activation anchor); after a re-anchor it is the
+    //! resume block, so banked lateness is discarded. Same lifecycle as
+    //! nSecondAlgoCount.
+    int32_t nAsertAnchorRandomXHeight{-1};
+    int32_t nAsertAnchorEtchashHeight{-1};
     // !RCPU END
 
     //! Number of transactions in this block.

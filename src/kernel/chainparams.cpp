@@ -618,6 +618,15 @@ consensus.fPowRandomX = true;
         // active the combined cadence stays close to the current 5 minutes.
         consensus.nDualAlgoActivationHeight = 21000;
         consensus.nDualAlgoTargetSpacing = 10 * 60;
+        // H-1: re-anchor an algorithm whose last block is older than 12h,
+        // discarding banked lateness and allowing at most an 8x one-step drop.
+        // INT_MAX keeps the rule inactive in source: it is a hard fork, so the
+        // release manager MUST set this to TIP + 2016 (and announce it) at
+        // release time. An accidental default activation is worse than a late
+        // fix because old nodes would fork without notice.
+        consensus.nDualAlgoLatenessFixHeight = std::numeric_limits<int>::max();
+        consensus.nDualAlgoReanchorGap = 12 * 60 * 60;
+        consensus.nDualAlgoMaxDrop = 8;
         // !RCPU (dual-algo etchash): the bit-30 algorithm is Etchash (ECIP-1099
         // light verification). Epoch length 6000 blocks: with both algorithms
         // mining, ~20.8 days per epoch at the combined ~5-minute cadence
@@ -778,6 +787,11 @@ consensus.fPowRandomX = true;
         // dual-algo rules are exercised on a public network first.
         consensus.nDualAlgoActivationHeight = 21000;
         consensus.nDualAlgoTargetSpacing = 10 * 60;
+        // H-1: see the mainnet comment. Testnet activates with its own
+        // TIP + 2016 at release; INT_MAX keeps the source default inactive.
+        consensus.nDualAlgoLatenessFixHeight = std::numeric_limits<int>::max();
+        consensus.nDualAlgoReanchorGap = 12 * 60 * 60;
+        consensus.nDualAlgoMaxDrop = 8;
         // !RCPU (dual-algo etchash): testnet mirrors mainnet etchash params.
         consensus.fDualAlgoEtchash = true;
         consensus.nEtchashEpochLength = 6000;
@@ -911,6 +925,11 @@ public:
         // constant (fPowNoRetargeting) and trivially minable.
         consensus.nDualAlgoActivationHeight = 150;
         consensus.nDualAlgoTargetSpacing = 10 * 60;
+        // H-1: active immediately on regtest (unit tests build custom params
+        // with fPowNoRetargeting=false to exercise the re-anchor path).
+        consensus.nDualAlgoLatenessFixHeight = 0;
+        consensus.nDualAlgoReanchorGap = 60 * 60;
+        consensus.nDualAlgoMaxDrop = 8;
         // !RCPU (dual-algo etchash): regtest uses a tiny epoch (10 blocks) so
         // functional tests cross multiple epoch boundaries cheaply.
         consensus.fDualAlgoEtchash = true;

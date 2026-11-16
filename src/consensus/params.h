@@ -174,6 +174,24 @@ struct Params {
     // this interval and the combined chain runs at roughly half of it.
     int64_t nDualAlgoTargetSpacing{10 * 60};
 
+    // !RCPU (H-1 lateness fix)
+    // Height at which the per-algorithm ASERT re-anchor rule activates.
+    // Before it, the original absolute-anchor formula is used unchanged.
+    // INT_MAX = never (non-RCPU chains and pre-fix replay).
+    int nDualAlgoLatenessFixHeight{std::numeric_limits<int>::max()};
+
+    // If the time since the last block of the algorithm being evaluated
+    // exceeds this many seconds, that algorithm's ASERT is re-anchored to its
+    // next block: the banked lateness is discarded and the target may drop by
+    // at most nDualAlgoMaxDrop in one step. This prevents an idle algorithm
+    // from accumulating an unbounded powLimit-difficulty "credit".
+    int64_t nDualAlgoReanchorGap{12 * 60 * 60};
+
+    // Maximum one-time target increase (easier) at a re-anchor, as an integer
+    // multiplier. 1 means no increase; 8 means at most 8x easier in one step.
+    uint32_t nDualAlgoMaxDrop{8};
+    // !RCPU (H-1 lateness fix) END
+
     // !RCPU (dual-algo etchash)
     // When true, the second algorithm selected by BLOCK_VERSION_QHASH (bit 30)
     // is Etchash (ECIP-1099 light verification) instead of qhash. The bit-30

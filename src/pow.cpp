@@ -436,6 +436,80 @@ int64_t ComputeSecondAlgoCount(const CBlockIndex& index, int nDualAlgoActivation
     return prev + ((index.nVersion & BLOCK_VERSION_QHASH) ? 1 : 0);
 }
 
+int64_t CumulativeAlgoCount(const CBlockIndex& index, bool fQhash, int nDualAlgoActivationHeight)
+{
+    if (nDualAlgoActivationHeight <= 0 || index.nHeight < nDualAlgoActivationHeight) {
+        return 0;
+    }
+    int64_t nSecondAlgo = index.nSecondAlgoCount;
+    if (nSecondAlgo < 0) {
+        // Index built outside BlockManager: reproduce the cached value by
+        // walking back to activation (same result as ComputeSecondAlgoCount).
+        nSecondAlgo = 0;
+        for (const CBlockIndex* p = &index; p != nullptr && p->nHeight >= nDualAlgoActivationHeight; p = p->pprev) {
+            if (p->nVersion & BLOCK_VERSION_QHASH) ++nSecondAlgo;
+        }
+    }
+    const int64_t nTotal = index.nHeight - (nDualAlgoActivationHeight - 1);
+    return fQhash ? nSecondAlgo : nTotal - nSecondAlgo;
+}
+
+void UpdateDualAlgoState(CBlockIndex& index, const Consensus::Params& params)
+{
+    const int nActHeight = params.nDualAlgoActivationHeight;
+    if (nActHeight <= 0 || index.nHeight < nActHeight) {
+        // Pre-activation: no algorithm has a block yet; the activation anchor
+        // is the last pre-activation block.
+        index.nLastRandomXHeight = -1;
+        index.nLastEtchashHeight = -1;
+        index.nAsertAnchorRandomXHeight = nActHeight > 0 ? nActHeight - 1 : 0;
+        index.nAsertAnchorEtchashHeight = nActHeight > 0 ? nActHeight - 1 : 0;
+        return;
+    }
+
+    const bool fQhash = (index.nVersion & BLOCK_VERSION_QHASH) != 0;
+    const CBlockIndex* pprev = index.pprev;
+    if (index.nHeight == nActHeight || pprev == nullptr) {
+        // First dual-algo block (or a defensive fallback for an unlinked
+        // index): it is the last block of its own algorithm, and the ASERT
+        // anchor remains the activation block.
+        index.nLastRandomXHeight = fQhash ? -1 : index.nHeight;
+        index.nLastEtchashHeight = fQhash ? index.nHeight : -1;
+        index.nAsertAnchorRandomXHeight = nActHeight - 1;
+        index.nAsertAnchorEtchashHeight = nActHeight - 1;
+        return;
+    }
+
+    // Inherit the parent's per-algorithm state.
+    index.nLastRandomXHeight = pprev->nLastRandomXHeight;
+    index.nLastEtchashHeight = pprev->nLastEtchashHeight;
+    index.nAsertAnchorRandomXHeight = pprev->nAsertAnchorRandomXHeight;
+    index.nAsertAnchorEtchashHeight = pprev->nAsertAnchorEtchashHeight;
+
+    const int32_t nLastSameHeight = fQhash ? index.nLastEtchashHeight : index.nLastRandomXHeight;
+    if (!params.fPowNoRetargeting && index.nHeight >= params.nDualAlgoLatenessFixHeight && nLastSameHeight >= 0) {
+        const CBlockIndex* pLastSame = pprev->GetAncestor(nLastSameHeight);
+        if (pLastSame != nullptr) {
+            const int64_t nGap = pprev->GetBlockTime() - pLastSame->GetBlockTime();
+            if (nGap > params.nDualAlgoReanchorGap) {
+                // This block is the resume block: it becomes the new anchor,
+                // so the next block no longer sees the old lateness.
+                if (fQhash) {
+                    index.nAsertAnchorEtchashHeight = index.nHeight;
+                } else {
+                    index.nAsertAnchorRandomXHeight = index.nHeight;
+                }
+            }
+        }
+    }
+
+    if (fQhash) {
+        index.nLastEtchashHeight = index.nHeight;
+    } else {
+        index.nLastRandomXHeight = index.nHeight;
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Dual-algo (RandomX + Etchash) difficulty, active from
 // nDualAlgoActivationHeight.
@@ -471,17 +545,65 @@ static uint32_t GetDualAlgoWorkRequired(const CBlockIndex* pindexLast,
     // we would silently fall back to powLimit (no difficulty). We assert here
     // so such misconfiguration fails at startup rather than at runtime.
     assert(nActHeight > 0);
-    const CBlockIndex* pindexAnchor = pindexLast->GetAncestor(nActHeight - 1);
-    if (!pindexAnchor) {
+    const CBlockIndex* pindexActivationAnchor = pindexLast->GetAncestor(nActHeight - 1);
+    if (pindexActivationAnchor == nullptr) {
         return powLimit.GetCompact();
     }
 
-    // Both algorithms start at twice the pre-activation difficulty.
+    // H-1: from nDualAlgoLatenessFixHeight on, a gap since the last block of
+    // the algorithm being evaluated re-anchors its ASERT to that block. The
+    // gap only decides the one-time drop for the resume block; it is not
+    // carried into later blocks, so no powLimit "credit" can be banked.
+    const int32_t nLastSameHeight = fQhash ? pindexLast->nLastEtchashHeight
+                                           : pindexLast->nLastRandomXHeight;
+    const CBlockIndex* pindexLastSame = nullptr;
+    if (nLastSameHeight >= 0 && nLastSameHeight <= pindexLast->nHeight) {
+        pindexLastSame = pindexLast->GetAncestor(nLastSameHeight);
+    }
+    const int64_t nNextHeight = pindexLast->nHeight + 1;
+    const bool fFixActive = !params.fPowNoRetargeting &&
+                            nNextHeight >= params.nDualAlgoLatenessFixHeight;
+
+    int64_t nGap = 0;
+    bool fReanchor = false;
+    if (fFixActive && pindexLastSame != nullptr) {
+        nGap = pindexLast->GetBlockTime() - pindexLastSame->GetBlockTime();
+        fReanchor = nGap > params.nDualAlgoReanchorGap;
+    }
+
+    const CBlockIndex* pindexAnchor = pindexActivationAnchor;
     arith_uint256 refTarget;
-    refTarget.SetCompact(pindexAnchor->nBits);
-    refTarget >>= 1;
-    if (refTarget == 0) refTarget = arith_uint256(1);
-    if (refTarget > powLimit) refTarget = powLimit;
+    int64_t nHeightDiff = 0;
+    int64_t nTimeDiff = 0;
+
+    if (fReanchor) {
+        pindexAnchor = pindexLastSame;
+        refTarget.SetCompact(pindexLastSame->nBits);
+        if (refTarget == 0) refTarget = arith_uint256(1);
+        if (refTarget > powLimit) refTarget = powLimit;
+        nHeightDiff = 0;
+        nTimeDiff = nGap;
+    } else {
+        const int32_t nAnchorHeight = fQhash ? pindexLast->nAsertAnchorEtchashHeight
+                                             : pindexLast->nAsertAnchorRandomXHeight;
+        if (nAnchorHeight >= 0 && nAnchorHeight <= pindexLast->nHeight) {
+            pindexAnchor = pindexLast->GetAncestor(nAnchorHeight);
+        }
+        if (pindexAnchor == nullptr) {
+            return powLimit.GetCompact();
+        }
+        refTarget.SetCompact(pindexAnchor->nBits);
+        if (pindexAnchor->nHeight == nActHeight - 1) {
+            // Both algorithms start at twice the pre-activation difficulty.
+            refTarget >>= 1;
+        }
+        if (refTarget == 0) refTarget = arith_uint256(1);
+        if (refTarget > powLimit) refTarget = powLimit;
+        nHeightDiff = CumulativeAlgoCount(*pindexLast, fQhash, nActHeight) -
+                      CumulativeAlgoCount(*pindexAnchor, fQhash, nActHeight);
+        if (nHeightDiff < 0) nHeightDiff = 0; // defensive; counts are monotonic
+        nTimeDiff = pindexLast->GetBlockTime() - pindexAnchor->GetBlockTime();
+    }
 
     if (params.fPowNoRetargeting) {
         return refTarget.GetCompact();
@@ -505,32 +627,27 @@ static uint32_t GetDualAlgoWorkRequired(const CBlockIndex* pindexLast,
         return powLimit.GetCompact();
     }
 
-    // Count bit-30 (second-algorithm) blocks in [nActHeight, pindexLast->nHeight]:
-    // Etchash when params.fDualAlgoEtchash is set, legacy qhash otherwise.
-    // CBlockIndex carries the cumulative count (maintained by BlockManager like
-    // nChainWork), so the normal path is O(1). A -1 count means the index was
-    // built outside BlockManager (unit tests, external tools): walk the chain
-    // then, which yields exactly the same value.
-    int64_t nQhashCount = pindexLast->nSecondAlgoCount;
-    if (nQhashCount < 0) {
-        nQhashCount = 0;
-        for (const CBlockIndex* p = pindexLast; p != nullptr && p->nHeight >= nActHeight; p = p->pprev) {
-            if (p->nVersion & BLOCK_VERSION_QHASH) ++nQhashCount;
+    arith_uint256 nextTarget = CalculateASERT(refTarget,
+                                              params.nDualAlgoTargetSpacing,
+                                              nTimeDiff,
+                                              nHeightDiff,
+                                              powLimit,
+                                              params.nASERTHalfLife);
+    if (fReanchor) {
+        // One-time maximum drop. Anything larger requires subsequent blocks
+        // (whose anchor is this resume block) to keep coming slowly.
+        const uint32_t nMaxDrop = std::max<uint32_t>(1, params.nDualAlgoMaxDrop);
+        const arith_uint256 maxDrop{nMaxDrop};
+        arith_uint256 maxTarget = refTarget;
+        if (powLimit / maxDrop < refTarget) {
+            maxTarget = powLimit;
+        } else {
+            maxTarget *= maxDrop;
+        }
+        if (nextTarget > maxTarget) {
+            nextTarget = maxTarget;
         }
     }
-    const int64_t nTotal = pindexLast->nHeight - (nActHeight - 1);
-    // Schedule index k: the next block of this algorithm is the (k+1)-th since
-    // the anchor; CalculateASERT derives the ideal time as spacing*(k+1).
-    const int64_t nHeightDiff = fQhash ? nQhashCount : (nTotal - nQhashCount);
-
-    const int64_t nTimeDiff = pindexLast->GetBlockTime() - pindexAnchor->GetBlockTime();
-
-    const arith_uint256 nextTarget = CalculateASERT(refTarget,
-                                                    params.nDualAlgoTargetSpacing,
-                                                    nTimeDiff,
-                                                    nHeightDiff,
-                                                    powLimit,
-                                                    params.nASERTHalfLife);
     return nextTarget.GetCompact();
 }
 // !RCPU END

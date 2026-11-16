@@ -1,6 +1,8 @@
 # H-1 design: bounding per-algorithm ASERT lateness in the dual-algo schedule
 
-Status: design proposal (no consensus code in this patch series).
+Status: **implemented in `audit/2026-11-16-fixes`** (Option B), with activation
+height and constants left as release-time decisions. This document remains the
+design/review reference; see section 9 for the implementation mapping.
 Audience: node maintainers, pool operators, release manager.
 Related audit: `RCPU-AUDIT-2026-11-16.md` finding H-1.
 
@@ -214,3 +216,45 @@ Mainnet replay:
   naturally discard the old credit? With Option A/B, the new formula uses the
   capped/anchored value, so old credit is discarded by construction; document
   this explicitly.
+
+## 9. Implementation mapping (this branch)
+
+Consensus parameters (`src/consensus/params.h`):
+
+- `nDualAlgoLatenessFixHeight` — activation height; `INT_MAX` = old rules.
+  Mainnet/testnet ship as `INT_MAX` on purpose: this is a hard fork, so the
+  release manager must set `TIP + 2016` (and announce it) at release time.
+  Regtest is `0` so tests exercise the rule.
+- `nDualAlgoReanchorGap` — 12h on mainnet/testnet, 1h on regtest.
+- `nDualAlgoMaxDrop` — 8 on all RCPU chains.
+
+Per-index state (`src/chain.h`, memory only, rebuilt like `nSecondAlgoCount`):
+
+- `nLastRandomXHeight`, `nLastEtchashHeight`;
+- `nAsertAnchorRandomXHeight`, `nAsertAnchorEtchashHeight`.
+
+New code:
+
+- `UpdateDualAlgoState()` (`src/pow.cpp`) is called from
+  `BlockManager::AddToBlockIndex()` and rebuilt in `BlockManager::LoadBlockIndex()`.
+  It records the last block of each algorithm and moves the anchor to the
+  resume block when the gap exceeds `nDualAlgoReanchorGap`.
+- `CumulativeAlgoCount()` derives the per-algorithm count since an arbitrary
+  anchor from `nSecondAlgoCount` (and walks the chain when the cached count is
+  unavailable).
+- `GetDualAlgoWorkRequired()`:
+  - before the fix height, or when the gap is below the threshold, uses the
+    stored anchor and the original formula;
+  - on a re-anchor, uses the last same-algorithm block as `refTarget`, sets
+    `nHeightDiff = 0`, and caps the one-time target increase at
+    `nDualAlgoMaxDrop` (also clamped to `powLimit`);
+  - the resume block becomes the next anchor, so the old gap is not carried
+    forward.
+
+Regression test: `dualalgo_tests/dual_algo_reanchor_discards_banked_lateness`
+builds a synthetic chain with one Etchash block at activation, a 60-day idle
+gap, and asserts: old rule → `powLimit`; new rule → exactly `8x` the last
+Etchash target; next block → anchored on the resume block, not `powLimit`.
+
+The placeholder activation height and constants must be reviewed against a
+mainnet header replay before tagging; this is a hard fork.
