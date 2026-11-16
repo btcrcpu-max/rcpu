@@ -1323,6 +1323,7 @@ static RPCHelpMan computerandomxhash()
                         {RPCResult::Type::STR_HEX, "hash", "RandomX hash (32 bytes)"},
                         {RPCResult::Type::STR_HEX, "commitment", "RandomX commitment (32 bytes)"},
                         {RPCResult::Type::STR_HEX, "block_hash", "Block hash (double SHA256 of header)"},
+                        {RPCResult::Type::BOOL, "hash_verified", "Whether the hash meets the target difficulty"},
                     }},
                 RPCExamples{
                     HelpExampleCli("computerandomxhash", "\"00000020...\"")
