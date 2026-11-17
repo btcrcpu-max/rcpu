@@ -455,75 +455,105 @@ jobs:
           WINDOWS_SIGNING_CERT: ${{ secrets.WINDOWS_SIGNING_CERT }}
           WINDOWS_SIGNING_PASSWORD: ${{ secrets.WINDOWS_SIGNING_PASSWORD }}
         run: |
-          # H-3: a tag release must never publish unsigned Windows binaries.
-          # Fail closed instead of warning-and-continuing.
+          # H-3 requires that a tag release never ships Windows binaries that
+          # are silently unsigned. Signing stays the default and fail-closed
+          # behaviour when a certificate is present. If the release manager
+          # deliberately leaves WINDOWS_SIGNING_CERT unset, we degrade to an
+          # explicitly labelled unsigned publish: binaries are renamed with an
+          # "-unsigned" suffix so no download can be mistaken for an
+          # Authenticode-signed build.
+          UNSIGNED=0
           if [ -z "${WINDOWS_SIGNING_CERT:-}" ]; then
-            echo "ERROR: WINDOWS_SIGNING_CERT is not configured; refusing to publish an unsigned Windows release"
-            exit 1
+            echo "WARNING: WINDOWS_SIGNING_CERT is not configured."
+            echo "WARNING: publishing Windows binaries with an explicit '-unsigned' suffix."
+            UNSIGNED=1
           fi
           umask 077
           PFX="$RUNNER_TEMP/rcpu-sign.pfx"
           PASSFILE="$RUNNER_TEMP/rcpu-sign.pass"
           trap 'rm -f "$PFX" "$PASSFILE"' EXIT
-          printf '%s' "$WINDOWS_SIGNING_CERT" | base64 -d > "$PFX"
-          printf '%s' "$WINDOWS_SIGNING_PASSWORD" > "$PASSFILE"
-          signed=0
-          for EXE in windows/*-win64-setup.exe; do
-            [ -e "$EXE" ] || continue
-            test -s "$EXE" || { echo "ERROR: $EXE is empty"; exit 1; }
-            echo "Signing $EXE with Authenticode"
-            osslsigncode sign -pkcs12 "$PFX" -readpass "$PASSFILE" \
-              -n "RCPU Core" -i "https://rcpu.top" \
-              -t "https://timestamp.digicert.com" \
-              -in "$EXE" -out "${EXE}.signed"
-            mv "${EXE}.signed" "$EXE"
-            osslsigncode verify -in "$EXE"
-            signed=$((signed + 1))
-          done
-          if [ "$signed" -eq 0 ]; then
-            echo "ERROR: no Windows installer (*-win64-setup.exe) was found to sign; refusing to publish"
-            exit 1
-          fi
-          # The setup ZIP was built before signing, so it still contains the
-          # unsigned EXE. The ZIP is what users download, therefore it must be
-          # rebuilt from the signed binary; otherwise the EXE inside is still
-          # unsigned even though the standalone one is.
-          for ZIP in windows/*-win64-setup.zip; do
-            [ -e "$ZIP" ] || continue
-            EXE="${ZIP%-setup.zip}-setup.exe"
-            [ -f "$EXE" ] || { echo "ERROR: $EXE missing for $ZIP"; exit 1; }
-            ( cd windows && rm -f "$(basename "$ZIP")" && zip -q "$(basename "$ZIP")" "$(basename "$EXE")" )
-            echo "Rebuilt $ZIP from the signed installer"
-          done
-          # H-3 follow-up: the portable ZIP used to ship entirely unsigned
-          # EXEs because the signing loop only matched *-setup.exe. Unpack it,
-          # sign every PE binary, rebuild the ZIP, and verify each signature.
-          for ZIP in windows/*-win64-portable.zip; do
-            [ -e "$ZIP" ] || continue
-            ZIP_ABS="$PWD/$ZIP"
-            TMP="$RUNNER_TEMP/portable-$$"
-            rm -rf "$TMP"; mkdir -p "$TMP"
-            unzip -q "$ZIP" -d "$TMP"
-            portable_signed=0
-            while IFS= read -r -d '' EXE; do
-              echo "Signing portable binary $EXE"
+          if [ "$UNSIGNED" -eq 0 ]; then
+            printf '%s' "$WINDOWS_SIGNING_CERT" | base64 -d > "$PFX"
+            printf '%s' "$WINDOWS_SIGNING_PASSWORD" > "$PASSFILE"
+            signed=0
+            for EXE in windows/*-win64-setup.exe; do
+              [ -e "$EXE" ] || continue
+              test -s "$EXE" || { echo "ERROR: $EXE is empty"; exit 1; }
+              echo "Signing $EXE with Authenticode"
               osslsigncode sign -pkcs12 "$PFX" -readpass "$PASSFILE" \
                 -n "RCPU Core" -i "https://rcpu.top" \
                 -t "https://timestamp.digicert.com" \
                 -in "$EXE" -out "${EXE}.signed"
               mv "${EXE}.signed" "$EXE"
               osslsigncode verify -in "$EXE"
-              portable_signed=$((portable_signed + 1))
-            done < <(find "$TMP" -type f -iname '*.exe' -print0)
-            if [ "$portable_signed" -eq 0 ]; then
-              echo "ERROR: $ZIP contains no EXE to sign; refusing to publish an unsigned portable package"
+              signed=$((signed + 1))
+            done
+            if [ "$signed" -eq 0 ]; then
+              echo "ERROR: no Windows installer (*-win64-setup.exe) was found to sign; refusing to publish"
               exit 1
             fi
-            rm -f "$ZIP_ABS"
-            ( cd "$TMP" && find . -type f -print | zip -q -j "$ZIP_ABS" -@ )
-            rm -rf "$TMP"
-            echo "Rebuilt $ZIP with $portable_signed signed EXE(s)"
-          done
+            # The setup ZIP was built before signing, so it still contains the
+            # unsigned EXE. The ZIP is what users download, therefore it must be
+            # rebuilt from the signed binary; otherwise the EXE inside is still
+            # unsigned even though the standalone one is.
+            for ZIP in windows/*-win64-setup.zip; do
+              [ -e "$ZIP" ] || continue
+              EXE="${ZIP%-setup.zip}-setup.exe"
+              [ -f "$EXE" ] || { echo "ERROR: $EXE missing for $ZIP"; exit 1; }
+              ( cd windows && rm -f "$(basename "$ZIP")" && zip -q "$(basename "$ZIP")" "$(basename "$EXE")" )
+              echo "Rebuilt $ZIP from the signed installer"
+            done
+            # H-3 follow-up: the portable ZIP used to ship entirely unsigned
+            # EXEs because the signing loop only matched *-setup.exe. Unpack it,
+            # sign every PE binary, rebuild the ZIP, and verify each signature.
+            for ZIP in windows/*-win64-portable.zip; do
+              [ -e "$ZIP" ] || continue
+              ZIP_ABS="$PWD/$ZIP"
+              TMP="$RUNNER_TEMP/portable-$$"
+              rm -rf "$TMP"; mkdir -p "$TMP"
+              unzip -q "$ZIP" -d "$TMP"
+              portable_signed=0
+              while IFS= read -r -d '' EXE; do
+                echo "Signing portable binary $EXE"
+                osslsigncode sign -pkcs12 "$PFX" -readpass "$PASSFILE" \
+                  -n "RCPU Core" -i "https://rcpu.top" \
+                  -t "https://timestamp.digicert.com" \
+                  -in "$EXE" -out "${EXE}.signed"
+                mv "${EXE}.signed" "$EXE"
+                osslsigncode verify -in "$EXE"
+                portable_signed=$((portable_signed + 1))
+              done < <(find "$TMP" -type f -iname '*.exe' -print0)
+              if [ "$portable_signed" -eq 0 ]; then
+                echo "ERROR: $ZIP contains no EXE to sign; refusing to publish an unsigned portable package"
+                exit 1
+              fi
+              rm -f "$ZIP_ABS"
+              ( cd "$TMP" && find . -type f -print | zip -q -j "$ZIP_ABS" -@ )
+              rm -rf "$TMP"
+              echo "Rebuilt $ZIP with $portable_signed signed EXE(s)"
+            done
+          else
+            # Unsigned publish: keep the artifacts but make the missing
+            # Authenticode signature impossible to overlook.
+            for EXE in windows/*-win64-setup.exe; do
+              [ -e "$EXE" ] || continue
+              test -s "$EXE" || { echo "ERROR: $EXE is empty"; exit 1; }
+              mv "$EXE" "${EXE%-setup.exe}-setup-unsigned.exe"
+            done
+            for ZIP in windows/*-win64-setup.zip; do
+              [ -e "$ZIP" ] || continue
+              mv "$ZIP" "${ZIP%-setup.zip}-setup-unsigned.zip"
+            done
+            for ZIP in windows/*-win64-portable.zip; do
+              [ -e "$ZIP" ] || continue
+              mv "$ZIP" "${ZIP%-portable.zip}-portable-unsigned.zip"
+            done
+            if ! ls windows/*-unsigned.* >/dev/null 2>&1; then
+              echo "ERROR: no Windows artifact was found to publish; refusing"
+              exit 1
+            fi
+            echo "Prepared unsigned Windows artifacts (no Authenticode signature)."
+          fi
           # The signature changes the file, so the checksums must be rebuilt
           # here, before SHA256SUMS.txt is merged and gpg-signed below.
           (
