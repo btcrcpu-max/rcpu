@@ -1,0 +1,131 @@
+﻿=== RCPU Historical Gap Scan ===
+Tip: 28203
+Started: 2026-11-17T03:46:45+00:00
+
+--- F-1: scanning blocks 20365..28203 for v3 txs with non-null CTxIn::nValue ---
+  progress: block 20500 / 28203 (1%) hits=0
+  progress: block 21000 / 28203 (8%) hits=0
+  progress: block 21500 / 28203 (14%) hits=0
+  progress: block 22000 / 28203 (20%) hits=0
+  progress: block 22500 / 28203 (27%) hits=0
+  progress: block 23000 / 28203 (33%) hits=0
+  progress: block 23500 / 28203 (39%) hits=0
+  progress: block 24000 / 28203 (46%) hits=0
+  progress: block 24500 / 28203 (52%) hits=0
+  progress: block 25000 / 28203 (59%) hits=0
+  progress: block 25500 / 28203 (65%) hits=0
+  progress: block 26000 / 28203 (71%) hits=0
+  progress: block 26500 / 28203 (78%) hits=0
+  progress: block 27000 / 28203 (84%) hits=0
+  progress: block 27500 / 28203 (91%) hits=0
+  progress: block 28000 / 28203 (97%) hits=0
+F-1: checked blocks=7839 hits=0
+
+--- F-2: scanning blocks 0..9991 for v3 txs with SIGHASH_SINGLE ---
+  progress: block 100 / 9991 hits=0
+  progress: block 200 / 9991 hits=0
+  progress: block 300 / 9991 hits=0
+  progress: block 400 / 9991 hits=0
+  progress: block 500 / 9991 hits=0
+  progress: block 600 / 9991 hits=0
+  progress: block 700 / 9991 hits=0
+  progress: block 800 / 9991 hits=0
+  progress: block 900 / 9991 hits=0
+  progress: block 1000 / 9991 hits=0
+  progress: block 1100 / 9991 hits=0
+  progress: block 1200 / 9991 hits=0
+  progress: block 1300 / 9991 hits=0
+  progress: block 1400 / 9991 hits=0
+  progress: block 1500 / 9991 hits=0
+  progress: block 1600 / 9991 hits=0
+  progress: block 1700 / 9991 hits=0
+  progress: block 1800 / 9991 hits=0
+  progress: block 1900 / 9991 hits=0
+  progress: block 2000 / 9991 hits=0
+  progress: block 2100 / 9991 hits=0
+  progress: block 2200 / 9991 hits=0
+  progress: block 2300 / 9991 hits=0
+  progress: block 2400 / 9991 hits=0
+  progress: block 2500 / 9991 hits=0
+  progress: block 2600 / 9991 hits=0
+  progress: block 2700 / 9991 hits=0
+  progress: block 2800 / 9991 hits=0
+  progress: block 2900 / 9991 hits=0
+  progress: block 3000 / 9991 hits=0
+  progress: block 3100 / 9991 hits=0
+  progress: block 3200 / 9991 hits=0
+  progress: block 3300 / 9991 hits=0
+  progress: block 3400 / 9991 hits=0
+  progress: block 3500 / 9991 hits=0
+  progress: block 3600 / 9991 hits=0
+  progress: block 3700 / 9991 hits=0
+  progress: block 3800 / 9991 hits=0
+  progress: block 3900 / 9991 hits=0
+  progress: block 4000 / 9991 hits=0
+  progress: block 4100 / 9991 hits=0
+  progress: block 4200 / 9991 hits=0
+  progress: block 4300 / 9991 hits=0
+  progress: block 4400 / 9991 hits=0
+  progress: block 4500 / 9991 hits=0
+  progress: block 4600 / 9991 hits=0
+  progress: block 4700 / 9991 hits=0
+  progress: block 4800 / 9991 hits=0
+  progress: block 4900 / 9991 hits=0
+  progress: block 5000 / 9991 hits=0
+  progress: block 5100 / 9991 hits=0
+  progress: block 5200 / 9991 hits=0
+  progress: block 5300 / 9991 hits=0
+  progress: block 5400 / 9991 hits=0
+  progress: block 5500 / 9991 hits=0
+  progress: block 5600 / 9991 hits=0
+  progress: block 5700 / 9991 hits=0
+  progress: block 5800 / 9991 hits=0
+  progress: block 5900 / 9991 hits=0
+  progress: block 6000 / 9991 hits=0
+  progress: block 6100 / 9991 hits=0
+  progress: block 6200 / 9991 hits=0
+  progress: block 6300 / 9991 hits=0
+  progress: block 6400 / 9991 hits=0
+  progress: block 6500 / 9991 hits=0
+  progress: block 6600 / 9991 hits=0
+  progress: block 6700 / 9991 hits=0
+  progress: block 6800 / 9991 hits=0
+  progress: block 6900 / 9991 hits=0
+  progress: block 7000 / 9991 hits=0
+  progress: block 7100 / 9991 hits=0
+  progress: block 7200 / 9991 hits=0
+  progress: block 7300 / 9991 hits=0
+  progress: block 7400 / 9991 hits=0
+  progress: block 7500 / 9991 hits=0
+  progress: block 7600 / 9991 hits=0
+  progress: block 7700 / 9991 hits=0
+  progress: block 7800 / 9991 hits=0
+  progress: block 7900 / 9991 hits=0
+  progress: block 8000 / 9991 hits=0
+  progress: block 8100 / 9991 hits=0
+  progress: block 8200 / 9991 hits=0
+  progress: block 8300 / 9991 hits=0
+  progress: block 8400 / 9991 hits=0
+  progress: block 8500 / 9991 hits=0
+  progress: block 8600 / 9991 hits=0
+  progress: block 8700 / 9991 hits=0
+  progress: block 8800 / 9991 hits=0
+  progress: block 8900 / 9991 hits=0
+  progress: block 9000 / 9991 hits=0
+  progress: block 9100 / 9991 hits=0
+  progress: block 9200 / 9991 hits=0
+  progress: block 9300 / 9991 hits=0
+  progress: block 9400 / 9991 hits=0
+  progress: block 9500 / 9991 hits=0
+  progress: block 9600 / 9991 hits=0
+  progress: block 9700 / 9991 hits=0
+  progress: block 9800 / 9991 hits=0
+  progress: block 9900 / 9991 hits=0
+F-2: checked blocks=9992 hits=0
+
+=== FINAL RESULTS ===
+F-1 (v3 non-null CTxIn::nValue, range 20365..28203): 0 HITS
+F-2 (v3 SIGHASH_SINGLE, range 0..9991): 0 HITS
+Finished: 2026-11-17T03:53:15+00:00
+
+RESULT: PASS — no historical validation gaps found within scan ranges.

@@ -26,8 +26,11 @@ No historical v3 `SIGHASH_SINGLE` / `SIGHASH_SINGLE|ANYONECANPAY`
 signature was found in this range. `signatures_examined == v3_inputs`
 means every v3 input yielded a parsed signature.
 
-Note: blocks 0-9991 are below the shipped `defaultAssumeValid` (9992) and
-were not part of this scan.
+Note: blocks 0-9991 are below the shipped `defaultAssumeValid` (9992).
+A follow-up scan of this range (performed on 2026-11-17 against mainnet tip
+28,203) also found 0 v3 `SIGHASH_SINGLE` / `SINGLE|ANYONECANPAY` hits across
+9,992 blocks. The unconditional rejection rule is therefore safe for the
+entire chain.
 
 ## 2. BlindTransaction Path-A gate
 

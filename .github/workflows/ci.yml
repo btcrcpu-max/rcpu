@@ -180,7 +180,7 @@ jobs:
           set -o pipefail
           ./src/test/test_bitcoin --log_level=test_suite \
             --run_test=blind_tests,confidential_validation_tests,randomx_tests,dualalgo_tests,logging_tests,coinbase_confidential_tests,group_outputs_tests,pow_tests,argsman_tests,tx_verify_tests,transaction_tests/ct_taproot_sighash_single_is_rejected:transaction_tests/ct_nonce_shape_validation,validation_block_tests,serialize_tests,bip324_tests,wallet_tests 2>&1 | tee /tmp/rcpu-unit.log
-          # Fail closed: assert all fifteen scoped entries actually ran. Guards
+          # Fail closed: assert all sixteen scoped entries actually ran. Guards
           # against a --run_test typo or a silently dropped suite after the
           # scoped list changes.
           for suite in blind_tests confidential_validation_tests randomx_tests \
