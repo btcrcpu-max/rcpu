@@ -57,7 +57,11 @@ jobs:
             exit 1
           fi
           cat /tmp/tagverify.txt
-          grep -F "VALIDSIG 934D5BC95DD4B3ACFEF521B9547633501FE4B8EE" /tmp/tagverify.txt
+          # The signing subkey appears immediately after VALIDSIG; the primary
+          # key fingerprint is the last field on the VALIDSIG line. Grep the
+          # primary fingerprint anywhere inside a VALIDSIG line so that subkey
+          # signatures (the default for `git tag -s`) are accepted.
+          grep -E "^\[GNUPG:\] VALIDSIG [0-9A-F]+ .*934D5BC95DD4B3ACFEF521B9547633501FE4B8EE" /tmp/tagverify.txt
   build-randomx-linux:
     needs: tag-guard
     if: needs.tag-guard.outputs.ok == 'true'
