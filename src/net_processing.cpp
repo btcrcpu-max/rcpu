@@ -2677,16 +2677,25 @@ bool PeerManagerImpl::CheckHeadersPoW(const std::vector<CBlockHeader>& headers, 
     int64_t weighted_cost = 0;
     int64_t h = nStartHeight;
 
-    // !RCPU: During IBD / large headers catch-up, do not apply the 10x Etchash
-    // weight. Honest nodes that are far behind will otherwise exhaust the
-    // budget on the second full batch of 2000 Etchash headers and get
-    // misbehavior points. The known-header early-out already protects against
-    // replay of already-validated headers; new headers still require valid PoW.
+    // F-4 fix: apply the 10x Etchash weight during IBD as well. Previously the
+    // weight was disabled during IBD, which let an attacker send up to
+    // HEADER_BUDGET_MAX (20000) forged bit-30 headers per peer, each forcing a
+    // full HashimotoLight (~1-2 ms) in HasValidProofOfWork -- a ~20-40s CPU
+    // burn per peer before the budget was exhausted. Honest IBD is unaffected:
+    //   * the known-header early-out skips already-validated headers, so only
+    //     the new suffix is PoW-checked;
+    //   * real IBD batches mix RandomX (weight 1) and Etchash (weight 10)
+    //     headers, so the effective cost is well below 20000 per 2000-header
+    //     batch;
+    //   * during IBD no misbehavior is assigned on budget exhaustion, the batch
+    //     is simply dropped and re-requested, so honest peers are not punished;
+    //   * the budget (20000 burst, 2000/s refill) still allows ~2000 Etchash
+    //     headers per burst, enough for a full catch-up batch.
     const bool in_ibd = m_chainman.IsInitialBlockDownload();
 
     for (size_t i = first_unknown; i < headers.size(); ++i) {
         const auto algo = GetPowAlgoForHeader(h, headers[i].nVersion, consensusParams);
-        if (algo && *algo == PowAlgo::Etchash && !in_ibd) {
+        if (algo && *algo == PowAlgo::Etchash) {
             weighted_cost += HEADER_WEIGHT_ETCHASH;
         } else {
             weighted_cost += 1;
