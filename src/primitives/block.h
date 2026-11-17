@@ -36,11 +36,10 @@ extern std::atomic<bool> g_isIBDFinished;
 inline bool HasRandomXHeaderField() { return g_isRandomX.load(std::memory_order_acquire); }
 
 // !RCPU
-// Dual-algo: nVersion bit that marks a block as mined with the second
-// algorithm (Etchash when Consensus::Params::fDualAlgoEtchash is true — the
-// current mainnet/testnet state — legacy qPoW "qhash" otherwise). The wire
+// Dual-algo: nVersion bit that marks a block as mined with Etchash. The wire
 // header layout is unchanged; the algorithm result is carried in the existing
-// hashRandomX field.
+// hashRandomX field. The historical constant name is preserved, but bit 30
+// now selects Etchash only.
 //
 // The bit is ONLY meaningful for blocks at height >=
 // Consensus::Params::nDualAlgoActivationHeight. Before activation every

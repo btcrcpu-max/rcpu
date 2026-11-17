@@ -12,7 +12,6 @@
 #include <consensus/validation.h>
 #include <crypto/etchash.h>
 #include <crypto/keccak.h>
-#include <crypto/qhash.h>
 #include <pow.h>
 #include <primitives/block.h>
 #include <primitives/transaction.h>
@@ -31,81 +30,18 @@
 
 BOOST_FIXTURE_TEST_SUITE(dualalgo_tests, BasicTestingSetup)
 
-// !RCPU (dual-algo): qhash must be a pure deterministic function of the seed.
-BOOST_AUTO_TEST_CASE(qhash_deterministic)
+// !RCPU (dual-algo): the second-algorithm marker lives in nVersion bit 30,
+// must not be confused with the versionbits deployment bits (0..28) and must
+// survive the header copy used by miners. The historical constant name is
+// kept for compatibility, but bit 30 now selects Etchash only.
+BOOST_AUTO_TEST_CASE(block_version_bit30_flag)
 {
-    uint256 seedA = uint256S("0x0000000000000000000000000000000000000000000000000000000000000001");
-    uint256 seedB = uint256S("0x0000000000000000000000000000000000000000000000000000000000000002");
-
-    uint256 hA1 = QHashFromSeed(seedA.begin());
-    uint256 hA2 = QHashFromSeed(seedA.begin());
-    uint256 hB = QHashFromSeed(seedB.begin());
-
-    BOOST_CHECK(hA1 == hA2);
-    BOOST_CHECK(hA1 != hB);
-    // Avalanche sanity: a 1-bit seed change must not leave the output unchanged.
-    BOOST_CHECK(hA1 != seedA && hB != seedB);
-}
-
-// !RCPU (dual-algo): end-to-end qhash proof-of-work semantics — a solved header
-// verifies, a tampered commitment field fails, and the genesis short-circuit
-// still applies.
-BOOST_AUTO_TEST_CASE(qhash_pow_roundtrip)
-{
-    // Loose regtest-style target: 0x207fffff accepts ~50% of hashes.
-    Consensus::Params params;
-    params.powLimit = uint256S("0x7fffffff00000000000000000000000000000000000000000000000000000000");
-    params.nDualAlgoActivationHeight = 150;
-
-    CBlockHeader block;
-    block.nVersion = 1 | BLOCK_VERSION_QHASH;
-    block.hashPrevBlock = uint256S("0x0000000000000000000000000000000000000000000000000000000000000001");
-    block.hashMerkleRoot = uint256S("0x0000000000000000000000000000000000000000000000000000000000000002");
-    block.nTime = 1710000000;
-    block.nBits = 0x207fffff;
-    block.nNonce = 0;
-
-    // Solve by incrementing the nonce (each nonce yields a fresh seed).
-    uint256 solved;
-    bool found = false;
-    for (uint32_t nonce = 0; nonce < 1000; ++nonce) {
-        block.nNonce = nonce;
-        if (CheckProofOfWorkQHash(block, params, POW_VERIFY_MINING, &solved)) {
-            found = true;
-            break;
-        }
-    }
-    BOOST_CHECK(found);
-    block.hashRandomX = solved;
-
-    // Full verification accepts the solved header.
-    BOOST_CHECK(CheckProofOfWorkQHash(block, params, POW_VERIFY_FULL));
-
-    // Tampering with the commitment field must fail.
-    CBlockHeader tampered = block;
-    *tampered.hashRandomX.begin() ^= 0x01;
-    BOOST_CHECK(!CheckProofOfWorkQHash(tampered, params, POW_VERIFY_FULL));
-
-    // Genesis-style headers (null prev) short-circuit regardless of content.
-    CBlockHeader genesis_like = block;
-    genesis_like.hashPrevBlock.SetNull();
-    genesis_like.hashRandomX.SetNull();
-    uint256 out;
-    BOOST_CHECK(CheckProofOfWorkQHash(genesis_like, params, POW_VERIFY_FULL, &out));
-    BOOST_CHECK(out.IsNull());
-}
-
-// !RCPU (dual-algo): the qhash marker lives in nVersion bit 30, must not be
-// confused with the versionbits deployment bits (0..28) and must survive the
-// header copy used by miners.
-BOOST_AUTO_TEST_CASE(qhash_version_flag)
-{
-    static_assert(BLOCK_VERSION_QHASH == 0x40000000, "qhash marker is nVersion bit 30");
+    static_assert(BLOCK_VERSION_QHASH == 0x40000000, "second-algo marker is nVersion bit 30");
     BOOST_CHECK_EQUAL(BLOCK_VERSION_QHASH & 0x1fffffff, 0);
 
     CBlock block;
     block.SetNull();
-    block.nVersion = 0x20000000; // versionbits top bits, no qhash
+    block.nVersion = 0x20000000; // versionbits top bits, no second-algo bit
     BOOST_CHECK(!(block.nVersion & BLOCK_VERSION_QHASH));
     block.nVersion |= BLOCK_VERSION_QHASH;
     CBlockHeader hdr = block.GetBlockHeader();
@@ -237,7 +173,7 @@ BOOST_AUTO_TEST_CASE(etchash_hashimoto_geth_vector)
 }
 
 // !RCPU (dual-algo etchash): hashimotoLight over the epoch-0 and epoch-1
-// caches with header_hash = keccak256("rcpu etchash vector"), nonce 42 —
+// caches with header_hash = keccak256("rcpu etchash vector"), nonce 42 --
 // hardcoded vectors from the independent Python reference implementation so a
 // porting error cannot silently pass.
 BOOST_AUTO_TEST_CASE(etchash_hashimoto_vectors)
@@ -288,7 +224,7 @@ BOOST_AUTO_TEST_CASE(etchash_header_hash_is_nonce_independent)
     params.powLimit = uint256S("0x7fffffff00000000000000000000000000000000000000000000000000000000");
     params.nDualAlgoActivationHeight = 150;
     params.nEtchashEpochLength = 10;
-    params.fDualAlgoEtchash = true;
+
     params.nEtchashBigEndianHeight = 0;
 
     CBlockHeader block;
@@ -343,7 +279,6 @@ BOOST_AUTO_TEST_CASE(etchash_pow_roundtrip)
     params.powLimit = uint256S("0x7fffffff00000000000000000000000000000000000000000000000000000000");
     params.nDualAlgoActivationHeight = 150;
     params.nEtchashEpochLength = 10;
-    params.fDualAlgoEtchash = true;
 
     // Epoch plumbing: epoch = (height - activation) / epochLength.
     BOOST_CHECK_EQUAL(GetEtchashEpoch(149, params), -1);
@@ -428,7 +363,7 @@ BOOST_AUTO_TEST_CASE(etchash_big_endian_pow_roundtrip)
     params.powLimit = uint256S("0x7fffffff00000000000000000000000000000000000000000000000000000000");
     params.nDualAlgoActivationHeight = 150;
     params.nEtchashEpochLength = 10;
-    params.fDualAlgoEtchash = true;
+
     params.nEtchashBigEndianHeight = 150;
 
     CBlockHeader block;
@@ -457,7 +392,7 @@ BOOST_AUTO_TEST_CASE(etchash_big_endian_pow_roundtrip)
 }
 
 // !RCPU (dual-algo etchash): regression for the network-layer headers pre-check.
-// HasValidProofOfWork() used to probe only qhash + RandomX for bit-30 headers,
+// HasValidProofOfWork() used to probe the wrong algorithm for bit-30 headers,
 // so every relayed Etchash header looked like invalid PoW and cost the peer 100
 // misbehaviour points (disconnect). It must verify Etchash when the height is
 // known and defer (not reject) when the height is unknown.
@@ -467,7 +402,6 @@ BOOST_AUTO_TEST_CASE(etchash_header_pow_precheck_is_height_aware)
     params.powLimit = uint256S("0x7fffffff00000000000000000000000000000000000000000000000000000000");
     params.nDualAlgoActivationHeight = 150;
     params.nEtchashEpochLength = 10;
-    params.fDualAlgoEtchash = true;
 
     CBlockHeader header;
     header.nVersion = 1 | BLOCK_VERSION_QHASH;
@@ -490,8 +424,8 @@ BOOST_AUTO_TEST_CASE(etchash_header_pow_precheck_is_height_aware)
 
     BOOST_REQUIRE(mine_header(header, 150, params));
 
-    // Pre-activation fix this returned false: qhash does not match an Etchash
-    // result and the RandomX commitment is unrelated.
+    // Pre-activation fix this returned false: the old probe did not match an
+    // Etchash result and the RandomX commitment is unrelated.
     BOOST_CHECK(HasValidProofOfWork({header}, params, /*nStartHeight=*/150));
 
     // Height unknown: deferred to AcceptBlockHeader, must not be rejected here.
@@ -525,7 +459,7 @@ BOOST_AUTO_TEST_CASE(etchash_commitment_only_is_target_check)
     params.powLimit = uint256S("0x7fffffff00000000000000000000000000000000000000000000000000000000");
     params.nDualAlgoActivationHeight = 150;
     params.nEtchashEpochLength = 10;
-    params.fDualAlgoEtchash = true;
+
     params.nEtchashBigEndianHeight = 150; // big-endian comparison active
 
     CBlockHeader block;
@@ -583,8 +517,8 @@ BOOST_AUTO_TEST_CASE(etchash_commitment_only_is_target_check)
 
 // !RCPU (dual-algo etchash): a valid Etchash block whose parent is unknown must
 // not be rejected as "high-hash" by the context-free CheckBlock(). Before the
-// fix the qhash/RandomX probe rejected it, which marked the relaying peer as
-// misbehaving (BLOCK_INVALID_HEADER) for ordinary out-of-order relay.
+// fix the old probe rejected it, which marked the relaying peer as misbehaving
+// (BLOCK_INVALID_HEADER) for ordinary out-of-order relay.
 BOOST_AUTO_TEST_CASE(etchash_block_unknown_height_defers_pow)
 {
     // CheckBlock() takes the dual-algo branch only when g_isRandomX is set
@@ -599,7 +533,6 @@ BOOST_AUTO_TEST_CASE(etchash_block_unknown_height_defers_pow)
     params.powLimit = uint256S("0x7fffffff00000000000000000000000000000000000000000000000000000000");
     params.nDualAlgoActivationHeight = 150;
     params.nEtchashEpochLength = 10;
-    params.fDualAlgoEtchash = true;
     params.fPowRandomX = true;
 
     CBlock block;
@@ -696,7 +629,6 @@ BOOST_AUTO_TEST_CASE(dual_algo_difficulty_cache_matches_chain_walk)
     params.nDualAlgoActivationHeight = 150;
     params.nDualAlgoTargetSpacing = 600;
     params.nPowTargetSpacing = 300;
-    params.fDualAlgoEtchash = true;
     params.nEtchashEpochLength = 10;
     params.fPowAllowMinDifficultyBlocks = false;
     params.fPowNoRetargeting = false;
@@ -758,7 +690,7 @@ BOOST_AUTO_TEST_CASE(dual_algo_reanchor_discards_banked_lateness)
     params.nDualAlgoTargetSpacing = 600;
     params.nPowTargetSpacing = 300;
     params.nASERTHalfLife = 2 * 24 * 60 * 60;
-    params.fDualAlgoEtchash = true;
+
     params.nEtchashEpochLength = 10;
     params.fPowAllowMinDifficultyBlocks = false;
     params.fPowNoRetargeting = false;
@@ -832,22 +764,16 @@ BOOST_AUTO_TEST_CASE(dual_algo_reanchor_discards_banked_lateness)
     BOOST_CHECK(next_bits <= resume_bits);
 }
 
-// !RCPU (dual-algo PoW dispatch): qhash 链 (fDualAlgoEtchash=false) 的
-// HasValidProofOfWork() 行为边界。helper 统一 dispatch 后，该函数在
-// 高度已知场景不再宽松地同时接受 qhash 和 RandomX 证明，而是严格跟随
-// GetPowAlgoForHeader 的判定：
-//   - post-activation + bit-30 + height-known  → 只认 QHash（qhash 承诺会重算）
-//   - pre-activation  + bit-30 + height-known  → 判 RandomX（共识忽略 bit-30）；
-//     预检层 RandomX 只做承诺目标检查（数据集太贵不重算），权威拒绝在
-//     CheckBlockHeader 的 POW_VERIFY_FULL
-//   - height unknown + bit-30                 → defer（不 reject）
-// 这组测试锁住上述收紧行为，防止未来有人把宽容 pre-check 加回来。
-BOOST_AUTO_TEST_CASE(qhash_chain_pow_precheck_uses_helper)
+// !RCPU (dual-algo PoW dispatch): HasValidProofOfWork() must follow
+// GetPowAlgoForHeader exactly:
+//   - post-activation + bit-30 + height-known -> Etchash only
+//   - pre-activation  + bit-30 + height-known -> RandomX (bit ignored)
+//   - height unknown  + bit-30                -> defer (no verdict)
+BOOST_AUTO_TEST_CASE(etchash_chain_pow_dispatch_strict)
 {
     Consensus::Params params;
     params.powLimit = uint256S("0x7fffffff00000000000000000000000000000000000000000000000000000000");
     params.nDualAlgoActivationHeight = 150;
-    params.fDualAlgoEtchash = false; // legacy qhash chain
 
     static auto make_hdr = [](int32_t version) {
         CBlockHeader h;
@@ -861,12 +787,12 @@ BOOST_AUTO_TEST_CASE(qhash_chain_pow_precheck_uses_helper)
         return h;
     };
 
-    // 两种挖矿辅助：分别产出 qhash 证明和 RandomX 证明并存入 hashRandomX。
-    static auto mine_qhash = [](CBlockHeader& h, const Consensus::Params& p) {
+    // Mine an Etchash result. Only valid at/after the activation height.
+    static auto mine_etchash = [](CBlockHeader& h, int64_t height, const Consensus::Params& p) {
         uint256 solved;
         for (uint32_t nonce = 0; nonce < 100000; ++nonce) {
             h.nNonce = nonce;
-            if (CheckProofOfWorkQHash(h, p, POW_VERIFY_MINING, &solved)) {
+            if (CheckProofOfWorkEtchash(h, height, p, POW_VERIFY_MINING, &solved)) {
                 h.hashRandomX = solved;
                 return true;
             }
@@ -875,8 +801,6 @@ BOOST_AUTO_TEST_CASE(qhash_chain_pow_precheck_uses_helper)
     };
     static auto mine_randomx = [](CBlockHeader& h, const Consensus::Params& p) {
         uint256 solved;
-        // prevBlockTime=0 让 RandomX 按 block.nTime 计算 epoch；
-        // 测试 powLimit 宽松，100000 次尝试内必出。
         for (uint32_t nonce = 0; nonce < 100000; ++nonce) {
             h.nNonce = nonce;
             if (CheckProofOfWorkRandomX(h, p, POW_VERIFY_MINING, &solved, /*prevBlockTime=*/0)) {
@@ -887,63 +811,47 @@ BOOST_AUTO_TEST_CASE(qhash_chain_pow_precheck_uses_helper)
         return false;
     };
 
-    // ── Case 1: post-activation + bit-30 + qhash proof + height-known → OK ──
+    // Case 1: post-activation + bit-30 + Etchash proof + height-known -> OK
     {
         CBlockHeader h = make_hdr(1 | BLOCK_VERSION_QHASH);
-        BOOST_REQUIRE(mine_qhash(h, params));
+        BOOST_REQUIRE(mine_etchash(h, 150, params));
         BOOST_CHECK(HasValidProofOfWork({h}, params, /*nStartHeight=*/150));
     }
 
-    // ── Case 2: post-activation + bit-30 + RandomX proof + height-known → FAIL ──
-    // helper 返回 PowAlgo::QHash，RandomX proof 被拒。改前宽容双路都能过。
+    // Case 2: post-activation + bit-30 + RandomX proof + height-known -> FAIL
     {
         CBlockHeader h = make_hdr(1 | BLOCK_VERSION_QHASH);
         BOOST_REQUIRE(mine_randomx(h, params));
         BOOST_CHECK(!HasValidProofOfWork({h}, params, /*nStartHeight=*/150));
     }
 
-    // ── Case 3: pre-activation + bit-30 + height-known → helper 判 RandomX ──
-    // 直接锁定 dispatch 判定。预检层（COMMITMENT_ONLY）的 RandomX 只做承诺
-    // 目标检查、不重算数据集，因此满足目标的 qhash 承诺在预检层被接受；
-    // 真正的拒绝发生在 CheckBlockHeader 的 POW_VERIFY_FULL RandomX 重算。
+    // Case 3 (merged former pre-activation qhash case): pre-activation +
+    // bit-30 + height-known -> dispatch returns RandomX. Etchash cannot be
+    // mined below activation, so only a RandomX proof is meaningful here.
     {
         BOOST_CHECK(GetPowAlgoForHeader(149, 1 | BLOCK_VERSION_QHASH, params) == std::optional<PowAlgo>(PowAlgo::RandomX));
-        CBlockHeader h = make_hdr(1 | BLOCK_VERSION_QHASH);
-        BOOST_REQUIRE(mine_qhash(h, params));
-        BOOST_CHECK(HasValidProofOfWork({h}, params, /*nStartHeight=*/149));
-    }
-
-    // ── Case 4: pre-activation + bit-30 + RandomX proof + height-known → OK ──
-    // helper 正确忽略 pre-activation 的 bit-30，返回 RandomX。
-    {
         CBlockHeader h = make_hdr(1 | BLOCK_VERSION_QHASH);
         BOOST_REQUIRE(mine_randomx(h, params));
         BOOST_CHECK(HasValidProofOfWork({h}, params, /*nStartHeight=*/149));
     }
 
-    // ── Case 5: height-unknown + bit-30 + tampered proof → defer ──
-    // helper 返回 nullopt，HasValidProofOfWork 跳过判定；
-    // 即使 proof 被改过，这里也不应该 reject（defer 给 AcceptBlockHeader）。
+    // Case 4: height-unknown + bit-30 -> defer without touching PoW.
     {
         CBlockHeader h = make_hdr(1 | BLOCK_VERSION_QHASH);
-        BOOST_REQUIRE(mine_qhash(h, params));
-        CBlockHeader tampered = h;
-        *tampered.hashRandomX.begin() ^= 0x01;
-        BOOST_CHECK(HasValidProofOfWork({tampered}, params, /*nStartHeight=*/-1));
+        *h.hashRandomX.begin() = 0x01; // deliberately not a valid proof
+        BOOST_CHECK(HasValidProofOfWork({h}, params, /*nStartHeight=*/-1));
     }
 
-    // ── Case 6: post-activation + tampered qhash + height-known → FAIL ──
-    // 有高度 + tampered proof 必须被拒。
+    // Case 5: post-activation + tampered Etchash proof + height-known -> FAIL
     {
         CBlockHeader h = make_hdr(1 | BLOCK_VERSION_QHASH);
-        BOOST_REQUIRE(mine_qhash(h, params));
+        BOOST_REQUIRE(mine_etchash(h, 150, params));
         CBlockHeader tampered = h;
         *tampered.hashRandomX.begin() ^= 0x01;
         BOOST_CHECK(!HasValidProofOfWork({tampered}, params, /*nStartHeight=*/150));
     }
 
-    // ── Case 7: bit-30 clear + RandomX proof + post-activation height → OK ──
-    // bit-30 清零时 helper 永远返回 RandomX，不受激活高度影响。
+    // Case 6: bit-30 clear + RandomX proof + post-activation height -> OK
     {
         CBlockHeader h = make_hdr(1);
         BOOST_REQUIRE(mine_randomx(h, params));
@@ -958,7 +866,7 @@ BOOST_AUTO_TEST_CASE(qhash_chain_pow_precheck_uses_helper)
 BOOST_AUTO_TEST_CASE(etchash_mainnet_21000_boundaries)
 {
     Consensus::Params params;
-    params.fDualAlgoEtchash = true;
+
     params.nDualAlgoActivationHeight = 21000;
     params.nEtchashEpochLength = 6000;
     params.nEtchashBigEndianHeight = 21000;

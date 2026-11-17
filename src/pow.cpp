@@ -17,7 +17,6 @@
 #include <common/args.h>
 #include <crypto/etchash.h>
 #include <crypto/keccak.h>
-#include <crypto/qhash.h>
 #include <crypto/sha256.h>
 #include <util/strencodings.h>
 #include <limits>
@@ -524,10 +523,9 @@ void UpdateDualAlgoState(CBlockIndex& index, const Consensus::Params& params)
 // competition with independent difficulty, long-run share ~50:50.
 //
 // The "second algorithm" is selected by the BLOCK_VERSION_QHASH bit (bit 30):
-// when params.fDualAlgoEtchash is true such blocks are verified with Etchash
-// (ECIP-1099-style light verification), otherwise with the legacy qhash
-// (qPoW) verifier. The fQhash parameter below is named after the version bit
-// that selects this second algorithm.
+// such blocks are verified with Etchash (ECIP-1099-style light verification).
+// The fQhash parameter below is named after the version bit that selects this
+// second algorithm; the name is historical.
 // ---------------------------------------------------------------------------
 static uint32_t GetDualAlgoWorkRequired(const CBlockIndex* pindexLast,
                                         const CBlockHeader* pblock,
@@ -658,8 +656,8 @@ unsigned int GetNextWorkRequired(const CBlockIndex* pindexLast, const CBlockHead
 
     // !RCPU (dual-algo)
     // From the activation height the algorithm is chosen by the header's
-    // BLOCK_VERSION_QHASH bit (bit 30: Etchash when fDualAlgoEtchash is set,
-    // legacy qhash otherwise) and each algorithm uses its own ASERT instance.
+    // BLOCK_VERSION_QHASH bit (bit 30: Etchash) and each algorithm uses its
+    // own ASERT instance.
     // Below the activation height this branch is dead code and the legacy
     // logic below is bit-for-bit unchanged.
     if (pindexLast->nHeight + 1 >= params.nDualAlgoActivationHeight) {
@@ -1230,73 +1228,6 @@ char rx_hash[RANDOMX_HASH_SIZE];
     return true;
 }
 
-/**
- * RCPU dual-algo: verify a legacy qPoW ("qhash") block.
- *
- * Used when bit 30 (BLOCK_VERSION_QHASH) is set and params.fDualAlgoEtchash
- * is false; when fDualAlgoEtchash is true (mainnet/testnet since the Etchash
- * switch) bit-30 blocks are instead dispatched to CheckProofOfWorkEtchash.
- *
- * Input domain: the same canonical 112-byte header serialization used for
- * RandomX (SerializeRandomXHeader, hashRandomX nulled). The 32-byte seed is
- * sha256d(canonical header) and the result is the deterministic fixed-point
- * 16-qubit simulation in crypto/qhash.cpp. The result is stored in the block
- * header's hashRandomX field (reused for both algorithms; the nVersion
- * BLOCK_VERSION_QHASH bit selects the verifier).
- */
-bool CheckProofOfWorkQHash(const CBlockHeader& block, const Consensus::Params& params, POWVerifyMode verifyMode, uint256 *outHash)
-{
-    // Genesis block: skip verification (mirrors the RandomX path).
-    if (block.hashPrevBlock.IsNull()) {
-        if (outHash) *outHash = block.hashRandomX;
-        return true;
-    }
-
-    bool fNegative;
-    bool fOverflow;
-    arith_uint256 bnTarget;
-
-    bnTarget.SetCompact(block.nBits, &fNegative, &fOverflow);
-
-    // Check range
-    if (fNegative || bnTarget == 0 || fOverflow || bnTarget > UintToArith256(params.powLimit)) {
-        LogPrintf("Error: high-hash, proof of work failed: block=%s, nBits=0x%08x (target out of range)\n",
-                  block.GetHash().GetHex(), block.nBits);
-        return false;
-    }
-
-    const DataStream input = SerializeRandomXHeader(block);
-    unsigned char hash1[32], seed[32];
-    CSHA256().Write((const unsigned char*)input.data(), input.size()).Finalize(hash1);
-    CSHA256().Write(hash1, 32).Finalize(seed);
-    const uint256 qhash = QHashFromSeed(seed);
-
-    // Mining mode: always expose the computed hash (pool share validation),
-    // mirroring CheckProofOfWorkRandomX semantics.
-    if (outHash != nullptr) {
-        *outHash = qhash;
-    }
-
-    if (verifyMode != POW_VERIFY_MINING) {
-        if (block.hashRandomX.IsNull()) {
-            LogPrintf("Error: proof of work failed: qhash block=%s has null hashRandomX field\n",
-                      block.GetHash().GetHex());
-            return false;
-        }
-        if (qhash != block.hashRandomX) {
-            LogPrintf("Error: Possible spam. qhash value in block [%s] != computed [%s]\n",
-                      block.hashRandomX.GetHex(), qhash.GetHex());
-            return false;
-        }
-    }
-
-    if (UintToArith256(qhash) > bnTarget) {
-        return false;
-    }
-
-    return true;
-}
-
 // !RCPU (dual-algo etchash)
 
 std::optional<PowAlgo> GetPowAlgoForHeader(int64_t nHeight, int32_t nVersion, const Consensus::Params& params)
@@ -1314,7 +1245,7 @@ std::optional<PowAlgo> GetPowAlgoForHeader(int64_t nHeight, int32_t nVersion, co
         // RandomX block that happens to carry bit 30.
         return PowAlgo::RandomX;
     }
-    return params.fDualAlgoEtchash ? PowAlgo::Etchash : PowAlgo::QHash;
+    return PowAlgo::Etchash;
 }
 
 int64_t GetEtchashEpoch(int64_t nHeight, const Consensus::Params& params)
@@ -1383,7 +1314,7 @@ std::shared_ptr<EtchashCacheEntry> GetEtchashCache(int64_t epoch, const uint256&
  * the block's 32-bit nNonce zero-extended (4B LE || 4B zero). The etchash
  * result (keccak256(seed64 || digest)) is stored in the header's hashRandomX
  * field, reused from the other algorithms (the nVersion BLOCK_VERSION_QHASH
- * bit plus fDualAlgoEtchash select this verifier).
+ * bit selects this verifier).
  *
  * The epoch is height-driven: epoch = (nHeight - nDualAlgoActivationHeight) /
  * nEtchashEpochLength. Light verification walks the shared per-epoch cache
@@ -1391,7 +1322,7 @@ std::shared_ptr<EtchashCacheEntry> GetEtchashCache(int64_t epoch, const uint256&
  */
 bool CheckProofOfWorkEtchash(const CBlockHeader& block, int64_t nHeight, const Consensus::Params& params, POWVerifyMode verifyMode, uint256 *outHash)
 {
-    // Genesis block: skip verification (mirrors the RandomX/qhash paths).
+    // Genesis block: skip verification (mirrors the RandomX path).
     if (block.hashPrevBlock.IsNull()) {
         if (outHash) *outHash = block.hashRandomX;
         return true;
@@ -1475,7 +1406,7 @@ bool CheckProofOfWorkEtchash(const CBlockHeader& block, int64_t nHeight, const C
     std::memcpy(result256.begin(), result, 32);
 
     // Mining mode: always expose the computed result (pool share validation),
-    // mirroring CheckProofOfWorkQHash semantics.
+    // mirroring CheckProofOfWorkRandomX semantics.
     if (outHash != nullptr) {
         *outHash = result256;
     }

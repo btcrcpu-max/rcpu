@@ -629,7 +629,6 @@ consensus.fPowRandomX = true;
         // light verification). Epoch length 6000 blocks: with both algorithms
         // mining, ~20.8 days per epoch at the combined ~5-minute cadence
         // (6000 × 5 min); a single algorithm alone would take ~41.7 days.
-        consensus.fDualAlgoEtchash = true;
         consensus.nEtchashEpochLength = 6000;
         // P2-7: Etchash activates at 21000; use standard big-endian result
         // comparison from the first Etchash block so external geth/ethminer
@@ -791,7 +790,6 @@ consensus.fPowRandomX = true;
         consensus.nDualAlgoReanchorGap = 12 * 60 * 60;
         consensus.nDualAlgoMaxDrop = 8;
         // !RCPU (dual-algo etchash): testnet mirrors mainnet etchash params.
-        consensus.fDualAlgoEtchash = true;
         consensus.nEtchashEpochLength = 6000;
         // P2-7: same standard big-endian rule as mainnet.
         consensus.nEtchashBigEndianHeight = 21000;
@@ -930,7 +928,6 @@ public:
         consensus.nDualAlgoMaxDrop = 8;
         // !RCPU (dual-algo etchash): regtest uses a tiny epoch (10 blocks) so
         // functional tests cross multiple epoch boundaries cheaply.
-        consensus.fDualAlgoEtchash = true;
         consensus.nEtchashEpochLength = 10;
         consensus.nEtchashBigEndianHeight = 0; // tests exercise standard geth ordering
         genesis = CreateRcpuGenesisBlock(1296688602, 1, 0x207fffff, 1, 50 * COIN);

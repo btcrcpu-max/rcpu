@@ -2,6 +2,7 @@
 
 RCPU Core release notes live in [doc/release-notes/](release-notes/):
 
+- [v1.4.15](release-notes/v1.4.15.md) — Cleanup: the unused qhash second-algorithm path is removed (bit-30 blocks are Etchash on every live chain), and `computerandomxhash` now dispatches bit-30 headers by activation height instead of always using Etchash. No consensus change.
 - [v1.4.7](release-notes/v1.4.7.md) — Security follow-up: M-2 zero-blind/single-CT fail-closed, M-3 silent payee reduction removed, M-4 Etchash nBits precheck, M-5 large-CT wallet bound, L-2..L-6 hardening, M-1 nonce regression test. No consensus parameter change.
 - [v1.4.6](release-notes/v1.4.6.md) — Security follow-up: v3 ECDSA `SIGHASH_SINGLE` is now rejected too (v1.4.5 only covered Schnorr); release publishing is restricted to signed tag pushes. No consensus parameter change.
 - [v1.4.5](release-notes/v1.4.5.md) — Released security release: v3 Taproot SIGHASH_SINGLE is rejected immediately; CT nonce/zero-value rules activate at `nCTStrictRulesHeight` (27,326); wallet plaintext CT amount cache removed; CI/release supply-chain hardening. Superseded by v1.4.6 for the ECDSA H-1 path.
@@ -17,7 +18,7 @@ RCPU Core release notes live in [doc/release-notes/](release-notes/):
 - v1.3.6 — superseded by v1.3.7 for Etchash; its binaries use the legacy little-endian rule. Do not use v1.3.6 to mine or validate bit-30 blocks at/after 21,000.
 - [v1.3.4](release-notes/v1.3.4.md) — consensus-critical Etchash fix: hashimotoLight now uses the full-DAG dataset size (standard go-ethereum vector); **all Etchash miners/pools must upgrade before height 21,000**.
 - [v1.3.3](release-notes/v1.3.3.md) — P0 pre-activation fix: Etchash headers are no longer rejected as invalid PoW by the height-unaware pre-checks; upgrade before height 21,000.
-- [v1.3.0](release-notes/v1.3.0.md) — Etchash dual-algo (ECIP-1099 light verification) on bit-30 blocks from height 21,000 (`fDualAlgoEtchash`); v1.3.1 clean rebuild, v1.3.2 asset filename fix.
+- [v1.3.0](release-notes/v1.3.0.md) — Etchash dual-algo (ECIP-1099 light verification) on bit-30 blocks from height 21,000; v1.3.1 clean rebuild, v1.3.2 asset filename fix.
 - [v1.1.15](release-notes/v1.1.15.md) — wallet: a CT change output no longer disappears from the balance after the wallet auto-locks (N-02); upgrade if you use a passphrase-encrypted wallet.
 - [v1.1.10](release-notes/v1.1.10.md) — Path A (legacy nonce) soft-fork ban scheduled at height 12,748; consensus height frozen at tag time.
 - [v1.1.7](release-notes/v1.1.7.md) — Wallet default Path C (`0x04`) send path; bare `rcpu1` explicit; 0x04 read-block upgrade (#66).

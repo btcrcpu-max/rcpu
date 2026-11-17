@@ -159,11 +159,11 @@ public:
         CFeeRate blockMinFeeRate{DEFAULT_BLOCK_MIN_TX_FEE};
         // Whether to call TestBlockValidity() at the end of CreateNewBlock().
         bool test_block_validity{true};
-        // !RCPU (dual-algo): build the template as a bit-30 (second-algo) block
+        // !RCPU (dual-algo): build the template as a bit-30 (Etchash) block
         // (BLOCK_VERSION_QHASH stamped into nVersion before nBits is computed,
         // so GetNextWorkRequired selects the second-algo ASERT difficulty).
-        // The bit-30 algorithm is Etchash when fDualAlgoEtchash is set, qhash
-        // otherwise. Only meaningful after nDualAlgoActivationHeight.
+        // bit 30 now means Etchash; qhash has been removed. Only meaningful
+        // after nDualAlgoActivationHeight. The field name is historical.
         bool m_qhash_template{false};
     };
 

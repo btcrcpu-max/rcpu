@@ -163,20 +163,18 @@ static bool GenerateBlock(ChainstateManager& chainman, CBlock& block, uint64_t& 
 uint256 rxHash;
     rxHash.SetNull();
     // !RCPU (dual-algo): dispatch the solve loop on the template algorithm.
-    // qhash/etchash are cheap full rehashes per nonce; the epoch for etchash
-    // is height-driven, so no prevBlockTime clamp applies. The pre-activation
-    // guard lives at the template layer (generateBlocks/generateblock/gbt):
-    // below nDualAlgoActivationHeight consensus ignores the qhash bit and
-    // would verify a bit-set header as RandomX, so it must never be solved as
-    // qhash/etchash. Etchash needs the block height for its epoch; when the
-    // prev index is unknown (should not happen for a template built on the
-    // active tip) the guard above has already refused the template.
+    // Etchash is a full rehash per nonce; the epoch is height-driven, so no
+    // prevBlockTime clamp applies. The pre-activation guard lives at the
+    // template layer (generateBlocks/generateblock/gbt): below
+    // nDualAlgoActivationHeight consensus ignores the bit and would verify a
+    // bit-set header as RandomX, so it must never be solved as Etchash.
+    // Etchash needs the block height for its epoch; when the prev index is
+    // unknown (should not happen for a template built on the active tip) the
+    // guard above has already refused the template.
     while (max_tries > 0 &&
            block.nNonce < std::numeric_limits<uint32_t>::max() &&
            !((block.nVersion & BLOCK_VERSION_QHASH)
-                 ? (chainman.GetConsensus().fDualAlgoEtchash
-                        ? CheckProofOfWorkEtchash(block, nMiningHeight, chainman.GetConsensus(), POW_VERIFY_MINING, &rxHash)
-                        : CheckProofOfWorkQHash(block, chainman.GetConsensus(), POW_VERIFY_MINING, &rxHash))
+                 ? CheckProofOfWorkEtchash(block, nMiningHeight, chainman.GetConsensus(), POW_VERIFY_MINING, &rxHash)
                  : CheckProofOfWorkRandomX(block, chainman.GetConsensus(), POW_VERIFY_MINING, &rxHash, prevBlockTime))) {
         ++block.nNonce;
         --max_tries;
@@ -202,19 +200,20 @@ uint256 rxHash;
     return true;
 }
 
-// !RCPU (dual-algo etchash): validate the "algo" RPC argument against the
-// consensus-selected second algorithm. Returns true if the template must
-// carry BLOCK_VERSION_QHASH (bit 30). The accepted name for the bit-30
-// algorithm is "etchash" when fDualAlgoEtchash is set, "qhash" otherwise.
-static bool ParseDualAlgoArg(const std::string& strAlgo, const Consensus::Params& consensusParams)
+// !RCPU (dual-algo etchash): validate the "algo" RPC argument. Returns true
+// if the template must carry BLOCK_VERSION_QHASH (bit 30). The bit-30
+// algorithm is Etchash; "qhash" is rejected explicitly for callers that still
+// use the removed historical name.
+static bool ParseDualAlgoArg(const std::string& strAlgo)
 {
     if (strAlgo == "randomx") return false;
-    const char* active = consensusParams.fDualAlgoEtchash ? "etchash" : "qhash";
-    if (strAlgo == active) return true;
-    if (strAlgo == "qhash" || strAlgo == "etchash") {
-        throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("algo \"%s\" is not active on this chain (active dual algo: \"%s\")", strAlgo, active));
+    if (strAlgo == "etchash") return true;
+    if (strAlgo == "qhash") {
+        throw JSONRPCError(RPC_INVALID_PARAMETER,
+            "algo \"qhash\" is not active on this chain (active dual algo: \"etchash\")");
     }
-    throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("Invalid algo \"%s\" (expected \"randomx\" or \"%s\")", strAlgo, active));
+    throw JSONRPCError(RPC_INVALID_PARAMETER,
+        strprintf("Invalid algo \"%s\" (expected \"randomx\" or \"etchash\")", strAlgo));
 }
 
 static UniValue generateBlocks(ChainstateManager& chainman, const CTxMemPool& mempool, const CScript& coinbase_script, int nGenerate, uint64_t nMaxTries, bool fQhash)
@@ -227,7 +226,7 @@ static UniValue generateBlocks(ChainstateManager& chainman, const CTxMemPool& me
         if (fQhash) {
             LOCK(cs_main);
             if (chainman.ActiveChain().Tip()->nHeight + 1 < chainman.GetConsensus().nDualAlgoActivationHeight) {
-                throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("%s mining is not active before height %d", chainman.GetConsensus().fDualAlgoEtchash ? "etchash" : "qhash", chainman.GetConsensus().nDualAlgoActivationHeight));
+                throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("etchash mining is not active before height %d", chainman.GetConsensus().nDualAlgoActivationHeight));
             }
         }
         BlockAssembler::Options assembler_options;
@@ -295,7 +294,7 @@ static RPCHelpMan generatetodescriptor()
             // !RCPU END
             {"maxtries", RPCArg::Type::NUM, RPCArg::Default{DEFAULT_MAX_TRIES}, "How many iterations to try."},
             // !RCPU (dual-algo)
-            {"algo", RPCArg::Type::STR, RPCArg::Default{"randomx"}, "Which proof-of-work algorithm to mine with: \"randomx\" (default), \"etchash\" or legacy \"qhash\" (only after dual-algo activation; the active second algorithm is etchash when fDualAlgoEtchash is set)."},
+            {"algo", RPCArg::Type::STR, RPCArg::Default{"randomx"}, "Which proof-of-work algorithm to mine with: \"randomx\" (default) or \"etchash\" (only after dual-algo activation)."},
             // !RCPU END
         },
         RPCResult{
@@ -311,7 +310,7 @@ static RPCHelpMan generatetodescriptor()
     const auto num_blocks{self.Arg<int>(0)};
     const auto max_tries{self.Arg<uint64_t>(2)};
     // !RCPU (dual-algo): optional algo selector.
-    const bool fQhash{!request.params[3].isNull() && ParseDualAlgoArg(request.params[3].get_str(), Params().GetConsensus())};
+    const bool fQhash{!request.params[3].isNull() && ParseDualAlgoArg(request.params[3].get_str())};
     // !RCPU END
 
     CScript coinbase_script;
@@ -347,7 +346,7 @@ static RPCHelpMan generatetoaddress()
              // !RCPU END
              {"maxtries", RPCArg::Type::NUM, RPCArg::Default{DEFAULT_MAX_TRIES}, "How many iterations to try."},
              // !RCPU (dual-algo)
-             {"algo", RPCArg::Type::STR, RPCArg::Default{"randomx"}, "Which proof-of-work algorithm to mine with: \"randomx\" (default), \"etchash\" or legacy \"qhash\" (only after dual-algo activation; the active second algorithm is etchash when fDualAlgoEtchash is set)."},
+             {"algo", RPCArg::Type::STR, RPCArg::Default{"randomx"}, "Which proof-of-work algorithm to mine with: \"randomx\" (default) or \"etchash\" (only after dual-algo activation)."},
              // !RCPU END
          },
          RPCResult{
@@ -368,7 +367,7 @@ static RPCHelpMan generatetoaddress()
     const int num_blocks{request.params[0].getInt<int>()};
     const uint64_t max_tries{request.params[2].isNull() ? DEFAULT_MAX_TRIES : request.params[2].getInt<int>()};
     // !RCPU (dual-algo): optional algo selector.
-    const bool fQhash{!request.params[3].isNull() && ParseDualAlgoArg(request.params[3].get_str(), Params().GetConsensus())};
+    const bool fQhash{!request.params[3].isNull() && ParseDualAlgoArg(request.params[3].get_str())};
     // !RCPU END
 
     CTxDestination destination = DecodeDestination(request.params[1].get_str());
@@ -404,7 +403,7 @@ static RPCHelpMan generateblock()
             },
             {"submit", RPCArg::Type::BOOL, RPCArg::Default{true}, "Whether to submit the block before the RPC call returns or to return it as hex."},
             // !RCPU (dual-algo)
-            {"algo", RPCArg::Type::STR, RPCArg::Default{"randomx"}, "Which proof-of-work algorithm to mine with: \"randomx\" (default), \"etchash\" or legacy \"qhash\" (only after dual-algo activation; the active second algorithm is etchash when fDualAlgoEtchash is set)."},
+            {"algo", RPCArg::Type::STR, RPCArg::Default{"randomx"}, "Which proof-of-work algorithm to mine with: \"randomx\" (default) or \"etchash\" (only after dual-algo activation)."},
             // !RCPU END
         },
         RPCResult{
@@ -462,7 +461,7 @@ static RPCHelpMan generateblock()
 
     const bool process_new_block{request.params[2].isNull() ? true : request.params[2].get_bool()};
     // !RCPU (dual-algo): optional algo selector.
-    const bool fQhash{!request.params[3].isNull() && ParseDualAlgoArg(request.params[3].get_str(), Params().GetConsensus())};
+    const bool fQhash{!request.params[3].isNull() && ParseDualAlgoArg(request.params[3].get_str())};
     // !RCPU END
     CBlock block;
 
@@ -474,7 +473,7 @@ static RPCHelpMan generateblock()
         // (consensus ignores the bit-30 pre-activation and would verify the
         // solved block as RandomX).
         if (fQhash && chainman.ActiveChain().Tip()->nHeight + 1 < chainman.GetConsensus().nDualAlgoActivationHeight) {
-            throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("%s mining is not active before height %d", chainman.GetConsensus().fDualAlgoEtchash ? "etchash" : "qhash", chainman.GetConsensus().nDualAlgoActivationHeight));
+            throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("etchash mining is not active before height %d", chainman.GetConsensus().nDualAlgoActivationHeight));
         }
         BlockAssembler::Options assembler_options;
         assembler_options.m_qhash_template = fQhash;
@@ -694,7 +693,7 @@ static RPCHelpMan getblocktemplate()
                 {"longpollid", RPCArg::Type::STR, RPCArg::Optional::OMITTED, "delay processing request until the result would vary significantly from the \"longpollid\" of a prior template"},
                 {"data", RPCArg::Type::STR_HEX, RPCArg::Optional::OMITTED, "proposed block data to check, encoded in hexadecimal; valid only for mode=\"proposal\""},
                 // !RCPU (dual-algo)
-                {"algo", RPCArg::Type::STR, RPCArg::Optional::OMITTED, "Which proof-of-work algorithm the template should target: \"randomx\" (default), \"etchash\" or legacy \"qhash\" (only after dual-algo activation; the active second algorithm is etchash when fDualAlgoEtchash is set)"},
+                {"algo", RPCArg::Type::STR, RPCArg::Optional::OMITTED, "Which proof-of-work algorithm the template should target: \"randomx\" (default) or \"etchash\" (only after dual-algo activation)"},
                 // !RCPU END
             },
             },
@@ -839,7 +838,7 @@ static RPCHelpMan getblocktemplate()
         // !RCPU (dual-algo): optional "algo" selector in template_request.
         const UniValue& algoval = oparam.find_value("algo");
         if (algoval.isStr()) {
-            fQhashTemplate = ParseDualAlgoArg(algoval.get_str(), chainman.GetConsensus());
+            fQhashTemplate = ParseDualAlgoArg(algoval.get_str());
         } else if (!algoval.isNull()) {
             throw JSONRPCError(RPC_INVALID_PARAMETER, "algo must be a string");
         }
@@ -925,7 +924,7 @@ static RPCHelpMan getblocktemplate()
     // !RCPU (dual-algo): bit-30 templates are only served once dual-algo is
     // active; below nDualAlgoActivationHeight consensus ignores the bit.
     if (fQhashTemplate && active_chain.Tip()->nHeight + 1 < consensusParams.nDualAlgoActivationHeight) {
-        throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("%s mining is not active before height %d", consensusParams.fDualAlgoEtchash ? "etchash" : "qhash", consensusParams.nDualAlgoActivationHeight));
+        throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("etchash mining is not active before height %d", consensusParams.nDualAlgoActivationHeight));
     }
     // !RCPU END
 
@@ -1118,46 +1117,37 @@ static RPCHelpMan getblocktemplate()
 
 // !RCPU
     // Only emit the RCPU-specific mining fields on chains that actually use
-    // one of the RCPU PoW rules. On signet/Bitcoin-testnet fPowRandomX and
-    // fDualAlgoEtchash are false and nRandomXEpochDuration is 0; the old
+    // one of the RCPU PoW rules. On signet/Bitcoin-testnet fPowRandomX is
+    // false and nRandomXEpochDuration is 0; the old
     // unconditional stanza divided by that zero and crashed the node.
-    if (consensusParams.fPowRandomX || consensusParams.fDualAlgoEtchash) {
+    if (consensusParams.fPowRandomX) {
         enum : size_t { RCPU_LEGACY_HEADER_SIZE = 80 };
         if (pblock->nVersion & BLOCK_VERSION_QHASH) {
-            if (consensusParams.fDualAlgoEtchash) {
-                // !RCPU (dual-algo etchash): etchash template output. The
-                // pool MUST use etchash_epoch/etchash_seed_hash from here and
-                // MUST NOT recompute the epoch/seed from an assumed activation
-                // height. The miner derives the full DAG size from the epoch;
-                // etchash_dataset_size/rows are provided for reference and
-                // must equal the standard ethash calcDatasetSize formula.
-                // etchash_cache_size is informational (light-verification
-                // cache); miners do NOT need to match it, only the seed matters.
-                const int64_t nTplHeight = cache.pindexPrev->nHeight + 1;
-                const int64_t nEtEpoch = GetEtchashEpoch(nTplHeight, consensusParams);
-                const uint64_t nDatasetSize = etchash::CalcDatasetSize(uint64_t(nEtEpoch));
-                result.pushKV("algo", "etchash");
-                result.pushKV("etchash_epoch", nEtEpoch);
-                result.pushKV("etchash_epoch_length", consensusParams.nEtchashEpochLength);
-                // P2-7: geth/ethminer expect the seed as raw bytes in memory
-                // order, not uint256::GetHex() (which reverses them).
-                const uint256 etchash_seed = GetEtchashSeedHash(nTplHeight, consensusParams);
-                result.pushKV("etchash_seed_hash", HexStr(Span<const uint8_t>{etchash_seed.data(), etchash_seed.size()}));
-                result.pushKV("etchash_cache_size", int64_t(etchash::CalcCacheSize(uint64_t(nEtEpoch))));
-                result.pushKV("etchash_dataset_size", int64_t(nDatasetSize));
-                result.pushKV("etchash_dataset_rows", int64_t(nDatasetSize / etchash::MIX_BYTES));
-                result.pushKV("etchash_header_size", RCPU_LEGACY_HEADER_SIZE + RANDOMX_HASH_SIZE);
-                result.pushKV("etchash_hash_field", strprintf("hashRandomX at byte offset %zu, %d bytes; zero before hashing, fill with the etchash result (keccak256(seed64||digest)) before submission", RCPU_LEGACY_HEADER_SIZE, RANDOMX_HASH_SIZE));
-                result.pushKV("etchash_commitment_target", hashTarget.GetHex());
-                result.pushKV("etchash_pow_rule", "etchash-ecip1099-light-v1");
-            } else {
-                // !RCPU (dual-algo): qhash template output
-                result.pushKV("algo", "qhash");
-                result.pushKV("qhash_header_size", RCPU_LEGACY_HEADER_SIZE + RANDOMX_HASH_SIZE);
-                result.pushKV("qhash_hash_field", strprintf("hashRandomX at byte offset %zu, %d bytes; zero before hashing, fill with the qhash output before submission", RCPU_LEGACY_HEADER_SIZE, RANDOMX_HASH_SIZE));
-                result.pushKV("qhash_commitment_target", hashTarget.GetHex());
-                result.pushKV("qhash_pow_rule", "qhash-v1");
-            }
+            // !RCPU (dual-algo etchash): etchash template output. The
+            // pool MUST use etchash_epoch/etchash_seed_hash from here and
+            // MUST NOT recompute the epoch/seed from an assumed activation
+            // height. The miner derives the full DAG size from the epoch;
+            // etchash_dataset_size/rows are provided for reference and
+            // must equal the standard ethash calcDatasetSize formula.
+            // etchash_cache_size is informational (light-verification
+            // cache); miners do NOT need to match it, only the seed matters.
+            const int64_t nTplHeight = cache.pindexPrev->nHeight + 1;
+            const int64_t nEtEpoch = GetEtchashEpoch(nTplHeight, consensusParams);
+            const uint64_t nDatasetSize = etchash::CalcDatasetSize(uint64_t(nEtEpoch));
+            result.pushKV("algo", "etchash");
+            result.pushKV("etchash_epoch", nEtEpoch);
+            result.pushKV("etchash_epoch_length", consensusParams.nEtchashEpochLength);
+            // P2-7: geth/ethminer expect the seed as raw bytes in memory
+            // order, not uint256::GetHex() (which reverses them).
+            const uint256 etchash_seed = GetEtchashSeedHash(nTplHeight, consensusParams);
+            result.pushKV("etchash_seed_hash", HexStr(Span<const uint8_t>{etchash_seed.data(), etchash_seed.size()}));
+            result.pushKV("etchash_cache_size", int64_t(etchash::CalcCacheSize(uint64_t(nEtEpoch))));
+            result.pushKV("etchash_dataset_size", int64_t(nDatasetSize));
+            result.pushKV("etchash_dataset_rows", int64_t(nDatasetSize / etchash::MIX_BYTES));
+            result.pushKV("etchash_header_size", RCPU_LEGACY_HEADER_SIZE + RANDOMX_HASH_SIZE);
+            result.pushKV("etchash_hash_field", strprintf("hashRandomX at byte offset %zu, %d bytes; zero before hashing, fill with the etchash result (keccak256(seed64||digest)) before submission", RCPU_LEGACY_HEADER_SIZE, RANDOMX_HASH_SIZE));
+            result.pushKV("etchash_commitment_target", hashTarget.GetHex());
+            result.pushKV("etchash_pow_rule", "etchash-ecip1099-light-v1");
         } else {
             result.pushKV("algo", "randomx");
             result.pushKV("rx_epoch_duration", consensusParams.nRandomXEpochDuration);
@@ -1333,6 +1323,7 @@ static RPCHelpMan computerandomxhash()
                         {RPCResult::Type::STR_HEX, "hash", "RandomX hash (32 bytes)"},
                         {RPCResult::Type::STR_HEX, "commitment", "RandomX commitment (32 bytes)"},
                         {RPCResult::Type::STR_HEX, "block_hash", "Block hash (double SHA256 of header)"},
+                        {RPCResult::Type::BOOL, "hash_verified", "Whether the hash meets the target difficulty"},
                     }},
                 RPCExamples{
                     HelpExampleCli("computerandomxhash", "\"00000020...\"")
@@ -1404,18 +1395,17 @@ static RPCHelpMan computerandomxhash()
 
     uint256 rx_hash;
     // !RCPU (dual-algo): dispatch on the algorithm bit, mirroring
-    // GetPowAlgoForHeader semantics. For qhash/etchash headers the commitment
-    // is the algo output itself (no separate RandomX commitment). Etchash
-    // needs the block height for its epoch. Pre-activation (or unknown
-    // height) bit-30 headers are consensus-irrelevant RandomX blocks — they
-    // must NOT be routed to the qhash verifier.
+    // GetPowAlgoForHeader semantics. For Etchash headers the commitment is
+    // the algo output itself (no separate RandomX commitment). Etchash needs
+    // the block height for its epoch. Pre-activation (or unknown height)
+    // bit-30 headers are consensus-irrelevant RandomX blocks; they must NOT
+    // be routed to the Etchash verifier.
     const bool fQhashHeader = (header.nVersion & BLOCK_VERSION_QHASH) != 0;
+    const bool fEtchashHeader = fQhashHeader &&
+        nShareHeight >= consensusParams.nDualAlgoActivationHeight;
     bool hash_ok;
-    if (fQhashHeader && consensusParams.fDualAlgoEtchash &&
-        nShareHeight >= consensusParams.nDualAlgoActivationHeight) {
+    if (fEtchashHeader) {
         hash_ok = CheckProofOfWorkEtchash(header, nShareHeight, consensusParams, POW_VERIFY_MINING, &rx_hash);
-    } else if (fQhashHeader && !consensusParams.fDualAlgoEtchash) {
-        hash_ok = CheckProofOfWorkQHash(header, consensusParams, POW_VERIFY_MINING, &rx_hash);
     } else {
         // bit clear, or bit-30 set but pre-activation / height unknown on an
         // etchash chain (epoch cannot be derived): RandomX, as consensus does.
@@ -1428,8 +1418,10 @@ static RPCHelpMan computerandomxhash()
     // We return the computed hash and commitment so the pool can verify
     // share difficulty independently.
 
-    // Compute commitment using the hash
-    uint256 rx_commitment = fQhashHeader ? rx_hash : GetRandomXCommitment(header, &rx_hash);
+    // Compute commitment using the hash. Pre-activation bit-30 headers are
+    // RandomX blocks (the bit is ignored pre-activation), so their commitment
+    // is the RandomX commitment, not the raw RandomX hash.
+    uint256 rx_commitment = fEtchashHeader ? rx_hash : GetRandomXCommitment(header, &rx_hash);
     
     // Compute block hash (double SHA256 of the 80-byte header without hashRandomX)
     uint256 block_hash = header.GetHash();
