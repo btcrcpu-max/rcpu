@@ -687,20 +687,6 @@ bech32_hrp = "rcpu";
         checkpointData = {
             {
                 {    0, uint256S("8f8128ffccc36d188eabd7846dea187d23cba18cbb45cc16d62ec9b8ac2af8e8")},
-                {    1, uint256S("a620095d9d1e6c2b20bedcc6925d994deaa9f98457cf78234050701888f57313")},
-                {    2, uint256S("a0224f31b1b59929aee5cb6394e89461c0487911d7d1602461348966487d0429")},
-                {    5, uint256S("dd69d79b3c2c661b87ff35d3d6a7640e0f1049ace7571b6165e123d02dcc27dc")},
-                {   10, uint256S("fea7623076c281654b8ddbe8041dc1321eb22cb2438b011d3f6db7ad9fed360e")},
-                {   20, uint256S("16bbcb658d57fc1d9855afdb1b34edf734f7a6cffa72f487c202b15f9eaed15f")},
-                {   30, uint256S("d1735c59f51be852cc7c6245ba62c9f1ce3e2a530a586a411efd8b2c5982d748")},
-                {   38, uint256S("9e31ffa280ff28abfa31fb446faba6f738ab841e7a7f0c0211beea3a70adf93a")},
-                { 3600, uint256S("927dc58c3e57842ddd2ff16a00b463922d929a4a32bf93ff7311213c35da8d3c")},
-                { 4922, uint256S("8efac7f149d8f2d0b5819b5188d8ecb0d606a2b443a5d0d5d275e78736a12aec")},
-                {10000, uint256S("61820a2373b2fe7a9ad138bab944323edae38ea9620683f6809b910a0d4cb73a")},
-                {15000, uint256S("08cbd45ae78d83f9b78484cec3a52a2dbb4eeab24626bfb105869a076e466d0e")},
-                {18000, uint256S("5b18530b4305f15b3d29699dbda57882a63e1083105dcc584ff6aa4b24631d88")},
-                {19000, uint256S("aa1b914d6facacc0680404641a1ce75cc4a52ed85af00564cd6213022599b774")},
-                {21000, uint256S("ab9e930cdac3c43d437e9a74adfb0b967e785cf11ac334bb8516cfaa6b7437ac")},
             }
         };
 
