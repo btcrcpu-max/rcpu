@@ -95,7 +95,7 @@ public:
         consensus.nPowTargetSpacing = 5 * 60;       // template value; unused at runtime
         consensus.fPowAllowMinDifficultyBlocks = false;
         consensus.fPowNoRetargeting = false;
-        consensus.nRuleChangeActivationThreshold = 1815; // 90% of 2016
+        consensus.nRuleChangeActivationThreshold = 3629; // 90% of 4032 (ceil, >= 90%)
         consensus.nMinerConfirmationWindow = 4032; // nPowTargetTimespan / nPowTargetSpacing (5 min blocks)
         consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY].bit = 28;
         consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY].nStartTime = Consensus::BIP9Deployment::NEVER_ACTIVE;
@@ -200,7 +200,7 @@ public:
         consensus.nPowTargetSpacing = 5 * 60; // RCPU: 5 minutes
         consensus.fPowAllowMinDifficultyBlocks = true;
         consensus.fPowNoRetargeting = false;
-        consensus.nRuleChangeActivationThreshold = 1512; // 75% for testchains
+        consensus.nRuleChangeActivationThreshold = 3024; // 75% of 4032
         consensus.nMinerConfirmationWindow = 4032; // nPowTargetTimespan / nPowTargetSpacing (5 min blocks)
         consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY].bit = 28;
         consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY].nStartTime = Consensus::BIP9Deployment::NEVER_ACTIVE;
@@ -325,7 +325,7 @@ public:
         consensus.nPowTargetSpacing = 5 * 60; // RCPU: 5 minutes
         consensus.fPowAllowMinDifficultyBlocks = false;
         consensus.fPowNoRetargeting = false;
-        consensus.nRuleChangeActivationThreshold = 1815; // 90% of 2016
+        consensus.nRuleChangeActivationThreshold = 3629; // 90% of 4032 (ceil, >= 90%)
         consensus.nMinerConfirmationWindow = 4032; // nPowTargetTimespan / nPowTargetSpacing (5 min blocks)
         consensus.MinBIP9WarningHeight = 0;
         consensus.powLimit = uint256S("00000377ae000000000000000000000000000000000000000000000000000000");
@@ -570,7 +570,7 @@ public:
         consensus.nPowTargetSpacing = 5 * 60; // RCPU: 5 minutes
         consensus.fPowAllowMinDifficultyBlocks = false;
         consensus.fPowNoRetargeting = false;
-        consensus.nRuleChangeActivationThreshold = 1815; // 90% of 2016
+        consensus.nRuleChangeActivationThreshold = 3629; // 90% of 4032 (ceil, >= 90%)
         consensus.nMinerConfirmationWindow = 4032; // nPowTargetTimespan / nPowTargetSpacing (5 min blocks)
         consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY].bit = 28;
         consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY].nStartTime = Consensus::BIP9Deployment::NEVER_ACTIVE;
@@ -620,7 +620,8 @@ consensus.fPowRandomX = true;
         consensus.nDualAlgoTargetSpacing = 10 * 60;
         // H-1: re-anchor an algorithm whose last block is older than 12h,
         // discarding banked lateness and allowing at most an 8x one-step drop.
-        // Activated at height 29909 = tip 27893 + 2016 (2026-11-16). This is a
+        // Activates at height 29909 (tip 27893 + 2016; ~2026-11-22 at the
+        // combined ~5-minute cadence). This is a
         // hard fork: all nodes/pools must upgrade before this height.
         consensus.nDualAlgoLatenessFixHeight = 29909;
         consensus.nDualAlgoReanchorGap = 12 * 60 * 60;
@@ -741,7 +742,7 @@ public:
         consensus.nPowTargetSpacing = 5 * 60; // RCPU: 5 minutes
         consensus.fPowAllowMinDifficultyBlocks = true;
         consensus.fPowNoRetargeting = false;
-        consensus.nRuleChangeActivationThreshold = 1512; // 75% for testchains
+        consensus.nRuleChangeActivationThreshold = 3024; // 75% of 4032
         consensus.nMinerConfirmationWindow = 4032; // nPowTargetTimespan / nPowTargetSpacing (5 min blocks)
 
         consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY].bit = 28;
