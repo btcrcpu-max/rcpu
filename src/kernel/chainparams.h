@@ -168,10 +168,7 @@ const std::string& Bech32HRP() const { return bech32_hrp; }
         bool fastprune{false};
     };
 
-    static std::unique_ptr<const CChainParams> RegTest(const RegTestOptions& options);
     static std::unique_ptr<const CChainParams> SigNet(const SigNetOptions& options);
-    static std::unique_ptr<const CChainParams> Main();
-    static std::unique_ptr<const CChainParams> TestNet();
 
     // !RCPU
     static std::unique_ptr<const CChainParams> RcpuRegTest(const RegTestOptions& options);

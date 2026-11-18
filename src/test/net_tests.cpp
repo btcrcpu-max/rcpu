@@ -1555,10 +1555,11 @@ BOOST_AUTO_TEST_CASE(v2transport_test)
         BOOST_CHECK(ret);
     }
 
-    // Send wrong network's V1 header
+    // Send wrong network's V1 header (Bitcoin mainnet magic, not RCPU)
     {
         V2TransportTester tester(false);
-        tester.SendV1Version(CChainParams::Main()->MessageStart());
+        const MessageStartChars wrong_magic{0xf9, 0xbe, 0xb4, 0xd9};
+        tester.SendV1Version(wrong_magic);
         auto ret = tester.Interact();
         BOOST_CHECK(!ret);
     }

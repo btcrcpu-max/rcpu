@@ -118,7 +118,7 @@ int main(int argc, char* argv[])
     // predicate mirroring consensus.fPowRandomX must be initialized here;
     // otherwise a 112-byte RCPU header (mainnet/testnet/regtest) would be
     // parsed as the legacy 80-byte form.
-    auto chainparams = CChainParams::Main();
+    auto chainparams = CChainParams::RcpuMain();
     g_isRandomX = chainparams->GetConsensus().fPowRandomX;
     const ChainstateManager::Options chainman_opts{
         .chainparams = *chainparams,

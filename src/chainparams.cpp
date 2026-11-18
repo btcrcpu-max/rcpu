@@ -113,16 +113,14 @@ std::unique_ptr<const CChainParams> CreateChainParams(const ArgsManager& args, c
     case ChainType::MAIN:
         throw std::runtime_error("ChainType::MAIN (Bitcoin mainnet) is disabled. Use -chain=rcpu for RCPU mainnet.");
     case ChainType::TESTNET:
-        return CChainParams::TestNet();
+        throw std::runtime_error("ChainType::TESTNET (Bitcoin testnet) is disabled. Use -chain=rcputestnet for RCPU testnet.");
     case ChainType::SIGNET: {
         auto opts = CChainParams::SigNetOptions{};
         ReadSigNetArgs(args, opts);
         return CChainParams::SigNet(opts);
     }
     case ChainType::REGTEST: {
-        auto opts = CChainParams::RegTestOptions{};
-        ReadRegTestArgs(args, opts);
-        return CChainParams::RegTest(opts);
+        throw std::runtime_error("ChainType::REGTEST (Bitcoin regtest) is disabled. Use -chain=rcpurregtest for RCPU regtest.");
     }
     // !RCPU
     case ChainType::RCPUREGTEST: {
