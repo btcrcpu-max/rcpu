@@ -428,8 +428,9 @@ consensus.fPowRandomX = true;
         // dual-algo rules are exercised on a public network first.
         consensus.nDualAlgoActivationHeight = 21000;
         consensus.nDualAlgoTargetSpacing = 10 * 60;
-        // H-1: see the mainnet comment. Testnet activates with its own
-        // TIP + 2016 at release; INT_MAX keeps the source default inactive.
+        // H-1: shares the mainnet activation height so both networks switch the
+        // rule at the same block. This means testnet does NOT exercise the fix
+        // ahead of mainnet; do not read an earlier activation into this value.
         consensus.nDualAlgoLatenessFixHeight = 29909;
         consensus.nDualAlgoReanchorGap = 12 * 60 * 60;
         consensus.nDualAlgoMaxDrop = 8;

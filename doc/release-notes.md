@@ -2,6 +2,8 @@
 
 RCPU Core release notes live in [doc/release-notes/](release-notes/):
 
+- [v1.4.17](release-notes/v1.4.17.md) — Re-release of v1.4.16 with the release tag signed and the signing gates restored to fail-closed. Same consensus code; upgrade before height 29,909.
+- [v1.4.16](release-notes/v1.4.16.md) — Hardening follow-up: BIP9 thresholds realigned to the 4032-block window, checkpoints removed to unblock headers-first IBD, tag-signature gate restored and release signing made fail-closed again. Upgrade before height 29,909.
 - [v1.4.15](release-notes/v1.4.15.md) — Cleanup: the unused qhash second-algorithm path is removed (bit-30 blocks are Etchash on every live chain), and `computerandomxhash` now dispatches bit-30 headers by activation height instead of always using Etchash. No consensus change.
 - [v1.4.7](release-notes/v1.4.7.md) — Security follow-up: M-2 zero-blind/single-CT fail-closed, M-3 silent payee reduction removed, M-4 Etchash nBits precheck, M-5 large-CT wallet bound, L-2..L-6 hardening, M-1 nonce regression test. No consensus parameter change.
 - [v1.4.6](release-notes/v1.4.6.md) — Security follow-up: v3 ECDSA `SIGHASH_SINGLE` is now rejected too (v1.4.5 only covered Schnorr); release publishing is restricted to signed tag pushes. No consensus parameter change.

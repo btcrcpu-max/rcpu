@@ -1315,4 +1315,16 @@ bool IsBIP30Repeat(const CBlockIndex& block_index);
 /** Identifies blocks which coinbase output was subsequently overwritten in the UTXO set (see BIP30) */
 bool IsBIP30Unspendable(const CBlockIndex& block_index);
 
+/**
+ * Returns true when a candidate block at nHeight would fork the active chain
+ * below the last known checkpoint.
+ *
+ * This is intentionally fork-relative: it only fires when our active chain
+ * already has a different block at nHeight. A bare height comparison also
+ * rejects every block below the checkpoint while the chain is still being
+ * downloaded, which stalls headers-first IBD permanently (see caafc2f, which
+ * removed the checkpoints to unblock sync).
+ */
+bool IsForkPriorToCheckpoint(const CChain& active_chain, const CBlockIndex* pcheckpoint, int nHeight, const uint256& hash);
+
 #endif // BITCOIN_VALIDATION_H
