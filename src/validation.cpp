@@ -4153,6 +4153,17 @@ arith_uint256 CalculateHeadersWork(const std::vector<CBlockHeader>& headers)
     return total_work;
 }
 
+bool IsForkPriorToCheckpoint(const CChain& active_chain, const CBlockIndex* pcheckpoint, int nHeight, const uint256& hash)
+{
+    if (pcheckpoint == nullptr || nHeight >= pcheckpoint->nHeight) {
+        return false;
+    }
+    // Nothing to fork from while the active chain does not reach this height
+    // (normal headers-first IBD). CChain::operator[] returns nullptr there.
+    const CBlockIndex* pactive = active_chain[nHeight];
+    return pactive != nullptr && pactive->GetBlockHash() != hash;
+}
+
 /** Context-dependent validity checks.
  *  By "context", we mean only the previous block headers, but not the UTXO
  *  set; UTXO-related validity checks are done in ConnectBlock().
@@ -4179,7 +4190,7 @@ static bool ContextualCheckBlockHeader(const CBlockHeader& block, BlockValidatio
         // GetLastCheckpoint finds the last checkpoint in MapCheckpoints that's in our
         // BlockIndex().
         const CBlockIndex* pcheckpoint = blockman.GetLastCheckpoint(chainman.GetParams().Checkpoints());
-        if (pcheckpoint && nHeight < pcheckpoint->nHeight) {
+        if (IsForkPriorToCheckpoint(chainman.ActiveChain(), pcheckpoint, nHeight, block.GetHash())) {
             LogPrintf("ERROR: %s: forked chain older than last checkpoint (height %d)\n", __func__, nHeight);
             return state.Invalid(BlockValidationResult::BLOCK_CHECKPOINT, "bad-fork-prior-to-checkpoint");
         }

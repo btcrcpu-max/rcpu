@@ -366,4 +366,44 @@ BOOST_AUTO_TEST_CASE(block_malleation)
     }
 }
 
+BOOST_AUTO_TEST_CASE(checkpoint_fork_guard_test)
+{
+    // The guard must only fire for a block that actually forks the active chain
+    // below the checkpoint. An empty active chain (headers-first IBD) has
+    // nothing to fork from and must not reject blocks.
+    uint256 h1 = uint256S("11");
+    uint256 h2 = uint256S("22");
+    uint256 h3 = uint256S("33");
+
+    CBlockIndex b1, b2, b3;
+    b1.nHeight = 1;
+    b1.phashBlock = &h1;
+    b2.nHeight = 2;
+    b2.pprev = &b1;
+    b2.phashBlock = &h2;
+    b3.nHeight = 3;
+    b3.pprev = &b2;
+    b3.phashBlock = &h3;
+
+    CChain chain;
+    chain.SetTip(b3);
+
+    CChain empty_chain;
+    const CBlockIndex* checkpoint = &b3;
+
+    // IBD: no active block at this height yet -> not a fork.
+    BOOST_CHECK(!IsForkPriorToCheckpoint(empty_chain, checkpoint, 1, h1));
+    // Active chain has a different block at height 1 -> fork.
+    BOOST_CHECK(IsForkPriorToCheckpoint(chain, checkpoint, 1, h2));
+    // Candidate matches the active chain -> not a fork.
+    BOOST_CHECK(!IsForkPriorToCheckpoint(chain, checkpoint, 1, h1));
+    // At or above the checkpoint height the guard never applies.
+    BOOST_CHECK(!IsForkPriorToCheckpoint(chain, checkpoint, 3, h2));
+    BOOST_CHECK(!IsForkPriorToCheckpoint(chain, checkpoint, 4, h2));
+    // Above the active tip but below the checkpoint: nothing to compare against.
+    BOOST_CHECK(!IsForkPriorToCheckpoint(chain, checkpoint, 2, h2));
+    // No checkpoint known -> never a violation.
+    BOOST_CHECK(!IsForkPriorToCheckpoint(chain, nullptr, 1, h2));
+}
+
 BOOST_AUTO_TEST_SUITE_END()
