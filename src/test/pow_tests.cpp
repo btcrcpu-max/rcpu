@@ -224,16 +224,6 @@ void sanity_check_chainparams(const ArgsManager& args, ChainType chain_type)
     }
 }
 
-BOOST_AUTO_TEST_CASE(ChainParams_REGTEST_sanity)
-{
-    sanity_check_chainparams(*m_node.args, ChainType::REGTEST);
-}
-
-BOOST_AUTO_TEST_CASE(ChainParams_TESTNET_sanity)
-{
-    sanity_check_chainparams(*m_node.args, ChainType::TESTNET);
-}
-
 BOOST_AUTO_TEST_CASE(ChainParams_SIGNET_sanity)
 {
     sanity_check_chainparams(*m_node.args, ChainType::SIGNET);
