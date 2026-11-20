@@ -2006,6 +2006,14 @@ The migration process will create a backup of the wallet before migrating. This 
         <source>Unlock the wallet to unblind confidential transactions</source>
         <translation>解锁钱包，以解盲机密交易</translation>
     </message>
+    <message>
+        <source>Unlock to see confidential amounts</source>
+        <translation>解锁机密金额</translation>
+    </message>
+    <message>
+        <source>Confidential amounts are hidden while the wallet is locked and are not included in the balances above.</source>
+        <translation>钱包锁定时会隐藏机密金额，且上方余额不包含这些金额。</translation>
+    </message>
 </context>
 <context>
     <name>PSBTOperationsDialog</name>
