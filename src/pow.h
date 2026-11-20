@@ -200,6 +200,13 @@ int64_t CumulativeAlgoCount(const CBlockIndex& index, bool fQhash, int nDualAlgo
  * (nDualAlgoActivationHeight - 1). At/after it, if the gap since the last block
  * of this algorithm exceeds nDualAlgoReanchorGap, the block itself becomes the
  * new anchor, discarding the banked lateness.
+ *
+ * POW-02: an algorithm that has never produced a block has no last block, so
+ * the rule above cannot fire for it. From nDualAlgoNeverMinedFixHeight on, the
+ * same test is applied against the activation anchor instead: if more than
+ * nDualAlgoReanchorGap has elapsed since activation, the block becomes the new
+ * anchor. Without this the anchor would stay at activation forever and the
+ * target would remain pinned at powLimit.
  */
 void UpdateDualAlgoState(CBlockIndex& index, const Consensus::Params& params);
 

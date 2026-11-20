@@ -189,6 +189,22 @@ struct Params {
     // Maximum one-time target increase (easier) at a re-anchor, as an integer
     // multiplier. 1 means no increase; 8 means at most 8x easier in one step.
     uint32_t nDualAlgoMaxDrop{8};
+
+    // !RCPU (POW-02 never-mined resume)
+    // Height at which the never-mined resume rule activates.
+    //
+    // An algorithm that has produced no block since nDualAlgoActivationHeight
+    // has no last-same block, so it never re-anchors: every block re-enters
+    // ASERT with the full lateness measured from the activation anchor and the
+    // target stays pinned at powLimit. From this height on, the first block of
+    // such an algorithm is subject to the same one-time nDualAlgoMaxDrop cap
+    // and becomes its own anchor, exactly like the H-1 re-anchor.
+    //
+    // INT_MAX = never (chains that have not opted in). This is a consensus
+    // change: set it to a future height in the release that ships it, and
+    // never move nDualAlgoLatenessFixHeight (29909) again.
+    int nDualAlgoNeverMinedFixHeight{std::numeric_limits<int>::max()};
+    // !RCPU (POW-02 never-mined resume) END
     // !RCPU (H-1 lateness fix) END
 
     // Blocks per etchash epoch. epoch = (height - nDualAlgoActivationHeight)
