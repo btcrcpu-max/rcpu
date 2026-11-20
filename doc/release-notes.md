@@ -2,6 +2,7 @@
 
 RCPU Core release notes live in [doc/release-notes/](release-notes/):
 
+- [v1.4.19](release-notes/v1.4.19.md) — Wallet: confidential outputs whose amount the wallet cannot read are no longer counted as 0. They are reported as "amount unknown" across `gettransaction`, `listtransactions`/`listsinceblock`, `listunspent`, `getbalances` and `getwalletinfo`, surfaced greyed-out in the GUI (transaction list, details, coin control), filterable with a new "Needs review" view, and exportable for support via the new `listunreadableoutputs` RPC. No consensus change; no output becomes spendable.
 - [v1.4.18](release-notes/v1.4.18.md) — Consensus: the first block of a never-mined PoW algorithm can re-anchor instead of staying at `powLimit` (POW-02); the rule ships **inactive** (`nDualAlgoNeverMinedFixHeight = INT_MAX`) and is activated in a follow-up release. Wallet: confidential addresses (`0x01`) blind to a derived view key, with `0x00` still accepted.
 - [v1.4.17](release-notes/v1.4.17.md) — Re-release of v1.4.16 with the release tag signed and the signing gates restored to fail-closed. Same consensus code; upgrade before height 29,909.
 - [v1.4.16](release-notes/v1.4.16.md) — Hardening follow-up: BIP9 thresholds realigned to the 4032-block window, checkpoints removed to unblock headers-first IBD, tag-signature gate restored and release signing made fail-closed again. Upgrade before height 29,909.
