@@ -226,6 +226,16 @@ public:
 
 CKey GenerateRandomKey(bool compressed = true) noexcept;
 
+/**
+ * RCPU (WAL-01): derive the confidential view/blinding key from a spend key.
+ *
+ * The derivation is a one-way HMAC-SHA256 with a fixed tag, so handing out the
+ * view key lets a third party unblind outputs without learning the spend key.
+ * Legacy addresses encode the spend key itself as the blinding key; wallets
+ * must therefore keep accepting both when unblinding.
+ */
+CKey DeriveViewKey(const CKey& spend);
+
 struct CExtKey {
     unsigned char nDepth;
     unsigned char vchFingerprint[4];

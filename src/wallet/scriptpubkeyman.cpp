@@ -2051,7 +2051,16 @@ util::Result<CTxDestination> DescriptorScriptPubKeyMan::GetNewDestination(const 
             if (it == out_keys.pubkeys.end()) {
                 return util::Error{_("Error: Cannot find derived key for confidential destination")};
             }
-            dest = ConfidentialKeyHash(*witkey, it->second);
+            // WAL-01: blind to the derived view key when the private key is
+            // available, so the spend key is no longer exposed as the view
+            // key. Falls back to the legacy spend-key layout otherwise.
+            const auto priv = out_keys.keys.find(it->first);
+            if (priv != out_keys.keys.end()) {
+                const CKey view = DeriveViewKey(priv->second);
+                dest = ConfidentialKeyHash(*witkey, view.IsValid() ? view.GetPubKey() : it->second);
+            } else {
+                dest = ConfidentialKeyHash(*witkey, it->second);
+            }
         }
         m_wallet_descriptor.next_index++;
         WalletBatch(m_storage.GetDatabase()).WriteDescriptor(GetID(), m_wallet_descriptor);

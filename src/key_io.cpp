@@ -21,6 +21,9 @@ static constexpr std::size_t BECH32_WITNESS_PROG_MAX_LEN = 40;
 /// RCPU CT confidential addresses encode the witness program together with
 /// the compressed recipient public key (see key_io.h for the layout).
 static constexpr unsigned char CONF_ADDR_VERSION_P2WPKH = 0x00;
+// RCPU (WAL-01): version 0x01 carries an independent view/blinding pubkey
+// derived from the spend key instead of the spend key itself.
+static constexpr unsigned char CONF_ADDR_VERSION_VIEWKEY = 0x01;
 static constexpr std::size_t CONF_ADDR_PROGRAM_LEN = 20;
 static constexpr std::size_t CONF_ADDR_PUBKEY_LEN = CPubKey::COMPRESSED_SIZE;
 
@@ -423,16 +426,14 @@ std::string EncodeConfidentialAddress(const CTxDestination& dest, const CPubKey&
     if (!pubkey.IsValid() || !pubkey.IsCompressed()) {
         return "";
     }
-    // HASH160(pubkey) must match the witness program of the destination: the
-    // spend key doubles as the blinding key, so an address that disagrees
-    // with this relation is malformed and must never be encoded.
-    if (pubkey.GetID() != ToKeyID(*keyid)) {
-        return "";
-    }
+    // Version 0x00 (legacy) uses the spend key as the blinding key, so the
+    // embedded key must hash to the witness program. Version 0x01 carries a
+    // derivation-only view key that cannot be checked without the private key.
+    const bool spend_key_matches = pubkey.GetID() == ToKeyID(*keyid);
 
     std::vector<unsigned char> payload;
     payload.reserve(1 + CONF_ADDR_PROGRAM_LEN + CONF_ADDR_PUBKEY_LEN);
-    payload.push_back(CONF_ADDR_VERSION_P2WPKH);
+    payload.push_back(spend_key_matches ? CONF_ADDR_VERSION_P2WPKH : CONF_ADDR_VERSION_VIEWKEY);
     payload.insert(payload.end(), keyid->begin(), keyid->end());
     payload.insert(payload.end(), pubkey.begin(), pubkey.end());
 
@@ -470,7 +471,7 @@ bool DecodeConfidentialAddress(const std::string& str, const CChainParams& param
         error_str = strprintf("Invalid payload size for confidential address (%d bytes)", payload.size());
         return false;
     }
-    if (payload[0] != CONF_ADDR_VERSION_P2WPKH) {
+    if (payload[0] != CONF_ADDR_VERSION_P2WPKH && payload[0] != CONF_ADDR_VERSION_VIEWKEY) {
         error_str = strprintf("Unsupported confidential address version (%d)", payload[0]);
         return false;
     }
@@ -482,9 +483,10 @@ bool DecodeConfidentialAddress(const std::string& str, const CChainParams& param
         error_str = "Invalid public key in confidential address";
         return false;
     }
-    // The address embeds a single key used both for spending (witness program)
-    // and ECDH blinding; enforce that relation so no two-key confusion exists.
-    if (pubkey.GetID() != ToKeyID(spend)) {
+    // Legacy (0x00) addresses still have to satisfy HASH160(pubkey) == program:
+    // the spend key doubles as the blinding key there. Version 0x01 embeds a
+    // derived view key, which is unverifiable without the spend private key.
+    if (payload[0] == CONF_ADDR_VERSION_P2WPKH && pubkey.GetID() != ToKeyID(spend)) {
         error_str = "Public key does not match the spend program hash of the confidential address";
         return false;
     }
