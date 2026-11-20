@@ -96,6 +96,10 @@ result.txout_is_mine.reserve(wtx.tx->vout.size());
         } else {
             result.txout_amount.push_back(0);
         }
+        // RCPU CT: record *why* an output has no amount so the GUI can show
+        // "unknown / locked / watch-only" instead of a false 0.
+        result.txout_status.push_back(
+            static_cast<uint8_t>(GetCTOutputInfo(wallet, wtx, txout_idx).status));
     }
     result.credit = CachedTxGetCredit(wallet, wtx, ISMINE_ALL);
     result.debit = CachedTxGetDebit(wallet, wtx, ISMINE_ALL);

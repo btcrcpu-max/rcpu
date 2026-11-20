@@ -24,6 +24,7 @@
 #include <string>
 
 #include <QLatin1String>
+#include <QStringList>
 
 using wallet::ISMINE_ALL;
 using wallet::ISMINE_SPENDABLE;
@@ -331,6 +332,33 @@ QString TransactionDesc::toHTML(interfaces::Node& node, interfaces::Wallet& wall
         strHTML += "<br><b>" + tr("Message") + ":</b><br>" + GUIUtil::HtmlEscape(wtx.value_map["message"], true) + "<br>";
     if (wtx.value_map.count("comment") && !wtx.value_map["comment"].empty())
         strHTML += "<br><b>" + tr("Comment") + ":</b><br>" + GUIUtil::HtmlEscape(wtx.value_map["comment"], true) + "<br>";
+
+    // RCPU CT: name every output this wallet cannot value, with the reason.
+    // Showing them as a bare 0 is the bug this section exists to avoid.
+    {
+        QStringList unreadable;
+        for (size_t i = 0; i < wtx.txout_status.size() && i < wtx.tx->vout.size(); ++i) {
+            const uint8_t status = wtx.txout_status[i];
+            const bool has_amount = status <= 2 || (i < wtx.txout_amount.size() && wtx.txout_amount[i] > 0);
+            if (has_amount) continue;
+            QString reason;
+            if (status == 3) {
+                reason = tr("wallet locked");
+            } else if (status == 4) {
+                reason = tr("watch-only, no key");
+            } else {
+                reason = tr("cannot decrypt");
+            }
+            unreadable.append(tr("Output #%1: amount unreadable (%2)").arg(static_cast<qulonglong>(i)).arg(reason));
+        }
+        if (!unreadable.isEmpty()) {
+            strHTML += "<br><b>" + tr("Unreadable outputs") + ":</b><br>";
+            for (const QString& line : unreadable) {
+                strHTML += GUIUtil::HtmlEscape(line) + "<br>";
+            }
+            strHTML += "<i>" + tr("These amounts are unknown, not zero. Unlocking the wallet or importing the key may make them readable.") + "</i><br>";
+        }
+    }
 
     strHTML += "<b>" + tr("Transaction ID") + ":</b> " + rec->getTxHash() + "<br>";
     strHTML += "<b>" + tr("Transaction total size") + ":</b> " + QString::number(wtx.tx->GetTotalSize()) + " bytes<br>";

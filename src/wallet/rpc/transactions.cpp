@@ -328,6 +328,15 @@ static void ListTransactions(const CWallet& wallet, const CWalletTx& wtx, int nM
 
     bool involvesWatchonly = CachedTxIsFromMe(wallet, wtx, ISMINE_WATCH_ONLY);
 
+    // RCPU CT: "amount" stays for compatibility, but an entry whose amount
+    // could not be unblinded is flagged instead of silently reading as 0.
+    const auto push_amount_status = [&](UniValue& entry, int vout) {
+        const CTOutputInfo info = GetCTOutputInfo(wallet, wtx, static_cast<unsigned int>(vout));
+        entry.pushKV("amount_status", CTAmountStatusName(info.status));
+        entry.pushKV("amount_known", info.amount.has_value());
+        if (!info.amount) entry.pushKV("unreadable", true);
+    };
+
     // Sent
     if (!filter_label.has_value())
     {
@@ -345,6 +354,7 @@ static void ListTransactions(const CWallet& wallet, const CWalletTx& wtx, int nM
                 entry.pushKV("label", address_book_entry->GetLabel());
             }
             entry.pushKV("vout", s.vout);
+            push_amount_status(entry, s.vout);
             entry.pushKV("fee", ValueFromAmount(-nFee));
             if (fLong)
                 WalletTxToJSON(wallet, wtx, entry);
@@ -389,6 +399,7 @@ static void ListTransactions(const CWallet& wallet, const CWalletTx& wtx, int nM
                 entry.pushKV("label", label);
             }
             entry.pushKV("vout", r.vout);
+            push_amount_status(entry, r.vout);
             entry.pushKV("abandoned", wtx.isAbandoned());
             if (fLong)
                 WalletTxToJSON(wallet, wtx, entry);
@@ -458,6 +469,9 @@ RPCHelpMan listtransactions()
                                 "for all other categories"},
                             {RPCResult::Type::STR, "label", /*optional=*/true, "A comment for the address/transaction, if any"},
                             {RPCResult::Type::NUM, "vout", "the vout value"},
+                            {RPCResult::Type::STR, "amount_status", "RCPU: how amount was obtained (explicit, known, known_cached, locked, no_key, unreadable)"},
+                            {RPCResult::Type::BOOL, "amount_known", "RCPU: false when amount is a placeholder 0 because the output could not be unblinded"},
+                            {RPCResult::Type::BOOL, "unreadable", /*optional=*/true, "RCPU: true when the amount is unknown (only present in that case)"},
                             {RPCResult::Type::STR_AMOUNT, "fee", /*optional=*/true, "The amount of the fee in " + CURRENCY_UNIT + ". This is negative and only available for the\n"
                                  "'send' category of transactions."},
                         },
@@ -571,6 +585,9 @@ RPCHelpMan listsinceblock()
                                 {RPCResult::Type::STR_AMOUNT, "amount", "The amount in " + CURRENCY_UNIT + ". This is negative for the 'send' category, and is positive\n"
                                     "for all other categories"},
                                 {RPCResult::Type::NUM, "vout", "the vout value"},
+                                {RPCResult::Type::STR, "amount_status", "RCPU: how amount was obtained (explicit, known, known_cached, locked, no_key, unreadable)"},
+                                {RPCResult::Type::BOOL, "amount_known", "RCPU: false when amount is a placeholder 0 because the output could not be unblinded"},
+                                {RPCResult::Type::BOOL, "unreadable", /*optional=*/true, "RCPU: true when the amount is unknown (only present in that case)"},
                                 {RPCResult::Type::STR_AMOUNT, "fee", /*optional=*/true, "The amount of the fee in " + CURRENCY_UNIT + ". This is negative and only available for the\n"
                                      "'send' category of transactions."},
                             },
@@ -718,6 +735,9 @@ RPCHelpMan gettransaction()
                                 {RPCResult::Type::STR_AMOUNT, "amount", "The amount in " + CURRENCY_UNIT},
                                 {RPCResult::Type::STR, "label", /*optional=*/true, "A comment for the address/transaction, if any"},
                                 {RPCResult::Type::NUM, "vout", "the vout value"},
+                                {RPCResult::Type::STR, "amount_status", "RCPU: how amount was obtained (explicit, known, known_cached, locked, no_key, unreadable)"},
+                                {RPCResult::Type::BOOL, "amount_known", "RCPU: false when amount is a placeholder 0 because the output could not be unblinded"},
+                                {RPCResult::Type::BOOL, "unreadable", /*optional=*/true, "RCPU: true when the amount is unknown (only present in that case)"},
                                 {RPCResult::Type::STR_AMOUNT, "fee", /*optional=*/true, "The amount of the fee in " + CURRENCY_UNIT + ". This is negative and only available for the \n"
                                     "'send' category of transactions."},
                                 {RPCResult::Type::BOOL, "abandoned", "'true' if the transaction has been abandoned (inputs are respendable)."},
@@ -727,6 +747,17 @@ RPCHelpMan gettransaction()
                             }},
                         }},
                         {RPCResult::Type::STR_HEX, "hex", "Raw data for transaction"},
+                        {RPCResult::Type::ARR, "ct_outputs", "RCPU: per-output amount status",
+                        {
+                            {RPCResult::Type::OBJ, "", "",
+                            {
+                                {RPCResult::Type::NUM, "vout", "the vout value"},
+                                {RPCResult::Type::STR, "status", "explicit, known, known_cached, locked, no_key or unreadable"},
+                                {RPCResult::Type::STR_AMOUNT, "amount", /*optional=*/true, "the output amount, absent when unknown"},
+                                {RPCResult::Type::BOOL, "amount_known", /*optional=*/true, "false when the amount is unknown (only present in that case)"},
+                            }},
+                        }},
+                        {RPCResult::Type::STR, "amount_status", "RCPU: known if every output has a value, partial if some, unknown if none"},
                         {RPCResult::Type::OBJ, "decoded", /*optional=*/true, "The decoded transaction (only present when `verbose` is passed)",
                         {
                             {RPCResult::Type::ELISION, "", "Equivalent to the RPC decoderawtransaction method, or the RPC getrawtransaction method when `verbose` is passed."},
@@ -786,6 +817,29 @@ RPCHelpMan gettransaction()
     UniValue details(UniValue::VARR);
     ListTransactions(*pwallet, wtx, 0, false, details, filter, /*filter_label=*/std::nullopt);
     entry.pushKV("details", details);
+
+    // RCPU CT: the legacy "amount" above is 0 when this wallet cannot unblind
+    // an output. Publish the per-output status so clients never mistake that
+    // 0 for a real value.
+    UniValue ct_outputs(UniValue::VARR);
+    size_t unknown_outputs = 0;
+    for (unsigned int i = 0; i < wtx.tx->vout.size(); ++i) {
+        const CTOutputInfo info = GetCTOutputInfo(*pwallet, wtx, i);
+        UniValue out(UniValue::VOBJ);
+        out.pushKV("vout", (int)i);
+        out.pushKV("status", CTAmountStatusName(info.status));
+        if (info.amount) {
+            out.pushKV("amount", ValueFromAmount(*info.amount));
+        } else {
+            out.pushKV("amount_known", false);
+            ++unknown_outputs;
+        }
+        ct_outputs.push_back(std::move(out));
+    }
+    entry.pushKV("ct_outputs", std::move(ct_outputs));
+    entry.pushKV("amount_status",
+                 unknown_outputs == 0 ? "known"
+                                      : (unknown_outputs == wtx.tx->vout.size() ? "unknown" : "partial"));
 
     entry.pushKV("hex", EncodeHexTx(*wtx.tx));
 

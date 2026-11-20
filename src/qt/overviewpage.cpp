@@ -384,5 +384,13 @@ void OverviewPage::updateUnlockButton()
     ui->unlockButton->setVisible(true);
     const bool locked = (status == WalletModel::Locked);
     ui->unlockButton->setEnabled(locked);
-    ui->unlockButton->setText(locked ? tr("Unlock Wallet") : tr("Unlocked"));
+    if (locked) {
+        // RCPU CT: a locked wallet purges its plaintext amounts, so the
+        // balances above exclude them. Say so instead of showing a bare 0.
+        ui->unlockButton->setText(tr("Unlock to see confidential amounts"));
+        ui->unlockButton->setToolTip(tr("Confidential amounts are hidden while the wallet is locked and are not included in the balances above."));
+    } else {
+        ui->unlockButton->setText(tr("Unlocked"));
+        ui->unlockButton->setToolTip(QString());
+    }
 }

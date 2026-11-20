@@ -19,6 +19,25 @@ using wallet::ISMINE_SPENDABLE;
 using wallet::ISMINE_WATCH_ONLY;
 using wallet::isminetype;
 
+namespace {
+//! Mirrors wallet::CTAmountStatus, which interfaces::WalletTx::txout_status
+//! carries as a uint8_t so the GUI layer stays free of wallet headers.
+QString ctAmountStatusName(uint8_t status)
+{
+    switch (status) {
+    case 0: return QStringLiteral("explicit");
+    case 1: return QStringLiteral("known");
+    case 2: return QStringLiteral("known_cached");
+    case 3: return QStringLiteral("locked");
+    case 4: return QStringLiteral("no_key");
+    default: return QStringLiteral("unreadable");
+    }
+}
+
+//! Explicit, Known and KnownCached all carry a real amount.
+bool ctAmountStatusKnown(uint8_t status) { return status <= 2; }
+} // namespace
+
 /* Return positive answer if transaction should be shown in list.
  */
 bool TransactionRecord::showTransaction()
@@ -120,12 +139,19 @@ QList<TransactionRecord> TransactionRecord::decomposeTransaction(const interface
                         nValue = LocaleIndependentAtoi<CAmount>(it->second);
                     }
                 }
-                /* Add fee to first output */
-                if (nTxFee > 0)
+                const uint8_t ct_status = i < wtx.txout_status.size() ? wtx.txout_status[i] : 0;
+                sub.amount_status = ctAmountStatusName(ct_status);
+                // A send-time plaintext record is a real value even when the
+                // wallet can no longer unblind the committed amount.
+                sub.amount_known = ctAmountStatusKnown(ct_status) || nValue > 0;
+                /* Add fee to first output -- only when the amount is known,
+                   otherwise the fee would masquerade as the output value. */
+                if (sub.amount_known && nTxFee > 0)
                 {
                     nValue += nTxFee;
                     nTxFee = 0;
                 }
+                if (!sub.amount_known) nValue = 0;
                 sub.debit = -nValue;
 
                 parts.append(sub);
@@ -148,6 +174,12 @@ QList<TransactionRecord> TransactionRecord::decomposeTransaction(const interface
                     if (it != mapValue.end()) {
                         sub.credit = LocaleIndependentAtoi<CAmount>(it->second);
                     }
+                }
+                {
+                    const uint8_t ct_status = i < wtx.txout_status.size() ? wtx.txout_status[i] : 0;
+                    sub.amount_status = ctAmountStatusName(ct_status);
+                    sub.amount_known = ctAmountStatusKnown(ct_status) || sub.credit > 0;
+                    if (!sub.amount_known) sub.credit = 0;
                 }
                 sub.involvesWatchAddress = mine & ISMINE_WATCH_ONLY;
                 if (wtx.txout_address_is_mine[i])

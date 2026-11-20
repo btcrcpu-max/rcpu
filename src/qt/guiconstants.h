@@ -35,6 +35,9 @@ static const bool DEFAULT_SPLASHSCREEN = true;
 #define COLOR_BAREADDRESS QColor(140, 140, 140)
 /* Transaction list -- TX status decoration - danger, tx needs attention */
 #define COLOR_TX_STATUS_DANGER QColor(200, 100, 100)
+/* Transaction list -- confidential amount this wallet cannot read (unknown,
+   not zero). Amber: informational, not necessarily malicious. */
+#define COLOR_CT_AMOUNT_UNKNOWN QColor(200, 150, 60)
 /* Transaction list -- TX status decoration - default color */
 #define COLOR_BLACK QColor(30, 41, 59)
 
