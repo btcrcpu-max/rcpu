@@ -98,6 +98,27 @@ def test_audit_rejects_zero_byte_assets() -> None:
           "a zero-byte asset fails closed")
 
 
+def test_audit_allows_gui_assets() -> None:
+    gui = {
+        "rcpu-qt-1.4.18-x86_64.AppImage": 712292856,
+        "rcpu-qt-1.4.18-x86_64.AppImage.asc": 566,
+        "rcpu-qt-1.4.18-x86_64.AppImage.sha256": 97,
+        "SHA256SUMS-linux.txt": 99,
+        "SHA256SUMS-windows.txt": 206,
+    }
+    names = readback.audit(payload(**{"a.tgz": 10, "SHA256SUMS.txt": 5, **gui}),
+                           expected=["a.tgz", "SHA256SUMS.txt"],
+                           allow_extra=["rcpu-qt-*", "SHA256SUMS-*.txt"])
+    check("rcpu-qt-1.4.18-x86_64.AppImage" in names,
+          "assets attached by the GUI workflow are accepted when matched by --allow-extra")
+
+    check(raises(lambda: readback.audit(payload(**{"a.tgz": 10, "SHA256SUMS.txt": 5, **gui}),
+                                        expected=["a.tgz", "SHA256SUMS.txt"],
+                                        allow_extra=["rcpu-qt-*"]),
+                 "extra=['SHA256SUMS-linux.txt', 'SHA256SUMS-windows.txt']"),
+          "allow-extra patterns are matched exactly, so unrelated extras still fail")
+
+
 def test_gh_requires_repo() -> None:
     check(raises(lambda: readback.gh("release", "view", "v1.4.18"), "must pin --repo"),
           "a gh call without --repo is refused before it runs")
@@ -109,6 +130,7 @@ def main() -> int:
     test_audit_rejects_draft()
     test_audit_rejects_missing_and_extra_assets()
     test_audit_rejects_zero_byte_assets()
+    test_audit_allows_gui_assets()
     test_gh_requires_repo()
     if FAILURES:
         print(f"\n{len(FAILURES)} failure(s)")

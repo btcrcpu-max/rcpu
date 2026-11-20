@@ -25,6 +25,7 @@ Usage (as the release job runs it):
 """
 
 import argparse
+import fnmatch
 import json
 import pathlib
 import subprocess
@@ -49,15 +50,24 @@ def expected_asset_names(directories):
     return sorted(names + list(CHECKSUM_FILES))
 
 
-def audit(payload, expected=None):
-    """Validate a `gh release view --json isDraft,isPrerelease,assets` payload."""
+def audit(payload, expected=None, allow_extra=()):
+    """Validate a `gh release view --json isDraft,isPrerelease,assets` payload.
+
+    `allow_extra` holds fnmatch patterns for assets published by another
+    workflow into the same release: the GUI build attaches rcpu-qt-*.AppImage
+    and its per-platform checksums, and those are legitimate extras, not
+    leftovers from an earlier attempt.
+    """
     if payload.get("isDraft"):
         raise ReadbackError("release is still a draft")
     assets = payload.get("assets") or []
     names = sorted(asset["name"] for asset in assets)
     if expected is not None:
         missing = sorted(set(expected) - set(names))
-        extra = sorted(set(names) - set(expected))
+        extra = sorted(
+            name for name in set(names) - set(expected)
+            if not any(fnmatch.fnmatchcase(name, pattern) for pattern in allow_extra)
+        )
         if missing or extra:
             raise ReadbackError(f"asset mismatch; missing={missing} extra={extra}")
     empty = [asset["name"] for asset in assets if asset.get("size", 0) <= 0]
@@ -86,6 +96,9 @@ def main(argv=None):
     parser.add_argument("--expected-dir", action="append", default=[],
                         help="directory of artifacts that must appear as assets (repeatable)")
     parser.add_argument("--workdir", default="readback")
+    parser.add_argument("--allow-extra", action="append", default=[],
+                        help="fnmatch pattern for assets another workflow attaches "
+                             "to the same release (repeatable)")
     parser.add_argument("--signature-key",
                         help="armored key used to verify SHA256SUMS.txt.asc")
     args = parser.parse_args(argv)
@@ -97,7 +110,7 @@ def main(argv=None):
         payload = json.loads(gh("release", "view", args.tag, "--repo", args.repo,
                                 "--json", "isDraft,isPrerelease,assets"))
         expected = expected_asset_names(args.expected_dir) if args.expected_dir else None
-        names = audit(payload, expected)
+        names = audit(payload, expected, args.allow_extra)
         print(f"readback: {len(names)} assets present, all non-empty")
 
         gh("release", "download", args.tag, "--repo", args.repo,
