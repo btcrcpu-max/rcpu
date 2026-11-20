@@ -729,6 +729,9 @@ RPCHelpMan gettransaction()
                                 {RPCResult::Type::STR_AMOUNT, "amount", "The amount in " + CURRENCY_UNIT},
                                 {RPCResult::Type::STR, "label", /*optional=*/true, "A comment for the address/transaction, if any"},
                                 {RPCResult::Type::NUM, "vout", "the vout value"},
+                                {RPCResult::Type::STR, "amount_status", "RCPU: how amount was obtained (explicit, known, known_cached, locked, no_key, unreadable)"},
+                                {RPCResult::Type::BOOL, "amount_known", "RCPU: false when amount is a placeholder 0 because the output could not be unblinded"},
+                                {RPCResult::Type::BOOL, "unreadable", /*optional=*/true, "RCPU: true when the amount is unknown (only present in that case)"},
                                 {RPCResult::Type::STR_AMOUNT, "fee", /*optional=*/true, "The amount of the fee in " + CURRENCY_UNIT + ". This is negative and only available for the \n"
                                     "'send' category of transactions."},
                                 {RPCResult::Type::BOOL, "abandoned", "'true' if the transaction has been abandoned (inputs are respendable)."},
@@ -738,6 +741,17 @@ RPCHelpMan gettransaction()
                             }},
                         }},
                         {RPCResult::Type::STR_HEX, "hex", "Raw data for transaction"},
+                        {RPCResult::Type::ARR, "ct_outputs", "RCPU: per-output amount status",
+                        {
+                            {RPCResult::Type::OBJ, "", "",
+                            {
+                                {RPCResult::Type::NUM, "vout", "the vout value"},
+                                {RPCResult::Type::STR, "status", "explicit, known, known_cached, locked, no_key or unreadable"},
+                                {RPCResult::Type::STR_AMOUNT, "amount", /*optional=*/true, "the output amount, absent when unknown"},
+                                {RPCResult::Type::BOOL, "amount_known", /*optional=*/true, "false when the amount is unknown (only present in that case)"},
+                            }},
+                        }},
+                        {RPCResult::Type::STR, "amount_status", "RCPU: known if every output has a value, partial if some, unknown if none"},
                         {RPCResult::Type::OBJ, "decoded", /*optional=*/true, "The decoded transaction (only present when `verbose` is passed)",
                         {
                             {RPCResult::Type::ELISION, "", "Equivalent to the RPC decoderawtransaction method, or the RPC getrawtransaction method when `verbose` is passed."},

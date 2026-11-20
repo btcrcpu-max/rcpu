@@ -457,6 +457,12 @@ RPCHelpMan getbalances()
                     {RPCResult::Type::STR_AMOUNT, "untrusted_pending", "untrusted pending balance (outputs created by others that are in the mempool)"},
                     {RPCResult::Type::STR_AMOUNT, "immature", "balance from immature coinbase outputs"},
                 }},
+                {RPCResult::Type::OBJ, "ct_unreadable", "RCPU: outputs this wallet owns but cannot value right now",
+                {
+                    {RPCResult::Type::NUM, "unreadable_outputs", "number of owned confidential outputs whose amount is unknown"},
+                    {RPCResult::Type::NUM, "locked_outputs", "subset of the above hidden because the wallet is locked"},
+                    {RPCResult::Type::BOOL, "amount_known", "true only when there are no unreadable outputs"},
+                }},
                 RESULT_LAST_PROCESSED_BLOCK,
             }
             },
@@ -573,6 +579,8 @@ RPCHelpMan listunspent()
                             {RPCResult::Type::STR, "label", /*optional=*/true, "The associated label, or \"\" for the default label"},
                             {RPCResult::Type::STR, "scriptPubKey", "the script key"},
                             {RPCResult::Type::STR_AMOUNT, "amount", "the transaction output amount in " + CURRENCY_UNIT},
+                            {RPCResult::Type::STR, "ct_status", "RCPU: how amount was obtained (explicit, known, known_cached, locked, no_key, unreadable)"},
+                            {RPCResult::Type::BOOL, "amount_known", "RCPU: false when amount is a placeholder 0 because the output could not be unblinded"},
                             {RPCResult::Type::NUM, "confirmations", "The number of confirmations"},
                             {RPCResult::Type::NUM, "ancestorcount", /*optional=*/true, "The number of in-mempool ancestor transactions, including this one (if transaction is in the mempool)"},
                             {RPCResult::Type::NUM, "ancestorsize", /*optional=*/true, "The virtual transaction size of in-mempool ancestors, including this one (if transaction is in the mempool)"},
