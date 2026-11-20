@@ -469,6 +469,9 @@ RPCHelpMan listtransactions()
                                 "for all other categories"},
                             {RPCResult::Type::STR, "label", /*optional=*/true, "A comment for the address/transaction, if any"},
                             {RPCResult::Type::NUM, "vout", "the vout value"},
+                            {RPCResult::Type::STR, "amount_status", "RCPU: how amount was obtained (explicit, known, known_cached, locked, no_key, unreadable)"},
+                            {RPCResult::Type::BOOL, "amount_known", "RCPU: false when amount is a placeholder 0 because the output could not be unblinded"},
+                            {RPCResult::Type::BOOL, "unreadable", /*optional=*/true, "RCPU: true when the amount is unknown (only present in that case)"},
                             {RPCResult::Type::STR_AMOUNT, "fee", /*optional=*/true, "The amount of the fee in " + CURRENCY_UNIT + ". This is negative and only available for the\n"
                                  "'send' category of transactions."},
                         },
@@ -582,6 +585,9 @@ RPCHelpMan listsinceblock()
                                 {RPCResult::Type::STR_AMOUNT, "amount", "The amount in " + CURRENCY_UNIT + ". This is negative for the 'send' category, and is positive\n"
                                     "for all other categories"},
                                 {RPCResult::Type::NUM, "vout", "the vout value"},
+                                {RPCResult::Type::STR, "amount_status", "RCPU: how amount was obtained (explicit, known, known_cached, locked, no_key, unreadable)"},
+                                {RPCResult::Type::BOOL, "amount_known", "RCPU: false when amount is a placeholder 0 because the output could not be unblinded"},
+                                {RPCResult::Type::BOOL, "unreadable", /*optional=*/true, "RCPU: true when the amount is unknown (only present in that case)"},
                                 {RPCResult::Type::STR_AMOUNT, "fee", /*optional=*/true, "The amount of the fee in " + CURRENCY_UNIT + ". This is negative and only available for the\n"
                                      "'send' category of transactions."},
                             },
