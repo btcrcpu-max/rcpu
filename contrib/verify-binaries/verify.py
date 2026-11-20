@@ -5,24 +5,19 @@
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Script for verifying RCPU release binaries.
 
-This script attempts to download the sum file SHA256SUMS and corresponding
-signature file SHA256SUMS.asc from the RCPU release site and
-compares them.
+This script downloads the checksum file SHA256SUMS.txt and its detached
+signature SHA256SUMS.txt.asc from the RCPU GitHub release and verifies them.
 
-The sum-signature file is signed by a number of builder keys. This script
-ensures that there is a minimum threshold of signatures from pubkeys that
-we trust. This trust is articulated on the basis of configuration options
-here, but by default is based upon local GPG trust settings.
+RCPU has a single release signer (see doc/release-process.md); the signature
+must be made by that key, pinned below as RELEASE_KEY_FINGERPRINT. This is
+deliberately stricter than the upstream Bitcoin script, which accepts a
+threshold of builder keys from guix.sigs: a release signed by any other key is
+rejected even if the signature itself is valid.
 
-The builder keys are available in the guix.sigs repo:
-
-    https://github.com/bitcoin-core/guix.sigs/tree/main/builder-keys
-
-If a minimum good, trusted signature threshold is met on the sum file, we then
-download the files specified in SHA256SUMS, and check if the hashes of these
-files match those that are specified. The script returns 0 if everything passes
-the checks. It returns 1 if either the signature check or the hash check
-doesn't pass. If an error occurs the return value is >= 2.
+If the signature check passes, the files listed in SHA256SUMS.txt are
+downloaded and hashed. The script returns 0 if every listed file was verified.
+It returns 1 if a signature, a hash, a missing file or a missing platform
+fails the checks. It returns >= 2 on usage or download errors.
 
 Logging output goes to stderr and final binary verification data goes to stdout.
 
@@ -47,11 +42,22 @@ from hashlib import sha256
 from pathlib import PurePath, Path
 
 # The primary host; this will fail if we can't retrieve files from here.
-HOST1 = "https://bitcoincore.org"
-HOST2 = "https://bitcoin.org"
-VERSIONPREFIX = "bitcoin-core-"
-SUMS_FILENAME = 'SHA256SUMS'
+# RCPU publishes its releases as GitHub release assets, so the remote directory
+# is /releases/download/<tag>/ rather than a /bin/<version>/ tree.
+HOST1 = os.environ.get("BINVERIFY_HOST1", "https://github.com/btcrcpu-max/rcpu/releases/download")
+# Optional second host (mirror). Only used when explicitly configured.
+HOST2 = os.environ.get("BINVERIFY_HOST2", "")
+VERSIONPREFIX = "v"
+SUMS_FILENAME = 'SHA256SUMS.txt'
 SIGNATUREFILENAME = f"{SUMS_FILENAME}.asc"
+# The only key allowed to sign an RCPU release (doc/release-process.md).
+RELEASE_KEY_FINGERPRINT = "934D5BC95DD4B3ACFEF521B9547633501FE4B8EE"
+# Platform token required in the checksum file for each --require-platforms
+# entry, e.g. "linux" -> "-linux", "win" -> "-win".
+PLATFORM_TOKENS = {
+    "linux": "-linux",
+    "win": "-win",
+}
 
 
 class ReturnCode(enum.IntEnum):
@@ -98,7 +104,7 @@ def bool_from_env(key, default=False) -> bool:
 
 
 VERSION_FORMAT = "<major>.<minor>[.<patch>][-rc[0-9]][-platform]"
-VERSION_EXAMPLE = "22.0-x86_64 or 23.1-rc1-darwin"
+VERSION_EXAMPLE = "1.4.17 or 1.4.17-win64"
 
 def parse_version_string(version_str):
     parts = version_str.split('-')
@@ -271,11 +277,12 @@ def get_files_from_hosts_and_compare(
     """
     Retrieve the same file from a number of hosts and ensure they have the same contents.
     The first host given will be treated as the "primary" host, and is required to succeed.
+    A single host is allowed (RCPU has no mandatory mirror).
 
     Args:
         filename: for writing the file locally.
     """
-    assert len(hosts) > 1
+    assert len(hosts) > 0
     primary_host = hosts[0]
     other_hosts = hosts[1:]
     got_files = []
@@ -364,6 +371,22 @@ def prompt_yn(prompt) -> bool:
         got = input(prompt).lower()
     return got == 'y'
 
+def normalise_key(key: t.Optional[str]) -> str:
+    """Normalise a GPG key id or fingerprint for comparison.
+
+    GOODSIG reports the 16-hex long key id, while the pinned constant is a full
+    40-hex fingerprint, so callers compare by suffix.
+    """
+    if not key:
+        return ""
+    return "".join(key.split()).upper().removeprefix("0X")
+
+
+def key_matches_pin(key: t.Optional[str]) -> bool:
+    norm = normalise_key(key)
+    return bool(norm) and normalise_key(RELEASE_KEY_FINGERPRINT).endswith(norm)
+
+
 def verify_shasums_signature(
     signature_file_path: str, sums_file_path: str, args: argparse.Namespace
 ) -> tuple[
@@ -383,19 +406,25 @@ def verify_shasums_signature(
         log.error(f"gpg output:\n{indent(gpg_output)}")
         return (ReturnCode.INTEGRITY_FAILURE, [], [], [], [])
 
-    # Decide which keys we trust, though not "trust" in the GPG sense, but rather
-    # which pubkeys convince us that this sums file is legitimate. In other words,
-    # which pubkeys within the Bitcoin community do we trust for the purposes of
-    # binary verification?
-    trusted_keys = set()
+    # Decide which keys we trust, though not "trust" in the GPG sense, but
+    # rather which pubkeys convince us that this sums file is legitimate.
+    # RCPU has exactly one release signer; anything else is rejected.
+    extra_keys = set()
     if args.trusted_keys:
-        trusted_keys |= set(args.trusted_keys.split(','))
+        extra_keys |= {normalise_key(k) for k in args.trusted_keys.split(',') if k.strip()}
+
+    def is_trusted(key: t.Optional[str]) -> bool:
+        norm = normalise_key(key)
+        if not norm:
+            return False
+        return key_matches_pin(norm) or any(
+            pin.endswith(norm) or norm.endswith(pin) for pin in extra_keys)
 
     # Tally signatures and make sure we have enough goods to fulfill
     # our threshold.
-    good_trusted = [sig for sig in good if sig.trusted or sig.key in trusted_keys]
+    good_trusted = [sig for sig in good if is_trusted(sig.key)]
     good_untrusted = [sig for sig in good if sig not in good_trusted]
-    num_trusted = len(good_trusted) + len(good_untrusted)
+    num_trusted = len(good_trusted)
     log.info(f"got {num_trusted} good signatures")
 
     if num_trusted < min_good_sigs:
@@ -460,7 +489,7 @@ def verify_binary_hashes(hashes_to_verify: list[list[str]]) -> tuple[ReturnCode,
 
 
 def verify_published_handler(args: argparse.Namespace) -> ReturnCode:
-    WORKINGDIR = Path(tempfile.gettempdir()) / f"bitcoin_verify_binaries.{args.version}"
+    WORKINGDIR = Path(tempfile.gettempdir()) / f"rcpu_verify_binaries.{args.version}"
 
     def cleanup():
         log.info("cleaning up files")
@@ -469,17 +498,15 @@ def verify_published_handler(args: argparse.Namespace) -> ReturnCode:
 
     # determine remote dir dependent on provided version string
     try:
-        version_base, version_rc, os_filter = parse_version_string(args.version)
-        version_tuple = [int(i) for i in version_base.split('.')]
+        version_base, _unused_rc, os_filter = parse_version_string(args.version)
+        [int(i) for i in version_base.split('.')]
     except Exception as e:
         log.debug(e)
         log.error(f"unable to parse version; expected format is {VERSION_FORMAT}")
         log.error(f"  e.g. {VERSION_EXAMPLE}")
         return ReturnCode.BAD_VERSION
 
-    remote_dir = f"/bin/{VERSIONPREFIX}{version_base}/"
-    if version_rc:
-        remote_dir += f"test.{version_rc}/"
+    remote_dir = f"/{VERSIONPREFIX}{version_base}/"
     remote_sigs_path = remote_dir + SIGNATUREFILENAME
     remote_sums_path = remote_dir + SUMS_FILENAME
 
@@ -487,18 +514,12 @@ def verify_published_handler(args: argparse.Namespace) -> ReturnCode:
     os.makedirs(WORKINGDIR, exist_ok=True)
     os.chdir(WORKINGDIR)
 
-    hosts = [HOST1, HOST2]
+    hosts = [h for h in (args.host or HOST1, HOST2) if h]
 
     got_sig_status = get_files_from_hosts_and_compare(
         hosts, remote_sigs_path, SIGNATUREFILENAME, args.require_all_hosts)
     if got_sig_status != ReturnCode.SUCCESS:
         return got_sig_status
-
-    # Multi-sig verification is available after 22.0.
-    if version_tuple[0] < 22:
-        log.error("Version too old - single sig not supported. Use a previous "
-                  "version of this script from the repo.")
-        return ReturnCode.BAD_VERSION
 
     got_sums_status = get_files_from_hosts_and_compare(
         hosts, remote_sums_path, SUMS_FILENAME, args.require_all_hosts)
@@ -518,22 +539,33 @@ def verify_published_handler(args: argparse.Namespace) -> ReturnCode:
         log.error("no files matched the platform specified")
         return ReturnCode.NO_BINARIES_MATCH
 
-    # remove binaries that are known not to be hosted by bitcoincore.org
-    fragments_to_remove = ['-unsigned', '-debug', '-codesignatures']
-    for fragment in fragments_to_remove:
-        nobinaries = [i for i in hashes_to_verify if fragment in i[1]]
-        if nobinaries:
-            remove_str = ', '.join(i[1] for i in nobinaries)
-            log.info(
-                f"removing *{fragment} binaries ({remove_str}) from verification "
-                f"since {HOST1} does not host *{fragment} binaries")
-            hashes_to_verify = [i for i in hashes_to_verify if fragment not in i[1]]
+    # A release that only ships "-unsigned" Windows assets must not be
+    # verified as a normal release: the missing Authenticode signature is a
+    # deliberate downgrade and has to be acknowledged by the caller.
+    unsigned = [i[1] for i in hashes_to_verify if "-unsigned" in i[1]]
+    if unsigned and not args.allow_unsigned:
+        log.error(
+            "checksum file lists explicitly unsigned assets; refusing to "
+            f"verify as a normal release: {', '.join(unsigned)}\n"
+            "Re-run with --allow-unsigned if this is expected.")
+        return ReturnCode.INTEGRITY_FAILURE
+
+    # Platform completeness: a release that silently drops a platform would
+    # otherwise verify fine because only the listed files are downloaded.
+    for platform in [p for p in args.require_platforms.split(',') if p.strip()]:
+        token = PLATFORM_TOKENS.get(platform.strip().lower())
+        if token is None:
+            log.error(f"unknown platform {platform!r}; known: {', '.join(PLATFORM_TOKENS)}")
+            return ReturnCode.BAD_VERSION
+        if not any(token in name for _, name in hashes_to_verify):
+            log.error(f"checksum file has no {platform} asset (expected a name containing {token!r})")
+            return ReturnCode.NO_BINARIES_MATCH
 
     # download binaries
     for _, binary_filename in hashes_to_verify:
         log.info(f"downloading {binary_filename} to {WORKINGDIR}")
         success, output = download_with_wget(
-            HOST1 + remote_dir + binary_filename, binary_filename)
+            hosts[0] + remote_dir + binary_filename, binary_filename)
 
         if not success:
             log.error(
@@ -616,6 +648,14 @@ def verify_binaries_handler(args: argparse.Namespace) -> ReturnCode:
     if hashes_status != ReturnCode.SUCCESS:
         return hashes_status
 
+    if missing_files:
+        # Fail closed: a checksum entry with no file on disk used to be printed
+        # as MISSING while still returning SUCCESS, which made a partial
+        # distribution look like a verified release.
+        log.error("files listed in the checksum file are missing:\n"
+                  + "\n".join(f"  {f}" for f in missing_files))
+        return ReturnCode.INTEGRITY_FAILURE
+
     if args.json:
         output = {
             'good_trusted_sigs': [str(s) for s in good_trusted],
@@ -652,9 +692,11 @@ def main():
     )
     parser.add_argument(
         '--min-good-sigs', type=int, action='store', nargs='?',
-        default=int(os.environ.get('BINVERIFY_MIN_GOOD_SIGS', 3)),
+        default=int(os.environ.get('BINVERIFY_MIN_GOOD_SIGS', 1)),
         help=(
-            'The minimum number of good signatures to require successful termination.'),
+            'The minimum number of good signatures from the pinned release key '
+            'to require successful termination. RCPU has a single signer, so '
+            'the default is 1.'),
     )
     parser.add_argument(
         '--keyserver', action='store', nargs='?',
@@ -664,7 +706,28 @@ def main():
     parser.add_argument(
         '--trusted-keys', action='store', nargs='?',
         default=os.environ.get('BINVERIFY_TRUSTED_KEYS', ''),
-        help='A list of trusted signer GPG keys, separated by commas. Not "trusted keys" in the GPG sense.',
+        help=(
+            'Additional signer keys to accept, comma separated. The pinned RCPU '
+            f'release key ({RELEASE_KEY_FINGERPRINT}) is always accepted.'),
+    )
+    parser.add_argument(
+        '--host', action='store', nargs='?',
+        default=os.environ.get('BINVERIFY_HOST1', HOST1),
+        help='base URL of the release host (default: %(default)s)',
+    )
+    parser.add_argument(
+        '--allow-unsigned', action='store_true',
+        default=bool_from_env('BINVERIFY_ALLOW_UNSIGNED'),
+        help=(
+            'accept checksum entries for explicitly unsigned assets. Without '
+            'this flag an "-unsigned" asset fails verification.'),
+    )
+    parser.add_argument(
+        '--require-platforms', action='store', nargs='?',
+        default=os.environ.get('BINVERIFY_REQUIRE_PLATFORMS', 'linux,win'),
+        help=(
+            'comma separated platforms that must each have at least one asset '
+            f'in the checksum file (known: {", ".join(PLATFORM_TOKENS)}).'),
     )
     parser.add_argument(
         '--json', action='store_true',
@@ -678,7 +741,7 @@ def main():
     pub_parser.set_defaults(func=verify_published_handler)
     pub_parser.add_argument(
         'version', type=str, help=(
-            f'version of the bitcoin release to download; of the format '
+            f'version of the RCPU release to download; of the format '
             f'{VERSION_FORMAT}. Example: {VERSION_EXAMPLE}')
     )
     pub_parser.add_argument(
@@ -689,14 +752,11 @@ def main():
     pub_parser.add_argument(
         '--require-all-hosts', action='store_true',
         default=bool_from_env('BINVERIFY_REQUIRE_ALL_HOSTS'),
-        help=(
-            f'If set, require all hosts ({HOST1}, {HOST2}) to provide signatures. '
-            '(Sometimes bitcoin.org lags behind bitcoincore.org.)')
-    )
+        help='If set, require every configured host to provide the files.')
 
     bin_parser = subparsers.add_parser("bin", help="Verify local binaries.")
     bin_parser.set_defaults(func=verify_binaries_handler)
-    bin_parser.add_argument("--sums-sig-file", "-s", help="Path to the SHA256SUMS.asc file to verify")
+    bin_parser.add_argument("--sums-sig-file", "-s", help="Path to the SHA256SUMS.txt.asc file to verify")
     bin_parser.add_argument("sums_file", help="Path to the SHA256SUMS file to verify")
     bin_parser.add_argument(
         "binary", nargs="*",
