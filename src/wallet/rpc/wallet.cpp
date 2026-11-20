@@ -862,6 +862,7 @@ RPCHelpMan lockunspent();
 RPCHelpMan listlockunspent();
 RPCHelpMan getbalances();
 RPCHelpMan listunspent();
+RPCHelpMan listunreadableoutputs();
 
 // encryption
 RPCHelpMan walletpassphrase();
@@ -940,6 +941,7 @@ Span<const CRPCCommand> GetWalletRPCCommands()
         {"wallet", &listsinceblock},
         {"wallet", &listtransactions},
         {"wallet", &listunspent},
+        {"wallet", &listunreadableoutputs},
         {"wallet", &listwalletdir},
         {"wallet", &listwallets},
         {"wallet", &loadwallet},

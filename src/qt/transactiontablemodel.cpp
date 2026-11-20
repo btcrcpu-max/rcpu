@@ -664,6 +664,8 @@ QVariant TransactionTableModel::data(const QModelIndex &index, int role) const
         return formatTxAmount(rec, false, BitcoinUnits::SeparatorStyle::NEVER);
     case StatusRole:
         return rec->status.status;
+    case AmountKnownRole:
+        return rec->amount_known;
     }
     return QVariant();
 }

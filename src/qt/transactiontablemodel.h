@@ -74,6 +74,8 @@ public:
         StatusRole,
         /** Unprocessed icon */
         RawDecorationRole,
+        /** RCPU CT: false when this record's amount is unknown to the wallet */
+        AmountKnownRole,
     };
 
     int rowCount(const QModelIndex &parent) const override;

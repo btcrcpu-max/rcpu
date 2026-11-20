@@ -23,6 +23,7 @@
 #include <optional>
 
 #include <QApplication>
+#include <QCheckBox>
 #include <QComboBox>
 #include <QDateTimeEdit>
 #include <QDesktopServices>
@@ -95,6 +96,12 @@ TransactionView::TransactionView(const PlatformStyle *platformStyle, QWidget *pa
     typeWidget->addItem(tr("Other"), TransactionFilterProxy::TYPE(TransactionRecord::Other));
 
     hlayout->addWidget(typeWidget);
+
+    // RCPU CT: narrow the list down to rows whose amount the wallet cannot
+    // read, so those are not lost among normal history entries.
+    unreadableWidget = new QCheckBox(tr("Needs review"), this);
+    unreadableWidget->setToolTip(tr("Show only transactions with an output whose amount this wallet cannot read (e.g. while the wallet is locked)."));
+    hlayout->addWidget(unreadableWidget);
 
     search_widget = new QLineEdit(this);
     search_widget->setPlaceholderText(tr("Enter address, transaction id, or label to search"));
@@ -182,6 +189,7 @@ TransactionView::TransactionView(const PlatformStyle *platformStyle, QWidget *pa
     connect(dateWidget, qOverload<int>(&QComboBox::activated), this, &TransactionView::chooseDate);
     connect(typeWidget, qOverload<int>(&QComboBox::activated), this, &TransactionView::chooseType);
     connect(watchOnlyWidget, qOverload<int>(&QComboBox::activated), this, &TransactionView::chooseWatchonly);
+    connect(unreadableWidget, &QCheckBox::toggled, this, &TransactionView::chooseUnreadableOnly);
     connect(amountWidget, &QLineEdit::textChanged, amount_typing_delay, qOverload<>(&QTimer::start));
     connect(amount_typing_delay, &QTimer::timeout, this, &TransactionView::changedAmount);
     connect(search_widget, &QLineEdit::textChanged, prefix_typing_delay, qOverload<>(&QTimer::start));
@@ -324,6 +332,13 @@ void TransactionView::chooseWatchonly(int idx)
         return;
     transactionProxyModel->setWatchOnlyFilter(
         static_cast<TransactionFilterProxy::WatchOnlyFilter>(watchOnlyWidget->itemData(idx).toInt()));
+}
+
+void TransactionView::chooseUnreadableOnly(bool checked)
+{
+    if(!transactionProxyModel)
+        return;
+    transactionProxyModel->setShowUnreadableOnly(checked);
 }
 
 void TransactionView::changedSearch()

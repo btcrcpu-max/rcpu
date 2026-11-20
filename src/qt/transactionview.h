@@ -18,6 +18,7 @@ class TransactionFilterProxy;
 class WalletModel;
 
 QT_BEGIN_NAMESPACE
+class QCheckBox;
 class QComboBox;
 class QDateTimeEdit;
 class QFrame;
@@ -72,6 +73,7 @@ private:
     QComboBox *dateWidget;
     QComboBox *typeWidget;
     QComboBox *watchOnlyWidget;
+    QCheckBox *unreadableWidget;
     QLineEdit *search_widget;
     QLineEdit *amountWidget;
 
@@ -121,6 +123,7 @@ public Q_SLOTS:
     void chooseDate(int idx);
     void chooseType(int idx);
     void chooseWatchonly(int idx);
+    void chooseUnreadableOnly(bool checked);
     void changedAmount();
     void changedSearch();
     void exportClicked();

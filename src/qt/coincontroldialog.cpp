@@ -14,6 +14,7 @@
 #include <qt/walletmodel.h>
 
 #include <interfaces/node.h>
+#include <interfaces/wallet.h>
 #include <key_io.h>
 #include <policy/policy.h>
 #include <wallet/coincontrol.h>
@@ -30,6 +31,19 @@
 #include <QTreeWidget>
 
 using wallet::CCoinControl;
+
+namespace {
+//! Human readable reason for wallet::CTAmountStatus values that leave an
+//! output unvalued (3 = locked, 4 = no key, 5 = unreadable).
+QString ctUnreadableReason(uint8_t status)
+{
+    switch (status) {
+    case 3: return QObject::tr("wallet locked");
+    case 4: return QObject::tr("no key (watch-only)");
+    default: return QObject::tr("cannot unblind");
+    }
+}
+} // namespace
 
 QList<CAmount> CoinControlDialog::payAmounts;
 bool CoinControlDialog::fSubtractFeeFromAmount = false;
@@ -150,6 +164,8 @@ void CoinControlDialog::buttonSelectAllClicked()
     Qt::CheckState state = Qt::Checked;
     for (int i = 0; i < ui->treeWidget->topLevelItemCount(); i++)
     {
+        if (!(ui->treeWidget->topLevelItem(i)->flags() & Qt::ItemIsUserCheckable))
+            continue; // the read-only "unreadable outputs" group
         if (ui->treeWidget->topLevelItem(i)->checkState(COLUMN_CHECKBOX) != Qt::Unchecked)
         {
             state = Qt::Unchecked;
@@ -158,7 +174,8 @@ void CoinControlDialog::buttonSelectAllClicked()
     }
     ui->treeWidget->setEnabled(false);
     for (int i = 0; i < ui->treeWidget->topLevelItemCount(); i++)
-            if (ui->treeWidget->topLevelItem(i)->checkState(COLUMN_CHECKBOX) != state)
+            if ((ui->treeWidget->topLevelItem(i)->flags() & Qt::ItemIsUserCheckable) &&
+                ui->treeWidget->topLevelItem(i)->checkState(COLUMN_CHECKBOX) != state)
                 ui->treeWidget->topLevelItem(i)->setCheckState(COLUMN_CHECKBOX, state);
     ui->treeWidget->setEnabled(true);
     if (state == Qt::Unchecked)
@@ -676,6 +693,27 @@ const interfaces::WalletTxOut& out = std::get<1>(outpair);
             itemWalletAddress->setText(COLUMN_CHECKBOX, "(" + QString::number(nChildren) + ")");
             itemWalletAddress->setText(COLUMN_AMOUNT, BitcoinUnits::format(nDisplayUnit, nSum));
             itemWalletAddress->setData(COLUMN_AMOUNT, Qt::UserRole, QVariant((qlonglong)nSum));
+        }
+    }
+
+    // RCPU CT: outputs the wallet owns but cannot value right now. Shown so the
+    // list is not silently incomplete, but never selectable: spending an output
+    // of unknown value is not allowed.
+    const auto unreadable = model->wallet().listUnreadableOutputs();
+    if (!unreadable.empty()) {
+        CCoinControlWidgetItem* itemGroup = new CCoinControlWidgetItem(ui->treeWidget);
+        itemGroup->setDisabled(true);
+        itemGroup->setText(COLUMN_CHECKBOX, "(" + QString::number(unreadable.size()) + ")");
+        itemGroup->setText(COLUMN_LABEL, tr("Unreadable outputs"));
+        itemGroup->setToolTip(COLUMN_LABEL, tr("Owned confidential outputs whose amount this wallet cannot read (wallet locked, watch-only, or an unreadable commitment). They cannot be selected for spending."));
+        for (const auto& out : unreadable) {
+            CCoinControlWidgetItem* itemOutput = new CCoinControlWidgetItem(itemGroup);
+            itemOutput->setDisabled(true);
+            itemOutput->setText(COLUMN_ADDRESS, QString::fromStdString(out.outpoint.hash.GetHex()) + ":" + QString::number(out.outpoint.n));
+            itemOutput->setText(COLUMN_LABEL, ctUnreadableReason(out.status));
+            itemOutput->setText(COLUMN_AMOUNT, QStringLiteral("—"));
+            itemOutput->setText(COLUMN_DATE, GUIUtil::dateTimeStr(out.time));
+            itemOutput->setText(COLUMN_CONFIRMATIONS, QString::number(out.depth_in_main_chain));
         }
     }
 

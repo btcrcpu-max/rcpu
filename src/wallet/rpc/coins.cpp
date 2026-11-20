@@ -9,6 +9,7 @@
 #include <key_io.h>
 #include <rpc/util.h>
 #include <script/script.h>
+#include <util/fs.h>
 #include <util/moneystr.h>
 #include <util/strencodings.h>
 #include <wallet/coincontrol.h>
@@ -18,6 +19,8 @@
 #include <wallet/wallet.h>
 
 #include <univalue.h>
+
+#include <fstream>
 
 
 namespace wallet {
@@ -790,6 +793,100 @@ RPCHelpMan listunspent()
     }
 
     return results;
+},
+    };
+}
+
+RPCHelpMan listunreadableoutputs()
+{
+    return RPCHelpMan{
+        "listunreadableoutputs",
+        "\nLists unspent outputs this wallet owns but cannot value right now: the wallet is\n"
+        "locked, the output is watch-only, or the confidential commitment cannot be unblinded.\n"
+        "These outputs are excluded from balances and coin selection, and are never spendable;\n"
+        "this call only reports them so support can explain a balance that looks too low.\n",
+        {
+            {"filename", RPCArg::Type::STR, RPCArg::Optional::OMITTED, "If provided, also write the same rows to this CSV file (must not exist yet)."},
+        },
+        RPCResult{
+            RPCResult::Type::ARR, "", "",
+            {
+                {RPCResult::Type::OBJ, "", "",
+                {
+                    {RPCResult::Type::STR_HEX, "txid", "The transaction id"},
+                    {RPCResult::Type::NUM, "vout", "The output index"},
+                    {RPCResult::Type::STR, "status", "Why the amount is unknown: \"locked\", \"no_key\" or \"unreadable\""},
+                    {RPCResult::Type::NUM, "confirmations", "The number of confirmations"},
+                    {RPCResult::Type::STR, "address", /*optional=*/true, "The output address, when one can be extracted from the script"},
+                    {RPCResult::Type::NUM_TIME, "time", "The " + UNIX_EPOCH_TIME + " of the transaction"},
+                }},
+            }
+        },
+        RPCExamples{
+            HelpExampleCli("listunreadableoutputs", "")
+            + HelpExampleCli("listunreadableoutputs", "\"unreadable.csv\"")
+            + HelpExampleRpc("listunreadableoutputs", "")
+        },
+        [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
+{
+    const std::shared_ptr<const CWallet> pwallet = GetWalletForJSONRPCRequest(request);
+    if (!pwallet) return UniValue::VNULL;
+
+    pwallet->BlockUntilSyncedToCurrentChain();
+
+    LOCK(pwallet->cs_wallet);
+
+    UniValue result(UniValue::VARR);
+    std::string csv{"txid,vout,status,confirmations,address,time\n"};
+
+    for (const auto& entry : pwallet->mapWallet) {
+        const CWalletTx& wtx = entry.second;
+        const int depth = pwallet->GetTxDepthInMainChain(wtx);
+        if (depth < 0) continue;
+        if (pwallet->IsTxImmatureCoinBase(wtx)) continue;
+        for (unsigned int i = 0; i < wtx.tx->vout.size(); ++i) {
+            const CTxOut& txout = wtx.tx->vout[i];
+            if (txout.nValue.IsExplicit()) continue;
+            if (!pwallet->IsMine(txout)) continue;
+            const CTOutputInfo info = GetCTOutputInfo(*pwallet, wtx, i);
+            if (info.amount) continue;
+            const COutPoint outpoint(wtx.GetHash(), i);
+            if (pwallet->IsSpent(outpoint)) continue;
+
+            std::string address;
+            CTxDestination dest;
+            if (ExtractDestination(txout.scriptPubKey, dest)) address = EncodeDestination(dest);
+
+            UniValue o(UniValue::VOBJ);
+            o.pushKV("txid", outpoint.hash.GetHex());
+            o.pushKV("vout", (int)outpoint.n);
+            o.pushKV("status", CTAmountStatusName(info.status));
+            o.pushKV("confirmations", depth);
+            if (!address.empty()) o.pushKV("address", address);
+            o.pushKV("time", wtx.GetTxTime());
+            result.push_back(o);
+
+            csv += strprintf("%s,%d,%s,%d,%s,%d\n", outpoint.hash.GetHex(), outpoint.n,
+                             CTAmountStatusName(info.status), depth, address, wtx.GetTxTime());
+        }
+    }
+
+    if (!request.params[0].isNull()) {
+        fs::path filepath = fs::absolute(fs::u8path(request.params[0].get_str()));
+        // Same rule as dumpwallet: never overwrite an existing file.
+        if (fs::exists(filepath)) {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, filepath.utf8string() + " already exists. If you are sure this is what you want, move it out of the way first");
+        }
+        std::ofstream file;
+        file.open(filepath);
+        if (!file.is_open()) {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "Cannot open output file");
+        }
+        file << csv;
+        file.close();
+    }
+
+    return result;
 },
     };
 }

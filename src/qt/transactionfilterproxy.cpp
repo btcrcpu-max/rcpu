@@ -30,6 +30,11 @@ bool TransactionFilterProxy::filterAcceptsRow(int sourceRow, const QModelIndex &
     if (!(TYPE(type) & typeFilter))
         return false;
 
+    // RCPU CT: "needs review" keeps only rows whose amount the wallet could
+    // not unblind, so a locked wallet's unknown outputs are easy to find.
+    if (m_show_unreadable_only && index.data(TransactionTableModel::AmountKnownRole).toBool())
+        return false;
+
     bool involvesWatchAddress = index.data(TransactionTableModel::WatchonlyRole).toBool();
     if (involvesWatchAddress && watchOnlyFilter == WatchOnlyFilter_No)
         return false;
@@ -91,5 +96,12 @@ void TransactionFilterProxy::setWatchOnlyFilter(WatchOnlyFilter filter)
 void TransactionFilterProxy::setShowInactive(bool _showInactive)
 {
     this->showInactive = _showInactive;
+    invalidateFilter();
+}
+
+void TransactionFilterProxy::setShowUnreadableOnly(bool showUnreadableOnly)
+{
+    if (m_show_unreadable_only == showUnreadableOnly) return;
+    m_show_unreadable_only = showUnreadableOnly;
     invalidateFilter();
 }
