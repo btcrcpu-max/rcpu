@@ -2,87 +2,78 @@
 
 #### Preparation
 
-As of RCPU v3.2.0, releases are signed by a number of public keys on the basis
-of the [guix.sigs repository](https://github.com/bitcoin-core/guix.sigs/). When
-verifying binary downloads, you (the end user) decide which of these public keys you
-trust and then use that trust model to evaluate the signature on a file that contains
-hashes of the release binaries. The downloaded binaries are then hashed and compared to
-the signed checksum file.
+RCPU releases are signed with a single release key, fingerprint
 
-First, you have to figure out which public keys to recognize. Browse the [list of frequent
-builder-keys](https://github.com/bitcoin-core/guix.sigs/tree/main/builder-keys) and
-decide which of these keys you would like to trust. For each key you want to trust, you
-must obtain that key for your local GPG installation.
+```
+934D 5BC9 5DD4 B3AC FEF5 21B9 5476 3350 1FE4 B8EE
+```
 
-You can obtain these keys by
-  - through a browser using a key server (e.g. keyserver.ubuntu.com),
-  - manually using the `gpg --keyserver <url> --recv-keys <key>` command, or
-  - you can run the packaged `verify.py --import-keys ...` script to
-    have it automatically retrieve unrecognized keys.
+This key is pinned in `verify.py` as `RELEASE_KEY_FINGERPRINT`. A checksum file
+signed by any other key is rejected even if the signature itself is valid, so
+there is no builder-key trust model to configure.
+
+Import the release key once:
+
+```sh
+gpg --keyserver hkps://keys.openpgp.org --recv-keys 934D5BC95DD4B3ACFEF521B9547633501FE4B8EE
+```
 
 #### Usage
 
-This script attempts to download the checksum file (`SHA256SUMS`) and corresponding
-signature file `SHA256SUMS.asc` from https://github.com/btcrcpu-max/rcpu/releases.
+`verify.py pub <version>` downloads `SHA256SUMS.txt` and `SHA256SUMS.txt.asc`
+from `https://github.com/btcrcpu-max/rcpu/releases/download/v<version>/`,
+checks the signature against the pinned key, then downloads every file listed in
+the checksum file and compares the hashes.
 
-It first checks if the checksum file is valid based upon a plurality of signatures, and
-then downloads the release files specified in the checksum file, and checks if the
-hashes of the release files are as expected.
+The script is fail-closed:
 
-If we encounter pubkeys in the signature file that we do not recognize, the script
-can prompt the user as to whether they'd like to download the pubkeys. To enable
-this behavior, use the `--import-keys` flag.
+* a checksum file signed by an unexpected key, or with fewer than
+  `--min-good-sigs` trusted signatures (default 1), is rejected;
+* an explicitly `-unsigned` asset is rejected unless `--allow-unsigned` is
+  given, because it means the Windows Authenticode signature is missing;
+* a platform named by `--require-platforms` (default `linux,win`) must have at
+  least one asset in the checksum file;
+* a file listed in the checksum file but absent from the release is an error,
+  not a warning.
 
-The script returns 0 if everything passes the checks. It returns 1 if either the
-signature check or the hash check doesn't pass. An exit code of >2 indicates an error.
-
-See the `Config` object for various options.
+Exit codes: 0 everything verified, 1 integrity failure, 2 usage error,
+3+ download / GPG errors.
 
 #### Examples
 
-Validate releases with default settings:
+Validate a release with default settings:
+
 ```sh
-./contrib/verify-binaries/verify.py pub 22.0
-./contrib/verify-binaries/verify.py pub 22.0-rc3
+./contrib/verify-binaries/verify.py pub 1.4.17
 ```
 
-Get JSON output and don't prompt for user input (no auto key import):
+JSON output:
 
 ```sh
-./contrib/verify-binaries/verify.py --json pub 22.0-x86
+./contrib/verify-binaries/verify.py --json pub 1.4.17
 ```
 
-Rely only on local GPG state and manually specified keys, while requiring a
-threshold of at least 10 trusted signatures:
+Only download one platform:
+
 ```sh
-./contrib/verify-binaries/verify.py \
-    --trusted-keys 74E2DEF5D77260B98BC19438099BAD163C70FBFA,9D3CC86A72F8494342EA5FD10A41BDC3F4FAFF1C \
-    --min-good-sigs 10 pub 22.0-x86
+./contrib/verify-binaries/verify.py pub 1.4.17-win64
 ```
 
-If you only want to download the binaries for a certain platform, add the corresponding suffix, e.g.:
+Delete the downloaded files afterwards:
 
 ```sh
-./contrib/verify-binaries/verify.py pub 24.0.1-darwin
-./contrib/verify-binaries/verify.py pub 23.1-rc1-win64
+./contrib/verify-binaries/verify.py pub --cleanup 1.4.17
 ```
 
-If you do not want to keep the downloaded binaries, specify the cleanup option.
+Verify the files listed in a local checksum file (requires the matching
+`SHA256SUMS.txt.asc` next to it):
 
 ```sh
-./contrib/verify-binaries/verify.py pub --cleanup 22.0
+./contrib/verify-binaries/verify.py bin ~/Downloads/SHA256SUMS.txt
 ```
 
-Use the bin subcommand to verify all files listed in a local checksum file
+Tests (offline):
 
 ```sh
-./contrib/verify-binaries/verify.py bin SHA256SUMS
-```
-
-Verify only a subset of the files listed in a local checksum file
-
-```sh
-./contrib/verify-binaries/verify.py bin ~/Downloads/SHA256SUMS \
-    ~/Downloads/rcpu-3.2.0-x86_64-linux-gnu.tar.gz \
-    ~/Downloads/rcpu-3.2.0-arm-linux-gnueabihf.tar.gz
+python3 contrib/verify-binaries/test.py
 ```

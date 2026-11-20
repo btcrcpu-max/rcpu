@@ -433,6 +433,9 @@ jobs:
     # The only job that needs to publish; everything else stays read-only.
     permissions:
       contents: write
+      # REL-02: build provenance attestations for the published assets.
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
@@ -606,3 +609,55 @@ jobs:
       - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65
         with:
           files: ${{ env.RELEASE_FILES }}
+
+      - name: Attest release assets
+        # REL-02: sign a provenance attestation for every published asset so a
+        # downloader can verify which workflow produced it.
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            linux/*
+            windows/*
+            SHA256SUMS.txt
+            SHA256SUMS.txt.asc
+
+      - name: Read back the published release (fail closed)
+        # REL-02: uploading is not proof that the release is complete. Compare
+        # the asset list GitHub actually serves against the local files, then
+        # re-download and verify the signed checksum file. Any mismatch fails
+        # the job instead of leaving a silently incomplete release behind.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release view "$GITHUB_REF_NAME" \
+            --json isDraft,isPrerelease,assets > readback.json
+          python3 - <<'PY'
+          import json, pathlib, sys
+
+          data = json.load(open("readback.json"))
+          if data["isDraft"]:
+              sys.exit("readback: release is still a draft")
+          expected = sorted(
+              p.name
+              for root in ("linux", "windows")
+              for p in pathlib.Path(root).iterdir() if p.is_file()
+          ) + ["SHA256SUMS.txt", "SHA256SUMS.txt.asc"]
+          published = data["assets"]
+          names = sorted(a["name"] for a in published)
+          if names != sorted(expected):
+              missing = sorted(set(expected) - set(names))
+              extra = sorted(set(names) - set(expected))
+              sys.exit(f"readback: asset mismatch; missing={missing} extra={extra}")
+          empty = [a["name"] for a in published if a["size"] <= 0]
+          if empty:
+              sys.exit(f"readback: zero-byte assets {empty}")
+          print(f"readback: {len(names)} assets present, all non-empty")
+          PY
+          mkdir -p readback
+          gh release download "$GITHUB_REF_NAME" \
+            --pattern SHA256SUMS.txt --pattern SHA256SUMS.txt.asc \
+            --dir readback
+          cmp SHA256SUMS.txt readback/SHA256SUMS.txt
+          gpg --batch --verify readback/SHA256SUMS.txt.asc readback/SHA256SUMS.txt
+          echo "readback: published checksum file matches and its signature verifies"
