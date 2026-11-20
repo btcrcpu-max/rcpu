@@ -68,16 +68,16 @@ and `configure.ac`.
 4. Generate checksums (same name as the `release-full.yml` CI job):
 
    ```bash
-   sha256sum rcpu-${VERSION}-x86_64-linux-gnu.tgz > SHA256SUMS-linux.txt
+   sha256sum rcpu-${VERSION}-x86_64-linux-gnu.tgz > SHA256SUMS.txt
    ```
 
 5. Sign the checksums with a detached signature and **upload the resulting
-   `.asc` file** — the release workflow publishes `SHA256SUMS-linux.txt` and
-   its detached signature `SHA256SUMS-linux.txt.asc`:
+   `.asc` file** — the release workflow publishes `SHA256SUMS.txt` and
+   its detached signature `SHA256SUMS.txt.asc`:
 
    ```bash
-   gpg --detach-sign --armor SHA256SUMS-linux.txt
-   # produces SHA256SUMS-linux.txt.asc; both files must be uploaded
+   gpg --detach-sign --armor SHA256SUMS.txt
+   # produces SHA256SUMS.txt.asc; both files must be uploaded
    ```
 
 ### Reproducible Builds
@@ -111,8 +111,8 @@ the Bitcoin Core build process can adapt the Guix configuration for RCPU.
    gpg --import RCPU-DEV-GPG-KEY.asc
    # Releases publish a detached signature; verify it against the checksums,
    # then verify the checksums against the tarball.
-   gpg --verify SHA256SUMS-linux.txt.asc SHA256SUMS-linux.txt
-   sha256sum -c SHA256SUMS-linux.txt
+   gpg --verify SHA256SUMS.txt.asc SHA256SUMS.txt
+   sha256sum -c SHA256SUMS.txt
    ```
 
 ## Release Checklist
@@ -123,9 +123,9 @@ the Bitcoin Core build process can adapt the Guix configuration for RCPU.
 2. [ ] Version bumped in `configure.ac` and `src/clientversion.h`
 3. [ ] Git tag created and signed
 4. [ ] Binaries built on clean environment
-5. [ ] SHA256SUMS-linux.txt generated and signed (`SHA256SUMS-linux.txt.asc`)
-6. [ ] GitHub Release created with tarball, SHA256SUMS-linux.txt and
-      SHA256SUMS-linux.txt.asc
+5. [ ] SHA256SUMS.txt generated and signed (`SHA256SUMS.txt.asc`)
+6. [ ] GitHub Release created with tarball, SHA256SUMS.txt and
+      SHA256SUMS.txt.asc
 7. [ ] Release notes added to `doc/release-notes/`
 8. [ ] `doc/consensus-params.md` matches `chainparams.cpp` (chainwork / assumevalid / checkpoints)
 9. [ ] For CT strict-rules releases: re-read `getblockcount` from the release

@@ -587,6 +587,104 @@ BOOST_AUTO_TEST_CASE(strict_nonce_rules_reject_null_and_bad_points)
     g_con_elementsmode = old_ct_mode;
 }
 
+// RCPU CT-01: the strict nonce rule must switch exactly at
+// nCTStrictRulesHeight. Below it a null or off-curve nonce is only subject to
+// the shape rule, so the strict reject reason must not appear; at H and H + 1 it
+// must appear. This is the boundary the existing tests skipped.
+BOOST_AUTO_TEST_CASE(strict_nonce_boundary_heights)
+{
+    const COutPoint prevout{TxidFromString("0xabab"), 0};
+
+    CCoinsViewTest base;
+    base.Add(prevout, MakeCommitmentCoin(1000 * COIN));
+    CCoinsViewCache view{&base};
+
+    const bool old_ct_mode = g_con_elementsmode;
+    g_con_elementsmode = true;
+
+    constexpr int nStrictHeight{200};
+    const auto reject_reason = [&](int spend_height, const std::vector<unsigned char>& nonce) {
+        CMutableTransaction mtx;
+        mtx.nVersion = CT_VERSION;
+        mtx.vin.emplace_back(CTxIn(prevout, CScript(), 0xffffffff));
+
+        CTxOut out;
+        uint256 blind, out_nonce;
+        BOOST_REQUIRE(BlindOutput(out.nValue, out.nNonce, out.vchRangeproof, blind, out_nonce, 500 * COIN));
+        out.scriptPubKey = CScript() << OP_TRUE;
+        out.nNonce.vchCommitment = nonce;
+        mtx.vout.push_back(out);
+
+        CTxOut fee;
+        fee.nValue.SetToAmount(500 * COIN);
+        mtx.vout.push_back(fee);
+
+        const CTransaction tx{mtx};
+        TxValidationState state;
+        CAmount fee_out = -1;
+        Consensus::CheckTxInputs(tx, state, view, spend_height, fee_out,
+            /*nCTActivationHeight=*/0, /*nBanPathAHeight=*/0, /*nCTStrictRulesHeight=*/nStrictHeight);
+        return state.GetRejectReason();
+    };
+
+    // Null nonce: not a strict-rule violation below H, rejected at H and H + 1.
+    BOOST_CHECK_NE(reject_reason(nStrictHeight - 1, {}), "bad-ct-nonce-missing");
+    BOOST_CHECK_EQUAL(reject_reason(nStrictHeight, {}), "bad-ct-nonce-missing");
+    BOOST_CHECK_EQUAL(reject_reason(nStrictHeight + 1, {}), "bad-ct-nonce-missing");
+
+    // 0x03 prefix over an off-curve X: shape-valid, so only the strict rule can
+    // reject it.
+    std::vector<unsigned char> off_curve{0x03};
+    off_curve.insert(off_curve.end(), 32, 0xff);
+    BOOST_CHECK_NE(reject_reason(nStrictHeight - 1, off_curve), "bad-ct-nonce-point");
+    BOOST_CHECK_EQUAL(reject_reason(nStrictHeight, off_curve), "bad-ct-nonce-point");
+    BOOST_CHECK_EQUAL(reject_reason(nStrictHeight + 1, off_curve), "bad-ct-nonce-point");
+
+    g_con_elementsmode = old_ct_mode;
+}
+
+// RCPU CT-01: the legacy shape rule switches exactly at nBanPathAHeight and only
+// applies to outputs the strict rule does not own (explicit/fee outputs here).
+BOOST_AUTO_TEST_CASE(legacy_nonce_shape_boundary_heights)
+{
+    const COutPoint prevout{TxidFromString("0xcdcd"), 0};
+
+    CCoinsViewTest base;
+    base.Add(prevout, MakeExplicitCoin(1000 * COIN));
+    CCoinsViewCache view{&base};
+
+    const bool old_ct_mode = g_con_elementsmode;
+    g_con_elementsmode = true;
+
+    constexpr int nBanHeight{100};
+    constexpr int nStrictHeight{200};
+    const auto reject_reason = [&](int spend_height) {
+        CMutableTransaction mtx;
+        mtx.nVersion = CT_VERSION;
+        mtx.vin.emplace_back(CTxIn(prevout, CScript(), 0xffffffff));
+
+        // Explicit output carrying a non-null nonce with the legacy 0x02 prefix.
+        CTxOut out;
+        out.nValue.SetToAmount(1000 * COIN);
+        out.scriptPubKey = CScript() << OP_TRUE;
+        out.nNonce.vchCommitment.assign(33, 0x02);
+        mtx.vout.push_back(out);
+
+        const CTransaction tx{mtx};
+        TxValidationState state;
+        CAmount fee_out = -1;
+        Consensus::CheckTxInputs(tx, state, view, spend_height, fee_out,
+            /*nCTActivationHeight=*/0, /*nBanPathAHeight=*/nBanHeight, /*nCTStrictRulesHeight=*/nStrictHeight);
+        return state.GetRejectReason();
+    };
+
+    BOOST_CHECK_NE(reject_reason(nBanHeight - 1), "bad-ct-legacy-nonce");
+    BOOST_CHECK_EQUAL(reject_reason(nBanHeight), "bad-ct-legacy-nonce");
+    BOOST_CHECK_EQUAL(reject_reason(nBanHeight + 1), "bad-ct-legacy-nonce");
+
+    g_con_elementsmode = old_ct_mode;
+}
+
 // RCPU M-1 positive coverage: both valid nonce encodings (0x03 compressed
 // ephemeral pubkey and 0x04 x-only key) must pass at/after the strict height.
 BOOST_AUTO_TEST_CASE(strict_nonce_rules_accept_valid_points)
