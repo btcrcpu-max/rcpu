@@ -116,13 +116,22 @@ bool UnblindWalletOutput(const CWallet& wallet, const CTxOut& txout, CAmount& va
                                    HexStr(txout.scriptPubKey), wallet.IsLocked());
             return false;
         }
-        if (nc[0] == 0x04) {
-            // Path C: the HKDF rewind nonce binds the output scriptPubKey into
-            // its info domain, so it must be forwarded explicitly.
-            return UnblindValueWithKeyV2(key, txout.nValue, txout.nNonce, txout.vchRangeproof,
-                                         txout.scriptPubKey, value_out, blind_out);
-        }
-        return UnblindValueWithKey(key, txout.nValue, txout.nNonce, txout.vchRangeproof, value_out, blind_out);
+        const auto try_unblind = [&](const CKey& candidate) {
+            if (nc[0] == 0x04) {
+                // Path C: the HKDF rewind nonce binds the output scriptPubKey
+                // into its info domain, so it must be forwarded explicitly.
+                return UnblindValueWithKeyV2(candidate, txout.nValue, txout.nNonce, txout.vchRangeproof,
+                                             txout.scriptPubKey, value_out, blind_out);
+            }
+            return UnblindValueWithKey(candidate, txout.nValue, txout.nNonce, txout.vchRangeproof,
+                                       value_out, blind_out);
+        };
+        if (try_unblind(key)) return true;
+        // WAL-01: version 0x01 addresses blind to the derived view key rather
+        // than to the spend key. Trying both keeps legacy (0x00) outputs
+        // readable; authentication failure is not reported as a zero value.
+        const CKey view = DeriveViewKey(key);
+        return view.IsValid() && try_unblind(view);
     }
     return false; // malformed commitment
 }
