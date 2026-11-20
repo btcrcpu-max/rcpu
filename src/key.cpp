@@ -6,6 +6,7 @@
 #include <key.h>
 
 #include <crypto/common.h>
+#include <crypto/hmac_sha256.h>
 #include <crypto/hmac_sha512.h>
 #include <hash.h>
 #include <random.h>
@@ -374,6 +375,33 @@ CKey GenerateRandomKey(bool compressed) noexcept
     CKey key;
     key.MakeNewKey(/*fCompressed=*/compressed);
     return key;
+}
+
+CKey DeriveViewKey(const CKey& spend)
+{
+    assert(spend.IsValid());
+    static constexpr char TAG[] = "rcpu/confidential-view-key/v1";
+    unsigned char out[32];
+    for (uint32_t counter = 0; counter < 256; ++counter) {
+        CHMAC_SHA256 hmac(reinterpret_cast<const unsigned char*>(TAG), sizeof(TAG) - 1);
+        hmac.Write(reinterpret_cast<const unsigned char*>(spend.begin()), spend.size());
+        const unsigned char ctr[4] = {
+            static_cast<unsigned char>(counter >> 24),
+            static_cast<unsigned char>(counter >> 16),
+            static_cast<unsigned char>(counter >> 8),
+            static_cast<unsigned char>(counter),
+        };
+        hmac.Write(ctr, sizeof(ctr));
+        hmac.Finalize(out);
+        CKey view;
+        view.Set(out, out + sizeof(out), /*fCompressedIn=*/true);
+        if (view.IsValid()) {
+            memory_cleanse(out, sizeof(out));
+            return view;
+        }
+    }
+    memory_cleanse(out, sizeof(out));
+    return CKey();
 }
 
 bool CExtKey::Derive(CExtKey &out, unsigned int _nChild) const {

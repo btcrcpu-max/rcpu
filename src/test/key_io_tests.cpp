@@ -237,19 +237,37 @@ BOOST_AUTO_TEST_CASE(confidential_address_hash_mismatch)
     blind_key.MakeNewKey(true);
 
     WitnessV0KeyHash spend(spend_key.GetPubKey());
-    // pubkey from a different key must not match the spend hash.
-    std::string addr = EncodeConfidentialAddress(spend, blind_key.GetPubKey(), Params());
-    BOOST_CHECK(addr.empty());
 
-    // Decoding a crafted payload with a mismatching pubkey must also fail.
-    // We construct a valid-looking address first, then swap the pubkey bytes.
-    std::string valid = EncodeConfidentialAddress(spend, spend_key.GetPubKey(), Params());
-    BOOST_REQUIRE(!valid.empty());
-    // Corrupt one pubkey byte in the data part (near the end, after the version + 20-byte hash).
-    valid[valid.size() - 5] = (valid[valid.size() - 5] == 'a') ? 'b' : 'a';
+    // WAL-01: a pubkey that is not the spend key is a view key and is encoded
+    // with the version 0x01 layout instead of being rejected.
+    std::string addr = EncodeConfidentialAddress(spend, blind_key.GetPubKey(), Params());
+    BOOST_REQUIRE(!addr.empty());
     std::string error_str;
-    CTxDestination decoded = DecodeDestination(valid, error_str);
-    BOOST_CHECK_MESSAGE(!IsValidDestination(decoded), error_str);
+    CTxDestination decoded = DecodeDestination(addr, error_str);
+    BOOST_CHECK_MESSAGE(IsValidDestination(decoded), error_str);
+    const auto* ckh = std::get_if<ConfidentialKeyHash>(&decoded);
+    BOOST_REQUIRE(ckh != nullptr);
+    BOOST_CHECK(ckh->GetSpend() == spend);
+    BOOST_CHECK(ckh->GetBlinding() == blind_key.GetPubKey());
+
+    // Legacy version 0x00 still round-trips unchanged.
+    std::string legacy = EncodeConfidentialAddress(spend, spend_key.GetPubKey(), Params());
+    BOOST_REQUIRE(!legacy.empty());
+    CTxDestination legacy_dest = DecodeDestination(legacy, error_str);
+    BOOST_CHECK_MESSAGE(IsValidDestination(legacy_dest), error_str);
+}
+
+BOOST_AUTO_TEST_CASE(confidential_derive_view_key)
+{
+    CKey spend;
+    spend.MakeNewKey(true);
+    const CKey view = DeriveViewKey(spend);
+    BOOST_REQUIRE(view.IsValid());
+    BOOST_CHECK(view.GetPubKey().IsCompressed());
+    // Deterministic and distinct from the spend key.
+    BOOST_CHECK(DeriveViewKey(spend).GetPubKey() == view.GetPubKey());
+    BOOST_CHECK(view.GetPubKey() != spend.GetPubKey());
+    BOOST_CHECK(!(Span{view} == Span{spend}));
 }
 
 BOOST_AUTO_TEST_SUITE_END()
