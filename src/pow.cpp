@@ -502,6 +502,26 @@ void UpdateDualAlgoState(CBlockIndex& index, const Consensus::Params& params)
         }
     }
 
+    // POW-02: an algorithm that has produced no block since activation has no
+    // last-same block, so the rule above never ran for it and its anchor would
+    // stay at the activation block forever: every block would re-enter ASERT
+    // with the full activation lateness and the target would stay pinned at
+    // powLimit. Mirror the re-anchor so its first block becomes the anchor.
+    // This runs for heights above nActHeight only (the branch above returns
+    // earlier), so the gap is always positive and an immediate first block
+    // simply keeps the activation anchor, exactly like the H-1 rule.
+    if (!params.fPowNoRetargeting && index.nHeight >= params.nDualAlgoNeverMinedFixHeight && nLastSameHeight < 0) {
+        const CBlockIndex* pActivationAnchor = pprev->GetAncestor(nActHeight - 1);
+        if (pActivationAnchor != nullptr &&
+            pprev->GetBlockTime() - pActivationAnchor->GetBlockTime() > params.nDualAlgoReanchorGap) {
+            if (fQhash) {
+                index.nAsertAnchorEtchashHeight = index.nHeight;
+            } else {
+                index.nAsertAnchorRandomXHeight = index.nHeight;
+            }
+        }
+    }
+
     if (fQhash) {
         index.nLastEtchashHeight = index.nHeight;
     } else {
@@ -631,9 +651,24 @@ static uint32_t GetDualAlgoWorkRequired(const CBlockIndex* pindexLast,
                                               nHeightDiff,
                                               powLimit,
                                               params.nASERTHalfLife);
-    if (fReanchor) {
-        // One-time maximum drop. Anything larger requires subsequent blocks
-        // (whose anchor is this resume block) to keep coming slowly.
+    // POW-02: an algorithm that never produced a block keeps the activation
+    // anchor, so the branch above already feeds the FULL activation lateness
+    // into ASERT with nHeightDiff == 0. What is missing is only the one-time
+    // cap: without it the next block recomputes the same lateness from the same
+    // anchor and the target stays pinned at powLimit forever. With a gap below
+    // nDualAlgoReanchorGap, ASERT cannot exceed the cap anyway, so gating here
+    // loses nothing and keeps this rule identical to the H-1 re-anchor.
+    const bool fNeverMinedResume = !params.fPowNoRetargeting &&
+                                   nNextHeight >= params.nDualAlgoNeverMinedFixHeight &&
+                                   nLastSameHeight < 0 &&
+                                   nTimeDiff > params.nDualAlgoReanchorGap;
+    if (fReanchor || fNeverMinedResume) {
+        // One-time maximum drop, relative to the reference target used above.
+        // For a re-anchor that is the last-same block's own target; for a
+        // never-mined resume it is the activation target already halved, so the
+        // effective bound is nDualAlgoMaxDrop / 2 times the pre-activation
+        // target. Anything larger requires subsequent blocks (anchored on this
+        // resume block) to keep coming slowly.
         const uint32_t nMaxDrop = std::max<uint32_t>(1, params.nDualAlgoMaxDrop);
         const arith_uint256 maxDrop{nMaxDrop};
         arith_uint256 maxTarget = refTarget;

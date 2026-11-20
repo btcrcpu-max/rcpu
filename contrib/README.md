@@ -36,7 +36,9 @@ Test and Verify Tools
 Utilities to generate test vectors for the data-driven Bitcoin tests.
 
 ### [Verify-Binaries](/contrib/verify-binaries) ###
-This script attempts to download and verify release checksums from the RCPU release site.
+Bitcoin Core's upstream verification script, **not yet adapted to RCPU**. It
+resolves `bitcoincore.org` download paths and Bitcoin asset names, so it fails
+for RCPU versions; do not use it to verify RCPU downloads until it is ported.
 
 Command Line Tools
 ---------------------

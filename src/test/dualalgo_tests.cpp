@@ -764,6 +764,238 @@ BOOST_AUTO_TEST_CASE(dual_algo_reanchor_discards_banked_lateness)
     BOOST_CHECK(next_bits <= resume_bits);
 }
 
+namespace {
+/** Build a regtest-like chain for the POW-02 never-mined tests.
+ *
+ *  Heights 140..159 are created with the version at the same position in
+ *  `versions`. The caller then moves the tip's timestamp to create the desired
+ *  lateness.
+ */
+std::vector<std::unique_ptr<CBlockIndex>> MakeNeverMinedChain(const Consensus::Params& params,
+                                                              const std::vector<int32_t>& versions)
+{
+    std::vector<std::unique_ptr<CBlockIndex>> chain;
+    const int64_t nBaseTime{1710000000};
+    int height = 140;
+    for (int32_t version : versions) {
+        auto index = std::make_unique<CBlockIndex>();
+        index->nHeight = height;
+        index->pprev = chain.empty() ? nullptr : chain.back().get();
+        index->nTime = nBaseTime + (height - 140) * 300;
+        index->nBits = 0x1f00ffff;
+        index->nVersion = version;
+        index->nChainWork = (index->pprev ? index->pprev->nChainWork : arith_uint256(0)) + GetBlockProof(*index);
+        index->nSecondAlgoCount = ComputeSecondAlgoCount(*index, params.nDualAlgoActivationHeight);
+        UpdateDualAlgoState(*index, params);
+        chain.push_back(std::move(index));
+        ++height;
+    }
+    return chain;
+}
+
+Consensus::Params NeverMinedParams()
+{
+    Consensus::Params params;
+    params.powLimit = uint256S("0x7fffffff00000000000000000000000000000000000000000000000000000000");
+    params.nDualAlgoActivationHeight = 150;
+    params.nDualAlgoTargetSpacing = 600;
+    params.nPowTargetSpacing = 300;
+    params.nASERTHalfLife = 2 * 24 * 60 * 60;
+    params.nEtchashEpochLength = 10;
+    params.fPowAllowMinDifficultyBlocks = false;
+    params.fPowNoRetargeting = false;
+    params.nDualAlgoLatenessFixHeight = 160;
+    params.nDualAlgoReanchorGap = 12 * 60 * 60;
+    params.nDualAlgoMaxDrop = 8;
+    params.nDualAlgoNeverMinedFixHeight = 160;
+    return params;
+}
+} // namespace
+
+// !RCPU (POW-02): an algorithm that has produced no block since activation has
+// no last-same block, so the H-1 re-anchor can never fire for it. Before the
+// fix every block recomputed the full activation lateness and the target stayed
+// pinned at powLimit forever. The first block must be capped by
+// nDualAlgoMaxDrop AND become the new anchor, otherwise the next block falls
+// back into the same trap.
+BOOST_AUTO_TEST_CASE(dual_algo_never_mined_first_block_is_bounded)
+{
+    const Consensus::Params base_params{NeverMinedParams()};
+    // 140..159 are all RandomX: Etchash has never mined.
+    std::vector<int32_t> versions(20, 0);
+    auto chain = MakeNeverMinedChain(base_params, versions);
+    CBlockIndex* tip = chain.back().get();
+
+    BOOST_CHECK_EQUAL(tip->nLastEtchashHeight, -1);
+    BOOST_CHECK_EQUAL(tip->nAsertAnchorEtchashHeight, 149);
+
+    // 60 days of lateness measured from the activation anchor. Two days of
+    // half-life means this saturates at powLimit under the old rule.
+    const int64_t nActivationAnchorTime{1710000000 + (149 - 140) * 300};
+    tip->nTime = nActivationAnchorTime + 60 * 24 * 60 * 60;
+
+    CBlockHeader header;
+    header.nTime = tip->nTime + 600;
+    header.nVersion = BLOCK_VERSION_QHASH;
+
+    // H2 - 1: the old rule releases the banked lateness as powLimit.
+    Consensus::Params params{base_params};
+    params.nDualAlgoNeverMinedFixHeight = 161;
+    const uint32_t old_bits{GetNextWorkRequired(tip, &header, params)};
+    BOOST_CHECK_EQUAL(old_bits, UintToArith256(params.powLimit).GetCompact());
+
+    // H2: the first block is capped and must not be powLimit.
+    params.nDualAlgoNeverMinedFixHeight = 160;
+    const uint32_t resume_bits{GetNextWorkRequired(tip, &header, params)};
+    arith_uint256 refTarget;
+    refTarget.SetCompact(0x1f00ffff);
+    refTarget >>= 1; // activation anchor is made twice as hard
+    const arith_uint256 capped = refTarget * arith_uint256{params.nDualAlgoMaxDrop};
+    BOOST_CHECK_EQUAL(resume_bits, capped.GetCompact());
+    BOOST_CHECK(resume_bits != UintToArith256(params.powLimit).GetCompact());
+
+    // The resume block becomes the Etchash anchor; the other algorithm is
+    // untouched.
+    auto resume = std::make_unique<CBlockIndex>();
+    resume->nHeight = 160;
+    resume->pprev = tip;
+    resume->nTime = header.nTime;
+    resume->nBits = resume_bits;
+    resume->nVersion = BLOCK_VERSION_QHASH;
+    resume->nChainWork = tip->nChainWork + GetBlockProof(*resume);
+    resume->nSecondAlgoCount = ComputeSecondAlgoCount(*resume, params.nDualAlgoActivationHeight);
+    UpdateDualAlgoState(*resume, params);
+    BOOST_CHECK_EQUAL(resume->nLastEtchashHeight, 160);
+    BOOST_CHECK_EQUAL(resume->nAsertAnchorEtchashHeight, 160);
+    BOOST_CHECK_EQUAL(resume->nLastRandomXHeight, 159);
+    BOOST_CHECK_EQUAL(resume->nAsertAnchorRandomXHeight, 149);
+
+    // The next Etchash block must not fall back to the activation anchor.
+    CBlockHeader next_header;
+    next_header.nTime = resume->nTime + 600;
+    next_header.nVersion = BLOCK_VERSION_QHASH;
+    const uint32_t next_bits{GetNextWorkRequired(resume.get(), &next_header, params)};
+    BOOST_CHECK(next_bits != UintToArith256(params.powLimit).GetCompact());
+    BOOST_CHECK(next_bits <= resume_bits);
+}
+
+// Mirror case: Etchash has history and RandomX has never mined.
+BOOST_AUTO_TEST_CASE(dual_algo_never_mined_randomx_mirror)
+{
+    const Consensus::Params params{NeverMinedParams()};
+    std::vector<int32_t> versions(20, BLOCK_VERSION_QHASH);
+    auto chain = MakeNeverMinedChain(params, versions);
+    CBlockIndex* tip = chain.back().get();
+
+    BOOST_CHECK_EQUAL(tip->nLastRandomXHeight, -1);
+    BOOST_CHECK_EQUAL(tip->nAsertAnchorRandomXHeight, 149);
+
+    const int64_t nActivationAnchorTime{1710000000 + (149 - 140) * 300};
+    tip->nTime = nActivationAnchorTime + 60 * 24 * 60 * 60;
+
+    CBlockHeader header;
+    header.nTime = tip->nTime + 600;
+    header.nVersion = 0;
+
+    Consensus::Params no_fix{params};
+    no_fix.nDualAlgoNeverMinedFixHeight = 161;
+    BOOST_CHECK_EQUAL(GetNextWorkRequired(tip, &header, no_fix),
+                      UintToArith256(params.powLimit).GetCompact());
+
+    const uint32_t resume_bits{GetNextWorkRequired(tip, &header, params)};
+    arith_uint256 refTarget;
+    refTarget.SetCompact(0x1f00ffff);
+    refTarget >>= 1;
+    const arith_uint256 capped = refTarget * arith_uint256{params.nDualAlgoMaxDrop};
+    BOOST_CHECK_EQUAL(resume_bits, capped.GetCompact());
+    BOOST_CHECK(resume_bits != UintToArith256(params.powLimit).GetCompact());
+
+    auto resume = std::make_unique<CBlockIndex>();
+    resume->nHeight = 160;
+    resume->pprev = tip;
+    resume->nTime = header.nTime;
+    resume->nBits = resume_bits;
+    resume->nVersion = 0;
+    resume->nChainWork = tip->nChainWork + GetBlockProof(*resume);
+    resume->nSecondAlgoCount = ComputeSecondAlgoCount(*resume, params.nDualAlgoActivationHeight);
+    UpdateDualAlgoState(*resume, params);
+    BOOST_CHECK_EQUAL(resume->nLastRandomXHeight, 160);
+    BOOST_CHECK_EQUAL(resume->nAsertAnchorRandomXHeight, 160);
+    BOOST_CHECK_EQUAL(resume->nLastEtchashHeight, 159);
+}
+
+// Just above the re-anchor threshold the full gap must feed ASERT, and the
+// result must be the uncapped ASERT value (the cap only binds from ~6 days).
+// Truncating the gap to nDualAlgoReanchorGap would produce a different target,
+// so this also guards against the min(gap, 12h) shortcut.
+BOOST_AUTO_TEST_CASE(dual_algo_never_mined_above_threshold_uses_full_gap)
+{
+    const Consensus::Params params{NeverMinedParams()};
+    std::vector<int32_t> versions(20, 0);
+    auto chain = MakeNeverMinedChain(params, versions);
+    CBlockIndex* tip = chain.back().get();
+
+    const int64_t nActivationAnchorTime{1710000000 + (149 - 140) * 300};
+    const int64_t nGap{13 * 60 * 60};
+    tip->nTime = nActivationAnchorTime + nGap;
+
+    CBlockHeader header;
+    header.nTime = tip->nTime + 600;
+    header.nVersion = BLOCK_VERSION_QHASH;
+
+    arith_uint256 refTarget;
+    refTarget.SetCompact(0x1f00ffff);
+    refTarget >>= 1;
+    const uint32_t expected{CalculateASERT(refTarget,
+                                           params.nDualAlgoTargetSpacing,
+                                           nGap,
+                                           /*nHeightDiff=*/0,
+                                           UintToArith256(params.powLimit),
+                                           params.nASERTHalfLife)
+                                .GetCompact()};
+
+    const uint32_t bits{GetNextWorkRequired(tip, &header, params)};
+    BOOST_CHECK_EQUAL(bits, expected);
+
+    const arith_uint256 capped = refTarget * arith_uint256{params.nDualAlgoMaxDrop};
+    BOOST_CHECK(bits != capped.GetCompact());
+    BOOST_CHECK(bits != UintToArith256(params.powLimit).GetCompact());
+}
+
+// Chains without retargeting (and therefore without ASERT) must be untouched:
+// the target stays at the activation-initialised value and no anchor moves.
+BOOST_AUTO_TEST_CASE(dual_algo_never_mined_ignored_without_retargeting)
+{
+    Consensus::Params params{NeverMinedParams()};
+    params.fPowNoRetargeting = true;
+    std::vector<int32_t> versions(20, 0);
+    auto chain = MakeNeverMinedChain(params, versions);
+    CBlockIndex* tip = chain.back().get();
+
+    const int64_t nActivationAnchorTime{1710000000 + (149 - 140) * 300};
+    tip->nTime = nActivationAnchorTime + 60 * 24 * 60 * 60;
+
+    CBlockHeader header;
+    header.nTime = tip->nTime + 600;
+    header.nVersion = BLOCK_VERSION_QHASH;
+
+    arith_uint256 refTarget;
+    refTarget.SetCompact(0x1f00ffff);
+    refTarget >>= 1;
+    BOOST_CHECK_EQUAL(GetNextWorkRequired(tip, &header, params), refTarget.GetCompact());
+
+    auto resume = std::make_unique<CBlockIndex>();
+    resume->nHeight = 160;
+    resume->pprev = tip;
+    resume->nTime = header.nTime;
+    resume->nBits = refTarget.GetCompact();
+    resume->nVersion = BLOCK_VERSION_QHASH;
+    resume->nChainWork = tip->nChainWork + GetBlockProof(*resume);
+    resume->nSecondAlgoCount = ComputeSecondAlgoCount(*resume, params.nDualAlgoActivationHeight);
+    UpdateDualAlgoState(*resume, params);
+    BOOST_CHECK_EQUAL(resume->nAsertAnchorEtchashHeight, 149);
+}
+
 // !RCPU (dual-algo PoW dispatch): HasValidProofOfWork() must follow
 // GetPowAlgoForHeader exactly:
 //   - post-activation + bit-30 + height-known -> Etchash only

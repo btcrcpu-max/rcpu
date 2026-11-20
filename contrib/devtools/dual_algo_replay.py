@@ -6,7 +6,9 @@
 Compares, for every block from the dual-algo activation height to the tip:
 
   * the pre-H-1 rule (absolute ASERT anchored at activation, no re-anchor);
-  * the H-1 rule (re-anchor to the last same-algorithm block, capped drop);
+  * the H-1 rule (re-anchor to the last same-algorithm block, capped drop),
+    including the POW-02 never-mined resume when --never-mined-fix-height is
+    scheduled;
   * the nBits actually stored in the chain.
 
 This is an analysis tool, not consensus code. It needs a node with
@@ -163,8 +165,12 @@ def main():
     ap.add_argument("--start-height", type=int, default=20999,
                     help="first header height to fetch (default: activation - 1)")
     ap.add_argument("--activation-height", type=int, default=21000)
-    ap.add_argument("--fix-height", type=int, default=30000,
-                    help="H-1 activation height used for the new column")
+    ap.add_argument("--fix-height", type=int, default=29909,
+                    help="H-1 activation height used for the new column "
+                         "(default: the value shipped in chainparams)")
+    ap.add_argument("--never-mined-fix-height", type=int, default=2**31 - 1,
+                    help="POW-02 never-mined resume height (default: disabled). "
+                         "Pass the height of the release under test.")
     ap.add_argument("--spacing", type=int, default=600)
     ap.add_argument("--half-life", type=int, default=2 * 24 * 60 * 60)
     ap.add_argument("--reanchor-gap", type=int, default=12 * 60 * 60)
@@ -228,6 +234,7 @@ def main():
     new_mismatch = []
     first_new_diff = None
     reanchors = 0
+    never_mined_resumes = 0
     old_targets = {}
     new_targets = {}
 
@@ -255,6 +262,13 @@ def main():
         gap = time[h - 1] - time[same] if same >= 0 else 0
         reanchor = (h >= args.fix_height and same >= 0
                     and gap > args.reanchor_gap)
+        # POW-02: an algorithm that has never produced a block has no last-same
+        # block, so measure the gap from the activation anchor instead. The
+        # first block then gets the same one-time cap and becomes the anchor,
+        # exactly like a re-anchor.
+        act_gap = time[h - 1] - time[act - 1] if same < 0 else 0
+        never_mined = (h >= args.never_mined_fix_height and same < 0
+                       and act_gap > args.reanchor_gap)
         if reanchor:
             anchor = same
             ref = min(set_compact(bits[same]), pow_limit)
@@ -278,24 +292,31 @@ def main():
             ref = 1 if ref == 0 else min(ref, pow_limit)
             new_t = calculate_asert(ref, args.spacing, tdiff, hdiff,
                                     pow_limit, args.half_life)
+            if never_mined:
+                max_target = min(pow_limit, ref * args.max_drop)
+                if new_t > max_target:
+                    new_t = max_target
+                never_mined_resumes += 1
         new_targets[h] = new_t
         if get_compact(new_t) != bits[h]:
             new_mismatch.append(h)
-        if h < args.fix_height and old_targets[h] != new_targets[h]:
+        if h < min(args.fix_height, args.never_mined_fix_height) and old_targets[h] != new_targets[h]:
             first_new_diff = first_new_diff or h
 
         # Update state for the next height.
         last_h[qhash] = h
-        if reanchor:
+        if reanchor or never_mined:
             anchor_h[qhash] = h
 
     print(f"tip={tip} activation={act} fix={args.fix_height} "
+          f"never_mined_fix={args.never_mined_fix_height} "
           f"reanchor_gap={args.reanchor_gap}s max_drop={args.max_drop}x")
     print(f"old-rule nBits mismatches: {len(old_mismatch)}"
           + (f" (first {old_mismatch[:10]})" if old_mismatch else ""))
     print(f"new-rule nBits mismatches: {len(new_mismatch)}"
           + (f" (first {new_mismatch[:10]})" if new_mismatch else ""))
     print(f"new-rule re-anchors in range: {reanchors}")
+    print(f"new-rule never-mined resumes in range: {never_mined_resumes}")
     if first_new_diff is not None:
         print(f"WARNING: old/new targets differ before the fix height at {first_new_diff}"
               " -- replay code or parameters are inconsistent")

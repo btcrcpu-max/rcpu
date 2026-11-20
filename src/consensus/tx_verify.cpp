@@ -250,21 +250,20 @@ if (g_con_elementsmode && fIsCT) {
                     "bad-txns-rangeproof-too-large",
                     strprintf("rangeproof too large (%d > %d)", out.vchRangeproof.size(), MAX_RANGEPROOF_SIZE));
             }
-            // RCPU hardening (P1-2): from nBanPathAHeight onward, confidential
-            // outputs must carry a nonce that the recipient wallet can actually
-            // parse and rewind:
-            //   - commitment output: non-null, 33-byte 0x03/0x04 and a valid
-            //     curve point (0x03 = compressed pubkey, 0x04 = x-only key);
-            //   - explicit/fee output: null is allowed; a non-null nonce keeps
-            //     the historical 0x03/0x04 shape rule so old Path-A encodings
-            //     stay rejected.
+            // RCPU hardening (P1-2) - two stages, gated by two heights:
+            //   - from nBanPathAHeight: any non-null nonce must have the
+            //     0x03/0x04 + 33-byte shape, so legacy Path-A encodings are
+            //     rejected;
+            //   - from nCTStrictRulesHeight: a commitment output must carry a
+            //     non-null, on-curve nonce (0x03 compressed or 0x04 x-only).
+            //     Explicit/fee outputs may keep a null nonce; a non-null one
+            //     still falls under the shape rule above.
             //
-            // Previously only the shape of non-null nonces was checked. A null
-            // nonce (or a 0x03/0x04 prefix with an off-curve X) passed
-            // consensus, but UnblindConfidentialOutput() cannot rewind it: the
-            // recipient's wallet reports zero while the payer, who knows the
-            // blind factor, can reclaim the output. That is a payment-forgery
-            // primitive; reject it at the consensus layer.
+            // Rationale: a null nonce, or a 0x03/0x04 prefix over an off-curve
+            // X, passed the shape-only rule but UnblindConfidentialOutput()
+            // cannot rewind it: the recipient's wallet reports zero while the
+            // payer, who knows the blind factor, can reclaim the output. That is
+            // a payment-forgery primitive; reject it at the consensus layer.
             const bool fStrictRules = nSpendHeight >= nCTStrictRulesHeight;
             if (fStrictRules && out.nValue.IsCommitment()) {
                 const auto& nc = out.nNonce.vchCommitment;

@@ -1,3 +1,9 @@
+> **Not adapted to RCPU.** This directory is inherited from Bitcoin Core. The
+> script resolves `bitcoincore.org` URLs, Bitcoin asset names (`bitcoin-core-*`)
+> and Bitcoin's multi-signer trust model. Running it with an RCPU version fails;
+> it never verifies an RCPU release. Treat it as upstream reference code only
+> until it is ported to the RCPU release layout and the single RCPU release key.
+
 ### Verify Binaries
 
 #### Preparation

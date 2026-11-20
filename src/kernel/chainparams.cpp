@@ -283,6 +283,10 @@ consensus.fPowRandomX = true;
         consensus.nDualAlgoLatenessFixHeight = 29909;
         consensus.nDualAlgoReanchorGap = 12 * 60 * 60;
         consensus.nDualAlgoMaxDrop = 8;
+        // POW-02: set to TIP + 2016 in the release that ships the never-mined
+        // resume rule. INT_MAX here means "not scheduled yet" and keeps the
+        // shipped consensus unchanged until an explicit height is chosen.
+        consensus.nDualAlgoNeverMinedFixHeight = std::numeric_limits<int>::max();
         // !RCPU (dual-algo etchash): the bit-30 algorithm is Etchash (ECIP-1099
         // light verification). Epoch length 6000 blocks: with both algorithms
         // mining, ~20.8 days per epoch at the combined ~5-minute cadence
@@ -434,6 +438,8 @@ consensus.fPowRandomX = true;
         consensus.nDualAlgoLatenessFixHeight = 29909;
         consensus.nDualAlgoReanchorGap = 12 * 60 * 60;
         consensus.nDualAlgoMaxDrop = 8;
+        // POW-02: scheduled together with mainnet (same release, same height).
+        consensus.nDualAlgoNeverMinedFixHeight = std::numeric_limits<int>::max();
         // !RCPU (dual-algo etchash): testnet mirrors mainnet etchash params.
         consensus.nEtchashEpochLength = 6000;
         // P2-7: same standard big-endian rule as mainnet.
@@ -571,6 +577,9 @@ public:
         consensus.nDualAlgoLatenessFixHeight = 0;
         consensus.nDualAlgoReanchorGap = 60 * 60;
         consensus.nDualAlgoMaxDrop = 8;
+        // POW-02: active from the first post-activation block on regtest so
+        // functional tests can drive the never-mined resume path.
+        consensus.nDualAlgoNeverMinedFixHeight = 0;
         // !RCPU (dual-algo etchash): regtest uses a tiny epoch (10 blocks) so
         // functional tests cross multiple epoch boundaries cheaply.
         consensus.nEtchashEpochLength = 10;

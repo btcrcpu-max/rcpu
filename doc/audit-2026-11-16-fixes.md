@@ -127,7 +127,11 @@ fixed during this build: `base_uint<256>::GetCompact` (H-1 test) and
 
 Mainnet replay against a synced S1 node (tip 27,883):
 
-- with `--fix-height 29899` (TIP + 2016): 0 old/new mismatches, 0 re-anchors;
+- with `--fix-height 29899` (TIP + 2016 at the time of that replay): 0 old/new
+  mismatches, 0 re-anchors. **Historical value:** the height actually shipped in
+  `chainparams.cpp` is `29909`. `29899` is the provisional height this replay was
+  run with and is kept as a record of what was executed; do not treat it as the
+  live parameter.
 - with `--fix-height 21000`: exactly 1 historical re-anchor at height 27,104,
   after a 14.36h Etchash gap; the resume target is ~1.23x the last Etchash
   target, far below the 8x cap and not `powLimit`;

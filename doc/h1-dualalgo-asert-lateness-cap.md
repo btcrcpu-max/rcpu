@@ -158,40 +158,36 @@ Recommended rollout:
 
 ## 6. Test plan
 
-Unit tests (`src/test/dualalgo_tests.cpp`):
+Implemented in `src/test/dualalgo_tests.cpp`:
 
-- synthetic params with `nDualAlgoActivationHeight = 10`, `spacing = 600`,
-  `halfLife = 172800`; build a chain with 200 RandomX blocks and no Etchash
-  blocks, timestamps spanning 30 days;
-- assert the first Etchash block's target is bounded by the chosen rule
-  (Option A: `refTarget * 2^(L/halfLife)`, not `powLimit`; Option B: at most
-  `nDualAlgoMaxDrop` below the last Etchash target);
-- assert the number of blocks whose target stays at the floor is at most
-  `L/600` (A) or that the target recovers monotonically after the re-anchor
-  (B);
-- assert pre-activation `nBits` is unchanged for a chain that never crosses
-  the fix height;
-- assert reorg across the fix height and restart (`LoadBlockIndex`) produce the
-  same `nBits` as a fresh sync.
+- `dual_algo_reanchor_discards_banked_lateness`: an algorithm that mined once at
+  activation and then went idle for 60 days is capped by `nDualAlgoMaxDrop`, and
+  the resume block becomes its new anchor;
+- `dual_algo_never_mined_first_block_is_bounded` (POW-02): Etchash never mines.
+  The old rule releases the full lateness as `powLimit`; the new rule caps the
+  first block at `nDualAlgoMaxDrop` above the activation reference, anchors on
+  it, and the second block no longer falls back to `powLimit`;
+- `dual_algo_never_mined_randomx_mirror`: the same scenario with a never-mined
+  RandomX;
+- `dual_algo_never_mined_above_threshold_uses_full_gap`: 13h of lateness must
+  feed the FULL gap into ASERT and must not be capped. This rejects the
+  `min(gap, 12h)` shortcut, which would report a ~1.19x change;
+- `dual_algo_never_mined_ignored_without_retargeting`: chains without ASERT
+  (`fPowNoRetargeting`) are unchanged.
 
-Functional test (`test/functional/feature_dualalgo_lateness.py`):
+Still required before activation:
 
-- regtest, dual-algo activation at 150, fix height 0;
-- mine 200 RandomX blocks, then an Etchash block; compare its `nBits` with the
-  value computed by the unit test;
-- use `getblocktemplate {"algo":"etchash"}` and verify the target does not
-  equal `powLimit` after a simulated gap (use `setmocktime` to advance time
-  without mining);
-- verify an old-rule node (if built) diverges only after a low-difficulty
-  event, as expected for a hard fork.
+- a functional test driving the resume path over RPC (`getblocktemplate` with
+  `{"algo":"etchash"}` on regtest, fix height 0, activation 150);
+- a reorg across the fix height and a `LoadBlockIndex` restart comparison
+  against a fresh sync;
+- the mainnet header replay described below.
 
 Mainnet replay:
 
-- take headers 21000..tip from a synced node, run the new `GetNextWorkRequired`
-  for each height, record every height where `nBits` changes and the resulting
-  difficulty jump;
-- if the jump is large (for example the first post-activation block becomes
-  much harder), warn pools and miners; consider a slightly larger cap/drop.
+- run `contrib/devtools/dual_algo_replay.py --never-mined-fix-height <H2>`
+  against a synced node and publish the number of headers whose `nBits`
+  changes, plus the count of never-mined resumes.
 
 ## 7. Operational checks before activation
 
@@ -221,10 +217,12 @@ Mainnet replay:
 
 Consensus parameters (`src/consensus/params.h`):
 
-- `nDualAlgoLatenessFixHeight` — activation height; `INT_MAX` = old rules.
-  Mainnet/testnet ship as `INT_MAX` on purpose: this is a hard fork, so the
-  release manager must set `TIP + 2016` (and announce it) at release time.
-  Regtest is `0` so tests exercise the rule.
+- `nDualAlgoLatenessFixHeight` — activation height. Mainnet and testnet ship
+  `29909`; regtest is `0` so tests exercise the rule. This height is already
+  scheduled and must not be moved again.
+- `nDualAlgoNeverMinedFixHeight` — POW-02 resume height for an algorithm that
+  has never produced a block. `INT_MAX` means "not scheduled"; the release that
+  ships it must set `TIP + 2016` on mainnet and testnet. Regtest is `0`.
 - `nDualAlgoReanchorGap` — 12h on mainnet/testnet, 1h on regtest.
 - `nDualAlgoMaxDrop` — 8 on all RCPU chains.
 
