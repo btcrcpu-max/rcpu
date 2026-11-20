@@ -628,6 +628,10 @@ jobs:
         # the job instead of leaving a silently incomplete release behind.
         env:
           GH_TOKEN: ${{ github.token }}
+          # This job never checks out the repository, so `gh` has no git remote
+          # to infer the target from; without GH_REPO it aborts with
+          # "fatal: not a git repository". Pin the repository explicitly.
+          GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
           gh release view "$GITHUB_REF_NAME" \
