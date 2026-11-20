@@ -2,7 +2,7 @@
 
 RCPU Core release notes live in [doc/release-notes/](release-notes/):
 
-- [v1.4.18](release-notes/v1.4.18.md) — Consensus: the first block of a never-mined PoW algorithm re-anchors instead of staying at `powLimit` (POW-02); the activation height is set at tag time to `tip + 2016`. Wallet: confidential addresses (`0x01`) blind to a derived view key, with `0x00` still accepted. Upgrade before `nDualAlgoNeverMinedFixHeight`.
+- [v1.4.18](release-notes/v1.4.18.md) — Consensus: the first block of a never-mined PoW algorithm can re-anchor instead of staying at `powLimit` (POW-02); the rule ships **inactive** (`nDualAlgoNeverMinedFixHeight = INT_MAX`) and is activated in a follow-up release. Wallet: confidential addresses (`0x01`) blind to a derived view key, with `0x00` still accepted.
 - [v1.4.17](release-notes/v1.4.17.md) — Re-release of v1.4.16 with the release tag signed and the signing gates restored to fail-closed. Same consensus code; upgrade before height 29,909.
 - [v1.4.16](release-notes/v1.4.16.md) — Hardening follow-up: BIP9 thresholds realigned to the 4032-block window, checkpoints removed to unblock headers-first IBD, tag-signature gate restored and release signing made fail-closed again. Upgrade before height 29,909.
 - [v1.4.15](release-notes/v1.4.15.md) — Cleanup: the unused qhash second-algorithm path is removed (bit-30 blocks are Etchash on every live chain), and `computerandomxhash` now dispatches bit-30 headers by activation height instead of always using Etchash. No consensus change.
