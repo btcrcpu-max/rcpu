@@ -678,4 +678,6 @@ jobs:
             --expected-dir linux \
             --expected-dir windows \
             --workdir readback \
+            --allow-extra 'rcpu-qt-*' \
+            --allow-extra 'SHA256SUMS-*.txt' \
             --signature-key RCPU-DEV-GPG-KEY.asc
