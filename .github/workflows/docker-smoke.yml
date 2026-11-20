@@ -82,6 +82,32 @@ jobs:
           grep -q 'COPY --from=builder /usr/local/bin/rcpud' "$f"
           grep -q 'CMD \["rcpud", "-daemon=0", "-printtoconsole"\]' "$f"
 
+      - name: Unit-test the release read-back
+        # The v1.4.18 publish failed in this logic after uploading every asset
+        # because it had never run outside a tag build. The audit is now a
+        # module with offline tests, executed on every pull request.
+        run: python3 contrib/verify-binaries/test_readback.py
+
+      - name: Every gh invocation pins --repo
+        # gh infers OWNER/REPO from a git remote. In a job without a checkout
+        # that inference fails with "fatal: not a git repository", which is how
+        # the release job died one step after publishing. Requiring --repo makes
+        # the dependency explicit instead of ambient.
+        run: |
+          set -euo pipefail
+          hits=$(grep -rnE '^[[:space:]]*gh (release|api|workflow|run|pr|repo) ' .github/workflows/ || true)
+          if [ -z "$hits" ]; then
+            echo "no gh invocations found"
+            exit 0
+          fi
+          bad=$(printf '%s\n' "$hits" | grep -v -- '--repo' || true)
+          if [ -n "$bad" ]; then
+            echo "$bad"
+            echo "::error::every gh invocation in .github/workflows must pass --repo"
+            exit 1
+          fi
+          printf '%s\n' "$hits" | sed 's/^/ok: /'
+
   # ------------------------------------------------------------------
   # Build the repository-root Dockerfile for real and boot the image
   # ------------------------------------------------------------------
