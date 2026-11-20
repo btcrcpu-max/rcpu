@@ -328,6 +328,15 @@ static void ListTransactions(const CWallet& wallet, const CWalletTx& wtx, int nM
 
     bool involvesWatchonly = CachedTxIsFromMe(wallet, wtx, ISMINE_WATCH_ONLY);
 
+    // RCPU CT: "amount" stays for compatibility, but an entry whose amount
+    // could not be unblinded is flagged instead of silently reading as 0.
+    const auto push_amount_status = [&](UniValue& entry, int vout) {
+        const CTOutputInfo info = GetCTOutputInfo(wallet, wtx, static_cast<unsigned int>(vout));
+        entry.pushKV("amount_status", CTAmountStatusName(info.status));
+        entry.pushKV("amount_known", info.amount.has_value());
+        if (!info.amount) entry.pushKV("unreadable", true);
+    };
+
     // Sent
     if (!filter_label.has_value())
     {
@@ -345,6 +354,7 @@ static void ListTransactions(const CWallet& wallet, const CWalletTx& wtx, int nM
                 entry.pushKV("label", address_book_entry->GetLabel());
             }
             entry.pushKV("vout", s.vout);
+            push_amount_status(entry, s.vout);
             entry.pushKV("fee", ValueFromAmount(-nFee));
             if (fLong)
                 WalletTxToJSON(wallet, wtx, entry);
@@ -389,6 +399,7 @@ static void ListTransactions(const CWallet& wallet, const CWalletTx& wtx, int nM
                 entry.pushKV("label", label);
             }
             entry.pushKV("vout", r.vout);
+            push_amount_status(entry, r.vout);
             entry.pushKV("abandoned", wtx.isAbandoned());
             if (fLong)
                 WalletTxToJSON(wallet, wtx, entry);
@@ -786,6 +797,29 @@ RPCHelpMan gettransaction()
     UniValue details(UniValue::VARR);
     ListTransactions(*pwallet, wtx, 0, false, details, filter, /*filter_label=*/std::nullopt);
     entry.pushKV("details", details);
+
+    // RCPU CT: the legacy "amount" above is 0 when this wallet cannot unblind
+    // an output. Publish the per-output status so clients never mistake that
+    // 0 for a real value.
+    UniValue ct_outputs(UniValue::VARR);
+    size_t unknown_outputs = 0;
+    for (unsigned int i = 0; i < wtx.tx->vout.size(); ++i) {
+        const CTOutputInfo info = GetCTOutputInfo(*pwallet, wtx, i);
+        UniValue out(UniValue::VOBJ);
+        out.pushKV("vout", (int)i);
+        out.pushKV("status", CTAmountStatusName(info.status));
+        if (info.amount) {
+            out.pushKV("amount", ValueFromAmount(*info.amount));
+        } else {
+            out.pushKV("amount_known", false);
+            ++unknown_outputs;
+        }
+        ct_outputs.push_back(std::move(out));
+    }
+    entry.pushKV("ct_outputs", std::move(ct_outputs));
+    entry.pushKV("amount_status",
+                 unknown_outputs == 0 ? "known"
+                                      : (unknown_outputs == wtx.tx->vout.size() ? "unknown" : "partial"));
 
     entry.pushKV("hex", EncodeHexTx(*wtx.tx));
 

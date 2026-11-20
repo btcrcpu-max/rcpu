@@ -117,6 +117,15 @@ public:
     /** Whether the transaction was sent/received with a watch-only address */
     bool involvesWatchAddress;
 
+    /** RCPU CT: how this amount was obtained ("explicit", "known",
+        "known_cached", "locked", "no_key", "unreadable"). Empty for records
+        built before the wallet layer reported a status. */
+    QString amount_status;
+
+    /** RCPU CT: false when this wallet cannot value the amount. Views must
+        render that as unknown, never as 0. */
+    bool amount_known{true};
+
     /** Return the unique identifier for this transaction (part) */
     QString getTxHash() const;
 

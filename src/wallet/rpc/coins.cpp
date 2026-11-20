@@ -499,6 +499,36 @@ RPCHelpMan getbalances()
         balances.pushKV("watchonly", balances_watchonly);
     }
 
+    // RCPU CT: outputs this wallet owns but cannot value right now (locked
+    // wallet, watch-only, or an unreadable commitment). They are excluded from
+    // the balances above, so report them instead of letting a locked wallet
+    // look empty.
+    size_t unreadable_outputs{0};
+    size_t locked_outputs{0};
+    for (const auto& wallet_entry : wallet.mapWallet) {
+        const CWalletTx& wtx = wallet_entry.second;
+        if (wallet.GetTxDepthInMainChain(wtx) < 0) continue;
+        if (wallet.IsTxImmatureCoinBase(wtx)) continue;
+        for (unsigned int i = 0; i < wtx.tx->vout.size(); ++i) {
+            const CTxOut& txout = wtx.tx->vout[i];
+            if (txout.nValue.IsExplicit()) continue;
+            if (!wallet.IsMine(txout)) continue;
+            const CTOutputInfo info = GetCTOutputInfo(wallet, wtx, i);
+            if (info.amount) continue;
+            ++unreadable_outputs;
+            if (info.status == CTAmountStatus::Locked) ++locked_outputs;
+        }
+    }
+    {
+        UniValue ct{UniValue::VOBJ};
+        ct.pushKV("unreadable_outputs", (int64_t)unreadable_outputs);
+        ct.pushKV("locked_outputs", (int64_t)locked_outputs);
+        //! No amount is reported: summing 0 for these is exactly the bug this
+        //! field exists to avoid. Zero unreadable outputs means "known" trivially.
+        ct.pushKV("amount_known", unreadable_outputs == 0);
+        balances.pushKV("ct_unreadable", ct);
+    }
+
     AppendLastProcessedBlock(balances, wallet);
     return balances;
 },
@@ -713,20 +743,18 @@ RPCHelpMan listunspent()
         }
 
         entry.pushKV("scriptPubKey", HexStr(scriptPubKey));
-CAmount nAmount;
-        uint256 blind;
-        if (!UnblindConfidentialOutput(*pwallet, out.txout, nAmount, blind)) {
-            nAmount = 0;
-            // P2-4: a locked wallet cannot unblind. Use the plaintext value
-            // cached while it was unlocked (same mapValue key as AvailableCoins).
-            if (const CWalletTx* wtx = pwallet->GetWalletTx(out.outpoint.hash)) {
-                const auto unblind_it = wtx->mapValue.find("ct_unblind_" + std::to_string(out.outpoint.n));
-                if (unblind_it != wtx->mapValue.end()) {
-                    nAmount = LocaleIndependentAtoi<CAmount>(unblind_it->second);
-                }
-            }
+        // RCPU CT: keep "amount" for compatibility but state whether it is a
+        // real value; callers must ignore it when amount_known is false.
+        CTOutputInfo ct_info;
+        if (const CWalletTx* wtx = pwallet->GetWalletTx(out.outpoint.hash)) {
+            ct_info = GetCTOutputInfo(*pwallet, *wtx, out.outpoint.n);
+        } else {
+            ct_info = GetCTOutputInfo(*pwallet, out.txout);
         }
+        const CAmount nAmount = ct_info.amount.value_or(0);
         entry.pushKV("amount", ValueFromAmount(nAmount));
+        entry.pushKV("ct_status", CTAmountStatusName(ct_info.status));
+        entry.pushKV("amount_known", ct_info.amount.has_value());
         entry.pushKV("confirmations", out.depth);
         if (!out.depth) {
             size_t ancestor_count, descendant_count, ancestor_size;

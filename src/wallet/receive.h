@@ -10,6 +10,9 @@
 #include <wallet/types.h>
 #include <wallet/wallet.h>
 
+#include <cstdint>
+#include <optional>
+
 namespace wallet {
 isminetype InputIsMine(const CWallet& wallet, const CTxIn& txin) EXCLUSIVE_LOCKS_REQUIRED(wallet.cs_wallet);
 
@@ -39,6 +42,37 @@ bool AllInputsMine(const CWallet& wallet, const CTransaction& tx, const isminefi
  */
 bool UnblindConfidentialOutput(const CWallet& wallet, const CTxOut& txout,
                                CAmount& value, uint256& blind);
+
+/**
+ * RCPU CT: why (and whether) the wallet can value a confidential output.
+ *
+ * Callers must render `std::nullopt` as "unknown", never as 0 -- that
+ * conflation is exactly what made a locked or watch-only wallet report a
+ * zero balance for outputs it owns.
+ */
+enum class CTAmountStatus : uint8_t {
+    Explicit = 0, //!< plaintext amount, always readable
+    Known,        //!< confidential, unblinded with our key just now
+    KnownCached,  //!< confidential, plaintext recovered from wallet metadata
+    Locked,       //!< encrypted wallet is locked, key unavailable
+    NoKey,        //!< watch-only, or no key can ever unblind this script
+    Unreadable,   //!< key present but the output still cannot be unblinded
+};
+
+struct CTOutputInfo {
+    CTAmountStatus status{CTAmountStatus::Unreadable};
+    std::optional<CAmount> amount{};
+};
+
+//! Stable identifier for RPC / logs ("explicit", "known", "locked", ...).
+const char* CTAmountStatusName(CTAmountStatus status);
+
+//! Value one output, without consulting wallet metadata.
+CTOutputInfo GetCTOutputInfo(const CWallet& wallet, const CTxOut& txout);
+
+//! Value one output of a wallet transaction, falling back to the plaintext
+//! amount cached while the wallet was unlocked (unencrypted wallets only).
+CTOutputInfo GetCTOutputInfo(const CWallet& wallet, const CWalletTx& wtx, unsigned int n);
 
 CAmount OutputGetCredit(const CWallet& wallet, const CTxOut& txout, const isminefilter& filter);
 CAmount TxGetCredit(const CWallet& wallet, const CTransaction& tx, const isminefilter& filter);

@@ -416,6 +416,10 @@ std::vector<CTxDestination> txout_address;
     //! aligned with tx->vout. Replaces GUI-side GetOutputAmount lookups so
     //! history/lists show real values for both blinding strategies.
     std::vector<CAmount> txout_amount;
+    //! RCPU CT: per-output wallet::CTAmountStatus, aligned with txout_amount.
+    //! Lets the GUI tell "unknown amount" apart from a truthful zero instead
+    //! of guessing from a 0 in txout_amount.
+    std::vector<uint8_t> txout_status;
     CAmount credit;
     CAmount debit;
     CAmount change;

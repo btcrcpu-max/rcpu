@@ -446,6 +446,10 @@ QVariant TransactionTableModel::addressColor(const TransactionRecord *wtx) const
 
 QString TransactionTableModel::formatTxAmount(const TransactionRecord *wtx, bool showUnconfirmed, BitcoinUnits::SeparatorStyle separators) const
 {
+    // RCPU CT: an amount the wallet cannot unblind is unknown, not zero.
+    if (!wtx->amount_known) {
+        return QStringLiteral("—");
+    }
     QString str = BitcoinUnits::format(walletModel->getOptionsModel()->getDisplayUnit(), wtx->credit + wtx->debit, false, separators);
     if(showUnconfirmed)
     {
@@ -505,6 +509,17 @@ QString TransactionTableModel::formatTooltip(const TransactionRecord *rec) const
        rec->type==TransactionRecord::SendToAddress || rec->type==TransactionRecord::RecvWithAddress)
     {
         tooltip += QString(" ") + formatTxToAddress(rec, true);
+    }
+    // RCPU CT: explain why the amount is shown as "—" instead of a number.
+    if (!rec->amount_known) {
+        tooltip += QString("\n");
+        if (rec->amount_status == QStringLiteral("locked")) {
+            tooltip += tr("Amount hidden: the wallet is locked. Unlock it to read this confidential amount.");
+        } else if (rec->amount_status == QStringLiteral("no_key")) {
+            tooltip += tr("Amount unknown: this wallet has no key for this output (watch-only).");
+        } else {
+            tooltip += tr("Amount unreadable: this wallet cannot decrypt this confidential amount. It is not zero.");
+        }
     }
     return tooltip;
 }
@@ -580,6 +595,10 @@ QVariant TransactionTableModel::data(const QModelIndex &index, int role) const
         if(!rec->status.countsForBalance && rec->status.status != TransactionStatus::Immature)
         {
             return COLOR_UNCONFIRMED;
+        }
+        if(index.column() == Amount && !rec->amount_known)
+        {
+            return COLOR_CT_AMOUNT_UNKNOWN;
         }
         if(index.column() == Amount && (rec->credit+rec->debit) < 0)
         {

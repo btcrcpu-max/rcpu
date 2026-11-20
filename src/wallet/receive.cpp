@@ -243,6 +243,64 @@ bool UnblindConfidentialOutput(const CWallet& wallet, const CTxOut& txout,
     return UnblindValueWithKey(key, txout.nValue, txout.nNonce, txout.vchRangeproof, value, blind);
 }
 
+const char* CTAmountStatusName(CTAmountStatus status)
+{
+    switch (status) {
+    case CTAmountStatus::Explicit: return "explicit";
+    case CTAmountStatus::Known: return "known";
+    case CTAmountStatus::KnownCached: return "known_cached";
+    case CTAmountStatus::Locked: return "locked";
+    case CTAmountStatus::NoKey: return "no_key";
+    case CTAmountStatus::Unreadable: return "unreadable";
+    } // no default: -Wswitch flags a new value that is not named here
+    return "unreadable";
+}
+
+CTOutputInfo GetCTOutputInfo(const CWallet& wallet, const CTxOut& txout)
+{
+    if (txout.nValue.IsExplicit()) {
+        return {CTAmountStatus::Explicit, txout.nValue.GetAmount()};
+    }
+    CAmount value{0};
+    uint256 blind;
+    if (UnblindConfidentialOutput(wallet, txout, value, blind)) {
+        if (!MoneyRange(value)) return {CTAmountStatus::Unreadable, std::nullopt};
+        return {CTAmountStatus::Known, value};
+    }
+    // The unblind above already failed; classify why, using only facts that
+    // are cheap and reliable: whether we ever had a key, and whether the
+    // wallet is currently locked. Anything else is reported as unreadable
+    // rather than guessed at -- a valid commitment to a foreign key and a
+    // malformed one look identical from here.
+    LOCK(wallet.cs_wallet);
+    if (!(wallet.IsMine(txout) & ISMINE_SPENDABLE)) {
+        return {CTAmountStatus::NoKey, std::nullopt};
+    }
+    if (wallet.IsLocked()) {
+        return {CTAmountStatus::Locked, std::nullopt};
+    }
+    return {CTAmountStatus::Unreadable, std::nullopt};
+}
+
+CTOutputInfo GetCTOutputInfo(const CWallet& wallet, const CWalletTx& wtx, unsigned int n)
+{
+    if (n >= wtx.tx->vout.size()) return {CTAmountStatus::Unreadable, std::nullopt};
+    CTOutputInfo info = GetCTOutputInfo(wallet, wtx.tx->vout[n]);
+    if (info.status == CTAmountStatus::Known || info.status == CTAmountStatus::Explicit) {
+        return info;
+    }
+    LOCK(wallet.cs_wallet);
+    // RCPU CT (P2-4): an unencrypted wallet persists the plaintext amount when
+    // it locks, so a restart still shows it. Encrypted wallets purge this on
+    // purpose (M-5), which is why they surface `Locked` instead.
+    const auto it = wtx.mapValue.find(strprintf("ct_unblind_%u", n));
+    if (it != wtx.mapValue.end()) {
+        const CAmount cached = LocaleIndependentAtoi<CAmount>(it->second);
+        if (MoneyRange(cached)) return {CTAmountStatus::KnownCached, cached};
+    }
+    return info;
+}
+
 CAmount OutputGetCredit(const CWallet& wallet, const CTxOut& txout, const isminefilter& filter)
 {
     CAmount value;

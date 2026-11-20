@@ -126,6 +126,10 @@ static RPCHelpMan getwalletinfo()
     obj.pushKV("paytxfee", ValueFromAmount(pwallet->m_pay_tx_fee.GetFeePerK()));
     obj.pushKV("private_keys_enabled", !pwallet->IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS));
     obj.pushKV("avoid_reuse", pwallet->IsWalletFlagSet(WALLET_FLAG_AVOID_REUSE));
+    obj.pushKV("locked", pwallet->IsLocked());
+    // RCPU CT: a locked encrypted wallet purges its plaintext amounts (M-5),
+    // so confidential values are not visible until it is unlocked.
+    obj.pushKV("ct_amounts_visible", !pwallet->IsLocked());
     if (pwallet->IsScanning()) {
         UniValue scanning(UniValue::VOBJ);
         scanning.pushKV("duration", Ticks<std::chrono::seconds>(pwallet->ScanningDuration()));
