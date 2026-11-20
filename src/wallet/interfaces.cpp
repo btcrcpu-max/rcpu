@@ -48,6 +48,7 @@ using interfaces::WalletOrderForm;
 using interfaces::WalletTx;
 using interfaces::WalletTxOut;
 using interfaces::WalletTxStatus;
+using interfaces::WalletUnreadableOutput;
 using interfaces::WalletValueMap;
 
 namespace wallet {
@@ -327,6 +328,28 @@ public:
     {
         LOCK(m_wallet->cs_wallet);
         return m_wallet->ListLockedCoins(outputs);
+    }
+    std::vector<WalletUnreadableOutput> listUnreadableOutputs() override
+    {
+        LOCK(m_wallet->cs_wallet);
+        std::vector<WalletUnreadableOutput> result;
+        for (const auto& entry : m_wallet->mapWallet) {
+            const CWalletTx& wtx = entry.second;
+            const int depth = m_wallet->GetTxDepthInMainChain(wtx);
+            if (depth < 0) continue;
+            if (m_wallet->IsTxImmatureCoinBase(wtx)) continue;
+            for (unsigned int i = 0; i < wtx.tx->vout.size(); ++i) {
+                const CTxOut& txout = wtx.tx->vout[i];
+                if (txout.nValue.IsExplicit()) continue;
+                if (!m_wallet->IsMine(txout)) continue;
+                const CTOutputInfo info = GetCTOutputInfo(*m_wallet, wtx, i);
+                if (info.amount) continue;
+                const COutPoint outpoint(wtx.GetHash(), i);
+                if (m_wallet->IsSpent(outpoint)) continue;
+                result.push_back({outpoint, static_cast<uint8_t>(info.status), wtx.GetTxTime(), depth});
+            }
+        }
+        return result;
     }
 util::Result<CTransactionRef> createTransaction(const std::vector<CRecipient>& recipients,
         const CCoinControl& coin_control,

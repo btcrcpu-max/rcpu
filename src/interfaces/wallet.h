@@ -51,6 +51,7 @@ struct WalletBalances;
 struct WalletTx;
 struct WalletTxOut;
 struct WalletTxStatus;
+struct WalletUnreadableOutput;
 struct WalletMigrationResult;
 
 using WalletOrderForm = std::vector<std::pair<std::string, std::string>>;
@@ -145,6 +146,11 @@ public:
 
     //! List locked coins.
     virtual void listLockedCoins(std::vector<COutPoint>& outputs) = 0;
+
+    //! RCPU CT: list unspent outputs this wallet owns but cannot value right
+    //! now (locked wallet, watch-only, or an unreadable commitment). Only for
+    //! display -- these outputs are never selectable for spending.
+    virtual std::vector<WalletUnreadableOutput> listUnreadableOutputs() = 0;
 
     //! Create transaction.
     virtual util::Result<CTransactionRef> createTransaction(const std::vector<wallet::CRecipient>& recipients,
@@ -451,6 +457,16 @@ struct WalletTxOut
     int64_t time;
     int depth_in_main_chain = -1;
     bool is_spent = false;
+};
+
+//! RCPU CT: an unspent output the wallet owns but cannot value right now.
+struct WalletUnreadableOutput
+{
+    COutPoint outpoint;
+    //! wallet::CTAmountStatus, kept as uint8_t so callers do not need wallet headers
+    uint8_t status;
+    int64_t time;
+    int depth_in_main_chain;
 };
 
 //! Migrated wallet info

@@ -45,6 +45,10 @@ public:
     /** Set whether to show conflicted transactions. */
     void setShowInactive(bool showInactive);
 
+    /** RCPU CT: show only transactions with at least one output the wallet
+        cannot value (amount_known == false). */
+    void setShowUnreadableOnly(bool showUnreadableOnly);
+
 protected:
     bool filterAcceptsRow(int source_row, const QModelIndex & source_parent) const override;
 
@@ -56,6 +60,7 @@ private:
     WatchOnlyFilter watchOnlyFilter{WatchOnlyFilter_All};
     CAmount minAmount{0};
     bool showInactive{true};
+    bool m_show_unreadable_only{false};
 };
 
 #endif // BITCOIN_QT_TRANSACTIONFILTERPROXY_H
