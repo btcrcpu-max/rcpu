@@ -453,7 +453,7 @@ jobs:
             SHA256SUMS-windows.txt
 
   release:
-    needs: [build-linux, build-windows]
+    needs: [tag-guard, build-linux, build-windows]
     # M-9: publishing requires a signed tag, never a bare branch. A manual retry
     # starts from the same tag ref and tag-guard re-verifies its signature, so
     # the retry path cannot bypass the guard.
