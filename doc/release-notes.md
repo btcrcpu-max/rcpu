@@ -2,6 +2,7 @@
 
 RCPU Core release notes live in [doc/release-notes/](release-notes/):
 
+- [v1.4.21](release-notes/v1.4.21.md) — GUI: the "wait for confirmation" error shown when a send can only be funded by unconfirmed confidential outputs now has a Simplified Chinese translation ("此笔转帐需要等上一笔转帐确认后才能发送"). English builds are unchanged. No consensus, wallet, or RPC behavior change.
 - [v1.4.20](release-notes/v1.4.20.md) — GUI: the Overview page's confidential-amount unlock button and its locked-wallet tooltip now have Simplified Chinese translations. The button reads "解锁机密金额" instead of falling back to English. No consensus, wallet, or RPC behavior change.
 - [v1.4.19](release-notes/v1.4.19.md) — Wallet: confidential outputs whose amount the wallet cannot read are no longer counted as 0. They are reported as "amount unknown" across `gettransaction`, `listtransactions`/`listsinceblock`, `listunspent`, `getbalances` and `getwalletinfo`, surfaced greyed-out in the GUI (transaction list, details, coin control), filterable with a new "Needs review" view, and exportable for support via the new `listunreadableoutputs` RPC. No consensus change; no output becomes spendable.
 - [v1.4.18](release-notes/v1.4.18.md) — Consensus: the first block of a never-mined PoW algorithm can re-anchor instead of staying at `powLimit` (POW-02); the rule ships **inactive** (`nDualAlgoNeverMinedFixHeight = INT_MAX`) and is activated in a follow-up release. Wallet: confidential addresses (`0x01`) blind to a derived view key, with `0x00` still accepted.
