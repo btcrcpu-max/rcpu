@@ -88,4 +88,7 @@
     <qresource prefix="/fonts">
         <file alias="monospace">res/fonts/RobotoMono-Bold.ttf</file>
     </qresource>
+    <qresource prefix="/images">
+        <file alias="rcpu_banner">res/images/rcpu_banner.png</file>
+    </qresource>
 </RCC>
