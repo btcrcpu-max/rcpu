@@ -435,7 +435,7 @@ void CheckInferDescriptor(const std::string& script_hex, const std::string& expe
 }
 
 struct DescriptorTestingSetup : public BasicTestingSetup {
-    DescriptorTestingSetup() : BasicTestingSetup{ChainType::TESTNET} {}
+    DescriptorTestingSetup() : BasicTestingSetup{ChainType::RCPUTESTNET} {}
 };
 
 BOOST_FIXTURE_TEST_SUITE(descriptor_tests, DescriptorTestingSetup)
