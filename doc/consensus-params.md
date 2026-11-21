@@ -34,7 +34,7 @@ They are listed here so other docs have one place to copy from.
 | Dual-algo activation height | **21,000** (mainnet & testnet); **150** (regtest); `INT_MAX` = never (default) | `src/kernel/chainparams.cpp` (`nDualAlgoActivationHeight`) |
 | H-1 re-anchor activation height | **29,909** (mainnet & testnet); **0** (regtest) | `src/kernel/chainparams.cpp` (`nDualAlgoLatenessFixHeight`) |
 | H-1 re-anchor gap | **12 h** (mainnet/testnet); 1 h (regtest) | `src/kernel/chainparams.cpp` (`nDualAlgoReanchorGap`) |
-| H-1 maximum one-step drop | **8x** | `src/kernel/chainparams.cpp` (`nDualAlgoMaxDrop`) |
+| H-1 maximum one-step drop | **8x** per resume block; binds only when the gap reaches three half-lives (~6 days). Shorter gaps take the plain ASERT value (13 h ≈ 1.20x) | `src/kernel/chainparams.cpp` (`nDualAlgoMaxDrop`) |
 | POW-02 never-mined resume height | `INT_MAX` = not scheduled (mainnet/testnet); **0** (regtest) | `src/kernel/chainparams.cpp` (`nDualAlgoNeverMinedFixHeight`) |
 | Dual-algo target spacing | 600 s (10 min) per algorithm | `src/kernel/chainparams.cpp` (`nDualAlgoTargetSpacing`) |
 | Etchash version bit | **bit 30** (`0x40000000`, `BLOCK_VERSION_QHASH`) | `src/primitives/block.h` |
@@ -53,6 +53,14 @@ They are listed here so other docs have one place to copy from.
 | Checkpoints | 0, 1, 2, 5, 10, 20, 30, 38, 3,600, 4,922, 10,000 | `kernel/chainparams.cpp` (`checkpointData`) |
 
 ## Notes
+
+- **Dual-algo parameter validation**: `Consensus::Params::CheckDualAlgoConsistency()`
+  runs from `CreateChainParams()` for every chain type, so a schedule that would
+  make the difficulty code divide by zero or fall back to `powLimit` — for
+  example `nDualAlgoActivationHeight = 0`, which makes
+  `GetAncestor(nActHeight - 1)` return `nullptr` — now fails at startup with an
+  explicit error instead of silently accepting minimum-difficulty blocks. This
+  is a startup-only check; it never changes a computed target.
 
 - **CT strict rules (v1.4.5)**: `nCTStrictRulesHeight` gates M-1 (confidential
   output nonces must be non-null and on-curve) and M-2 (explicit zero is the

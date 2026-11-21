@@ -26,6 +26,7 @@
 #include <algorithm>
 #include <cstring>
 #include <limits>
+#include <stdexcept>
 #include <vector>
 
 BOOST_FIXTURE_TEST_SUITE(dualalgo_tests, BasicTestingSetup)
@@ -762,6 +763,94 @@ BOOST_AUTO_TEST_CASE(dual_algo_reanchor_discards_banked_lateness)
     const uint32_t next_bits{GetNextWorkRequired(resume.get(), &next_header, params)};
     BOOST_CHECK(next_bits != UintToArith256(params.powLimit).GetCompact());
     BOOST_CHECK(next_bits <= resume_bits);
+}
+
+// !RCPU (dual-algo): a chain whose schedule would make the difficulty code
+// divide by zero or fall back to powLimit (no difficulty at all) must be
+// rejected when its parameters are built, not at the first block that reaches
+// the bad path. The assertion inside GetDualAlgoWorkRequired() is compiled out
+// of release builds, so this check is what protects a third-party chain or a
+// regtest from silently accepting minimum-difficulty blocks.
+BOOST_AUTO_TEST_CASE(dual_algo_parameter_validation)
+{
+    // A chain that does not opt in is always valid.
+    BOOST_CHECK_NO_THROW(Consensus::Params{}.CheckDualAlgoConsistency());
+
+    // Mainnet-like schedule.
+    Consensus::Params params;
+    // These two have no default initializer in Consensus::Params (upstream
+    // Bitcoin sets them in chainparams), so the test must set them explicitly.
+    params.fPowNoRetargeting = false;
+    params.fPowAllowMinDifficultyBlocks = false;
+    params.nDualAlgoActivationHeight = 21000;
+    params.nDualAlgoTargetSpacing = 600;
+    params.nASERTHalfLife = 2 * 24 * 60 * 60;
+    params.nDualAlgoReanchorGap = 12 * 60 * 60;
+    params.nDualAlgoMaxDrop = 8;
+    params.nDualAlgoLatenessFixHeight = 29909;
+    params.nDualAlgoNeverMinedFixHeight = std::numeric_limits<int>::max();
+    BOOST_CHECK_NO_THROW(params.CheckDualAlgoConsistency());
+
+    // Height 0 makes GetAncestor(nActHeight - 1) return nullptr, after which the
+    // difficulty code returns powLimit (no difficulty). Negative heights are in
+    // the same class of misconfiguration.
+    Consensus::Params bad{params};
+    bad.nDualAlgoActivationHeight = 0;
+    BOOST_CHECK_THROW(bad.CheckDualAlgoConsistency(), std::runtime_error);
+    bad.nDualAlgoActivationHeight = -5;
+    BOOST_CHECK_THROW(bad.CheckDualAlgoConsistency(), std::runtime_error);
+
+    // Division-by-zero paths inside CalculateASERT().
+    bad = params;
+    bad.nDualAlgoTargetSpacing = 0;
+    BOOST_CHECK_THROW(bad.CheckDualAlgoConsistency(), std::runtime_error);
+    bad = params;
+    bad.nASERTHalfLife = 0;
+    BOOST_CHECK_THROW(bad.CheckDualAlgoConsistency(), std::runtime_error);
+
+    // A cap below 1 ("at most 0x") is never intended.
+    bad = params;
+    bad.nDualAlgoMaxDrop = 0;
+    BOOST_CHECK_THROW(bad.CheckDualAlgoConsistency(), std::runtime_error);
+
+    // A zero re-anchor gap would re-anchor on every single block.
+    bad = params;
+    bad.nDualAlgoReanchorGap = 0;
+    BOOST_CHECK_THROW(bad.CheckDualAlgoConsistency(), std::runtime_error);
+
+    // Negative activation heights are the misconfiguration; 0 means "from the
+    // first dual-algo block" and INT_MAX means "never", both legitimate.
+    bad = params;
+    bad.nDualAlgoLatenessFixHeight = -1;
+    BOOST_CHECK_THROW(bad.CheckDualAlgoConsistency(), std::runtime_error);
+    bad = params;
+    bad.nDualAlgoNeverMinedFixHeight = -1;
+    BOOST_CHECK_THROW(bad.CheckDualAlgoConsistency(), std::runtime_error);
+    bad = params;
+    bad.nDualAlgoLatenessFixHeight = 0;
+    bad.nDualAlgoNeverMinedFixHeight = params.nDualAlgoActivationHeight;
+    BOOST_CHECK_NO_THROW(bad.CheckDualAlgoConsistency());
+
+    // INT_MAX ("never") stays valid for both fix heights.
+    bad = params;
+    bad.nDualAlgoLatenessFixHeight = std::numeric_limits<int>::max();
+    bad.nDualAlgoNeverMinedFixHeight = std::numeric_limits<int>::max();
+    BOOST_CHECK_NO_THROW(bad.CheckDualAlgoConsistency());
+
+    // Regtest (fPowNoRetargeting) returns the reference target before it reaches
+    // ASERT or the re-anchor rule, so those parameters are unused there and must
+    // not be required. The activation height is still needed for dispatch.
+    bad = params;
+    bad.fPowNoRetargeting = true;
+    bad.nASERTHalfLife = 0;
+    bad.nDualAlgoTargetSpacing = 0;
+    bad.nDualAlgoReanchorGap = 0;
+    bad.nDualAlgoMaxDrop = 0;
+    bad.nDualAlgoLatenessFixHeight = 0;
+    bad.nDualAlgoNeverMinedFixHeight = 0;
+    BOOST_CHECK_NO_THROW(bad.CheckDualAlgoConsistency());
+    bad.nDualAlgoActivationHeight = 0;
+    BOOST_CHECK_THROW(bad.CheckDualAlgoConsistency(), std::runtime_error);
 }
 
 namespace {

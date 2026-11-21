@@ -19,7 +19,7 @@
 namespace wallet {
 
 struct IsMineTestingSetup : public BasicTestingSetup {
-    IsMineTestingSetup() : BasicTestingSetup{ChainType::TESTNET} {}
+    IsMineTestingSetup() : BasicTestingSetup{ChainType::RCPUTESTNET} {}
 };
 
 BOOST_FIXTURE_TEST_SUITE(ismine_tests, IsMineTestingSetup)
@@ -735,7 +735,7 @@ BOOST_AUTO_TEST_CASE(ismine_rcpu_mainnet_wif_disabled)
         auto spk_manager = CreateDescriptor(keystore, "pk(" + EncodeSecret(key) + ")", false);
         BOOST_CHECK_EQUAL(spk_manager, nullptr);
     }
-    SelectParams(ChainType::TESTNET);
+    SelectParams(ChainType::RCPUTESTNET);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

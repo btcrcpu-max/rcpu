@@ -12,6 +12,8 @@
 #include <chrono>
 #include <limits>
 #include <map>
+#include <stdexcept>
+#include <string>
 #include <vector>
 
 // !RCPU
@@ -268,6 +270,37 @@ struct Params {
         int64_t nPrevBlockTime;
     };
     std::optional<ASERTAnchor> asertAnchorParams;
+
+    // !RCPU (dual-algo): reject parameter combinations that would make
+    // GetDualAlgoWorkRequired() divide by zero or fall back to powLimit (no
+    // difficulty at all). Called once per chain when its parameters are built,
+    // so a misconfigured chain fails at startup instead of silently accepting
+    // minimum-difficulty blocks. A chain that does not opt in (activation
+    // height INT_MAX) is always valid.
+    void CheckDualAlgoConsistency() const
+    {
+        if (nDualAlgoActivationHeight == std::numeric_limits<int>::max()) return;
+
+        const auto fail = [](const char* what) {
+            throw std::runtime_error(std::string("Invalid dual-algo consensus parameter: ") + what);
+        };
+        if (nDualAlgoActivationHeight <= 0) {
+            fail("nDualAlgoActivationHeight must be > 0 (INT_MAX means disabled)");
+        }
+        // 0 means "active from the first dual-algo block" and INT_MAX means
+        // "never"; a negative height is a configuration bug.
+        if (nDualAlgoLatenessFixHeight < 0) fail("nDualAlgoLatenessFixHeight must not be negative");
+        if (nDualAlgoNeverMinedFixHeight < 0) fail("nDualAlgoNeverMinedFixHeight must not be negative");
+        // With fPowNoRetargeting (regtest) GetDualAlgoWorkRequired() returns the
+        // reference target before it reaches ASERT or the re-anchor logic, so
+        // those parameters are legitimately unused there.
+        if (fPowNoRetargeting) return;
+
+        if (nDualAlgoTargetSpacing <= 0) fail("nDualAlgoTargetSpacing must be > 0");
+        if (nASERTHalfLife <= 0) fail("nASERTHalfLife must be > 0");
+        if (nDualAlgoReanchorGap <= 0) fail("nDualAlgoReanchorGap must be > 0");
+        if (nDualAlgoMaxDrop < 1) fail("nDualAlgoMaxDrop must be >= 1");
+    }
 
     // !RCPU END
 };
