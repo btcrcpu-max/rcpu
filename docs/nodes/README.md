@@ -188,8 +188,8 @@ canonical values.
 ## Resources
 
 - Explorer: https://rcpu.ren/
-- Pool: https://pool.rcpu.top
-- Wallet: https://rcpu.top/
+- Pool: https://pool.rcpuapp.top/
+- Website: https://rcpuapp.top/
 - GitHub: https://github.com/btcrcpu-max/rcpu
 - Telegram: https://t.me/btc_rcpu
 

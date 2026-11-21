@@ -155,8 +155,8 @@ make check
 ## Network
 
 - Explorer: https://rcpu.ren/
-- Mining Pool: https://pool.rcpu.top
-- Web Wallet: https://rcpu.top/
+- Mining Pool: https://pool.rcpuapp.top/
+- Website: https://rcpuapp.top/
 - Telegram: https://t.me/btc_rcpu
 
 Telegram group name still uses the historical btc_rcpu handle.
