@@ -3552,6 +3552,30 @@ Note:  Since the fee is calculated on a per-byte basis, a fee rate of "100 satos
 <context>
     <name>TransactionDesc</name>
     <message>
+        <source>Unreadable outputs</source>
+        <translation>无法读取的输出</translation>
+    </message>
+    <message>
+        <source>Output #%1: amount unreadable (%2)</source>
+        <translation>输出 #%1：金额无法读取（%2）</translation>
+    </message>
+    <message>
+        <source>wallet locked</source>
+        <translation>钱包已锁定</translation>
+    </message>
+    <message>
+        <source>watch-only, no key</source>
+        <translation>仅观察地址，无私钥</translation>
+    </message>
+    <message>
+        <source>cannot decrypt</source>
+        <translation>无法解密</translation>
+    </message>
+    <message>
+        <source>These amounts are unknown, not zero. Unlocking the wallet or importing the key may make them readable.</source>
+        <translation>这些金额是未知的，不是 0。解锁钱包或导入私钥后可能变为可读。</translation>
+    </message>
+    <message>
         <source>conflicted with a transaction with %1 confirmations</source>
         <extracomment>Text explaining the current status of a transaction, shown in the status field of the details window for this transaction. This status represents an unconfirmed transaction that conflicts with a confirmed transaction.</extracomment>
         <translation type="unfinished">与一个有 %1 个确认的交易冲突</translation>
@@ -3730,6 +3754,18 @@ Note:  Since the fee is calculated on a per-byte basis, a fee rate of "100 satos
 <context>
     <name>TransactionTableModel</name>
     <message>
+        <source>Amount hidden: the wallet is locked. Unlock it to read this confidential amount.</source>
+        <translation>金额已隐藏：钱包已锁定。解锁后可读取此机密金额。</translation>
+    </message>
+    <message>
+        <source>Amount unknown: this wallet has no key for this output (watch-only).</source>
+        <translation>金额未知：此钱包没有该输出的私钥（仅观察地址）。</translation>
+    </message>
+    <message>
+        <source>Amount unreadable: this wallet cannot decrypt this confidential amount. It is not zero.</source>
+        <translation>金额无法读取：此钱包无法解密该机密金额。它不是 0。</translation>
+    </message>
+    <message>
         <source>Date</source>
         <translation type="unfinished">日期</translation>
     </message>
@@ -3824,6 +3860,14 @@ Note:  Since the fee is calculated on a per-byte basis, a fee rate of "100 satos
 </context>
 <context>
     <name>TransactionView</name>
+    <message>
+        <source>Needs review</source>
+        <translation>需要复核</translation>
+    </message>
+    <message>
+        <source>Show only transactions with an output whose amount this wallet cannot read (e.g. while the wallet is locked).</source>
+        <translation>只显示包含无法读取金额输出的交易（例如钱包锁定时）。</translation>
+    </message>
     <message>
         <source>All</source>
         <translation type="unfinished">全部</translation>
