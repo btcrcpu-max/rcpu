@@ -525,7 +525,7 @@ jobs:
               test -s "$EXE" || { echo "ERROR: $EXE is empty"; exit 1; }
               echo "Signing $EXE with Authenticode"
               osslsigncode sign -pkcs12 "$PFX" -readpass "$PASSFILE" \
-                -n "RCPU Core" -i "https://rcpu.top" \
+                -n "RCPU Core" -i "https://rcpuapp.top/" \
                 -t "https://timestamp.digicert.com" \
                 -in "$EXE" -out "${EXE}.signed"
               mv "${EXE}.signed" "$EXE"
@@ -560,7 +560,7 @@ jobs:
               while IFS= read -r -d '' EXE; do
                 echo "Signing portable binary $EXE"
                 osslsigncode sign -pkcs12 "$PFX" -readpass "$PASSFILE" \
-                  -n "RCPU Core" -i "https://rcpu.top" \
+                  -n "RCPU Core" -i "https://rcpuapp.top/" \
                   -t "https://timestamp.digicert.com" \
                   -in "$EXE" -out "${EXE}.signed"
                 mv "${EXE}.signed" "$EXE"

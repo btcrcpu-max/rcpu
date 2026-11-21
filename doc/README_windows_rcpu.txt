@@ -22,5 +22,5 @@ Official GitHub Releases currently provide the headless binaries (rcpud,
 rcpu-cli). The Qt GUI can be built from source where available.
 
 For help and updates see:
-  https://rcpu.top/
+  https://rcpuapp.top/
   https://github.com/btcrcpu-max/rcpu
