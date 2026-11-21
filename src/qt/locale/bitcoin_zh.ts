@@ -4371,6 +4371,10 @@ Unable to restore backup of wallet.</source>
         <translation type="unfinished">dbcache不足以用于区块验证</translation>
     </message>
     <message>
+        <source>Insufficient funds: the requested amount is only available in unconfirmed confidential outputs; wait for confirmation and try again</source>
+        <translation>此笔转帐需要等上一笔转帐确认后才能发送</translation>
+    </message>
+    <message>
         <source>Invalid amount for %s=&lt;amount&gt;: '%s' (must be at least %s)</source>
         <translation type="unfinished">%s=&lt;amount&gt;: '%s' 中指定了非法的金额 (必须至少达到 %s)</translation>
     </message>
