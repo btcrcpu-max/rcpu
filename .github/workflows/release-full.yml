@@ -269,9 +269,12 @@ jobs:
           ./src/test/test_bitcoin --log_level=test_suite \
             --run_test=coinbase_confidential_tests,confidential_validation_tests,tx_verify_tests,randomx_tests,pow_tests,dualalgo_tests \
             2>&1 | tee /tmp/rcpu-consensus.log
-          # Fail closed if a suite name is typo'd or silently skipped.
+          # Fail closed if a suite name is typo'd or silently skipped. Match the
+          # "Entering test suite" line only: a plain substring match also hits
+          # "Test suite \"X\" is skipped because disabled", which is how the
+          # ci.yml gate stayed green while running almost nothing.
           for suite in coinbase_confidential_tests confidential_validation_tests tx_verify_tests randomx_tests pow_tests dualalgo_tests; do
-            grep -q "$suite" /tmp/rcpu-consensus.log || {
+            grep -q "Entering test suite \"$suite\"" /tmp/rcpu-consensus.log || {
               echo "suite not executed: $suite"
               exit 1
             }
