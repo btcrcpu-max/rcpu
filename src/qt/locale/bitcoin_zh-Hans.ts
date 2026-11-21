@@ -4708,6 +4708,10 @@ Unable to restore backup of wallet.</source>
         <translation type="unfinished">金额不足</translation>
     </message>
     <message>
+        <source>Insufficient funds: the requested amount is only available in unconfirmed confidential outputs; wait for confirmation and try again</source>
+        <translation>此笔转帐需要等上一笔转帐确认后才能发送</translation>
+    </message>
+    <message>
         <source>Invalid -i2psam address or hostname: '%s'</source>
         <translation type="unfinished">无效的 -i2psam 地址或主机名: '%s'</translation>
     </message>
