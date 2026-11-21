@@ -120,6 +120,25 @@ QString TransactionDesc::toHTML(interfaces::Node& node, interfaces::Wallet& wall
     CAmount nDebit = wtx.debit;
     CAmount nNet = nCredit - nDebit;
 
+    // RCPU CT: an unblindable confidential output has no readable amount, and
+    // showing it as 0 reads as "nothing received". Unknown values print as
+    // "unknown" instead. Statuses 0..2 are explicit/known/known_cached; a
+    // plaintext amount persisted at send time also counts as known.
+    auto outputAmountKnown = [&](size_t i) -> bool {
+        if (i >= wtx.txout_status.size()) return true;
+        if (wtx.txout_status[i] <= 2) return true;
+        return i < wtx.txout_amount.size() && wtx.txout_amount[i] > 0;
+    };
+    // The spendable net amount is only computable when every spendable output
+    // can be valued. Watch-only outputs are not part of it.
+    bool netAmountKnown = true;
+    for (size_t i = 0; i < wtx.tx->vout.size(); ++i) {
+        if (i < wtx.txout_is_mine.size() && wtx.txout_is_mine[i] == ISMINE_SPENDABLE && !outputAmountKnown(i)) {
+            netAmountKnown = false;
+            break;
+        }
+    }
+
     strHTML += "<b>" + tr("Status") + ":</b> " + FormatTxStatus(status, inMempool);
     strHTML += "<br>";
 
@@ -275,9 +294,15 @@ QString TransactionDesc::toHTML(interfaces::Node& node, interfaces::Wallet& wall
                 if (nOutAmount == 0) {
                     wallet.getUnblindedAmount(txout, nOutAmount);
                 }
-                strHTML += "<b>" + tr("Debit") + ":</b> " + BitcoinUnits::formatHtmlWithUnit(unit, -nOutAmount) + "<br>";
-                if(toSelf)
-                    strHTML += "<b>" + tr("Credit") + ":</b> " + BitcoinUnits::formatHtmlWithUnit(unit, nOutAmount) + "<br>";
+                if (outputAmountKnown(i) || nOutAmount > 0) {
+                    strHTML += "<b>" + tr("Debit") + ":</b> " + BitcoinUnits::formatHtmlWithUnit(unit, -nOutAmount) + "<br>";
+                    if(toSelf)
+                        strHTML += "<b>" + tr("Credit") + ":</b> " + BitcoinUnits::formatHtmlWithUnit(unit, nOutAmount) + "<br>";
+                } else {
+                    strHTML += "<b>" + tr("Debit") + ":</b> " + tr("unknown") + "<br>";
+                    if(toSelf)
+                        strHTML += "<b>" + tr("Credit") + ":</b> " + tr("unknown") + "<br>";
+                }
             }
 
             if (fAllToMe)
@@ -314,16 +339,21 @@ QString TransactionDesc::toHTML(interfaces::Node& node, interfaces::Wallet& wall
                     strHTML += "<b>" + tr("Debit") + ":</b> " + BitcoinUnits::formatHtmlWithUnit(unit, -wallet.getDebit(txin, ISMINE_ALL)) + "<br>";
                 }
             }
-            mine = wtx.txout_is_mine.begin();
-            for (const CTxOut& txout : wtx.tx->vout) {
-                if (*(mine++)) {
-                    strHTML += "<b>" + tr("Credit") + ":</b> " + BitcoinUnits::formatHtmlWithUnit(unit, wallet.getCredit(txout, ISMINE_ALL)) + "<br>";
+            for (size_t i = 0; i < wtx.tx->vout.size(); ++i) {
+                if (i < wtx.txout_is_mine.size() && wtx.txout_is_mine[i]) {
+                    if (outputAmountKnown(i))
+                        strHTML += "<b>" + tr("Credit") + ":</b> " + BitcoinUnits::formatHtmlWithUnit(unit, wallet.getCredit(wtx.tx->vout[i], ISMINE_ALL)) + "<br>";
+                    else
+                        strHTML += "<b>" + tr("Credit") + ":</b> " + tr("unknown") + "<br>";
                 }
             }
         }
     }
 
-    strHTML += "<b>" + tr("Net amount") + ":</b> " + BitcoinUnits::formatHtmlWithUnit(unit, nNet, true) + "<br>";
+    if (netAmountKnown)
+        strHTML += "<b>" + tr("Net amount") + ":</b> " + BitcoinUnits::formatHtmlWithUnit(unit, nNet, true) + "<br>";
+    else
+        strHTML += "<b>" + tr("Net amount") + ":</b> " + tr("unknown") + "<br>";
 
     //
     // Message
