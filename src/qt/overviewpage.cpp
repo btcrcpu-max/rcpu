@@ -22,6 +22,7 @@
 #include <QApplication>
 #include <QDateTime>
 #include <QPainter>
+#include <QPixmap>
 #include <QStatusTipEvent>
 
 #include <algorithm>
@@ -164,6 +165,33 @@ OverviewPage::OverviewPage(const PlatformStyle *platformStyle, QWidget *parent) 
     showOutOfSyncWarning(true);
     connect(ui->labelWalletStatus, &QPushButton::clicked, this, &OverviewPage::outOfSyncWarningClicked);
     connect(ui->labelTransactionsStatus, &QPushButton::clicked, this, &OverviewPage::outOfSyncWarningClicked);
+
+    // Decorative banner shown below the balances box
+    ui->labelBanner->installEventFilter(this);
+    updateBanner();
+}
+
+void OverviewPage::updateBanner()
+{
+    static const QPixmap source(QStringLiteral(":/images/rcpu_banner"));
+    if (source.isNull()) return;
+
+    // Keep the banner close to its native resolution so it never turns blurry.
+    const QSize available = ui->labelBanner->size().boundedTo(QSize(280, 280));
+    if (available.isEmpty()) return;
+
+    const qreal dpr = devicePixelRatioF();
+    QPixmap scaled = source.scaled(available * dpr, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    scaled.setDevicePixelRatio(dpr);
+    ui->labelBanner->setPixmap(scaled);
+}
+
+bool OverviewPage::eventFilter(QObject* object, QEvent* event)
+{
+    if (object == ui->labelBanner && event->type() == QEvent::Resize) {
+        updateBanner();
+    }
+    return QWidget::eventFilter(object, event);
 }
 
 void OverviewPage::handleTransactionClicked(const QModelIndex &index)
