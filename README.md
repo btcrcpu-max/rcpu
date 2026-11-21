@@ -21,12 +21,17 @@ dual-algo** mode alongside RandomX.
 > matching Miningcore plugin with the v1.4 domain.
 
 > **v1.4.14 HARD FORK AT BLOCK 29,909 (expected 2026-11-23).**
-> All nodes and pools must upgrade before this height. The dual-algo
-> difficulty now re-anchors an algorithm whose last block is older than 12
-> hours, capping the one-time target increase at 8x. This removes the
-> unbounded lateness credit that could otherwise be released as
-> `powLimit`-difficulty blocks. Consensus parameters, PoW algorithms, rewards
-> and the CT rules are otherwise unchanged.
+> All nodes and pools must upgrade before this height. From that height on, the
+> dual-algo difficulty re-anchors an algorithm whose last block is older than
+> 12 hours: the target is taken from that last block and the one-step increase
+> is capped at 8x (`nDualAlgoMaxDrop`) or `powLimit`, whichever is lower. The
+> cap applies to the resume block itself; the following blocks anchor on it and
+> continue with normal ASERT, so the difficulty may keep falling over
+> subsequent blocks. ASERT only reaches 8x after three half-lives, so the cap
+> binds only for gaps beyond ~6 days; a shorter gap gets the plain ASERT value
+> (a 13 h gap is ≈1.20x, not 8x). This removes the unbounded lateness credit
+> that could otherwise be released as `powLimit`-difficulty blocks. Consensus
+> parameters, PoW algorithms, rewards and the CT rules are otherwise unchanged.
 
 
 ## Code signing policy

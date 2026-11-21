@@ -109,6 +109,14 @@ const CChainParams &Params() {
 
 std::unique_ptr<const CChainParams> CreateChainParams(const ArgsManager& args, const ChainType chain)
 {
+    // !RCPU (dual-algo): every chain type is built through here, so this is the
+    // one place that can reject a misconfigured dual-algo schedule before the
+    // node starts accepting blocks. See Consensus::Params::CheckDualAlgoConsistency().
+    const auto checked = [](std::unique_ptr<const CChainParams> params) {
+        params->GetConsensus().CheckDualAlgoConsistency();
+        return params;
+    };
+
     switch (chain) {
     case ChainType::MAIN:
         throw std::runtime_error("ChainType::MAIN (Bitcoin mainnet) is disabled. Use -chain=rcpu for RCPU mainnet.");
@@ -117,7 +125,7 @@ std::unique_ptr<const CChainParams> CreateChainParams(const ArgsManager& args, c
     case ChainType::SIGNET: {
         auto opts = CChainParams::SigNetOptions{};
         ReadSigNetArgs(args, opts);
-        return CChainParams::SigNet(opts);
+        return checked(CChainParams::SigNet(opts));
     }
     case ChainType::REGTEST: {
         throw std::runtime_error("ChainType::REGTEST (Bitcoin regtest) is disabled. Use -chain=rcpurregtest for RCPU regtest.");
@@ -126,13 +134,13 @@ std::unique_ptr<const CChainParams> CreateChainParams(const ArgsManager& args, c
     case ChainType::RCPUREGTEST: {
         auto opts = CChainParams::RegTestOptions{};
         ReadRegTestArgs(args, opts);
-        return CChainParams::RcpuRegTest(opts);
+        return checked(CChainParams::RcpuRegTest(opts));
     }
     case ChainType::RCPUTESTNET: {
-        return CChainParams::RcpuTestNet();
+        return checked(CChainParams::RcpuTestNet());
     }
     case ChainType::RCPUMAIN: {
-        return CChainParams::RcpuMain();
+        return checked(CChainParams::RcpuMain());
     }
     // !RCPU END
     }
