@@ -122,6 +122,44 @@ public:
         DispatchNotifications();
     }
 
+    /* RCPU CT: unlocking the wallet and rescanning can turn a previously
+       unblindable output into a readable one. Records cached while the wallet
+       was locked have a zeroed amount, and CT_UPDATED alone would leave them
+       showing "—" until the next restart, so re-decompose just those. */
+    void refreshUnknownAmounts(interfaces::Wallet& wallet, const uint256 &hash, int lowerIndex, int upperIndex)
+    {
+        bool has_unknown = false;
+        for (int i = lowerIndex; i < upperIndex; i++) {
+            if (!cachedWallet[i].amount_known) { has_unknown = true; break; }
+        }
+        if (!has_unknown) return;
+
+        interfaces::WalletTx wtx = wallet.getWalletTx(hash);
+        if (!wtx.tx) return;
+        QList<TransactionRecord> refreshed = TransactionRecord::decomposeTransaction(wtx);
+        if (refreshed.isEmpty()) return;
+
+        if (refreshed.size() == upperIndex - lowerIndex) {
+            for (int i = 0; i < refreshed.size(); i++) {
+                refreshed[i].status = cachedWallet[lowerIndex + i].status;
+                refreshed[i].status.needsUpdate = true;
+                cachedWallet[lowerIndex + i] = refreshed[i];
+            }
+            parent->dataChanged(parent->index(lowerIndex, 0),
+                                parent->index(upperIndex - 1, parent->columnCount(QModelIndex()) - 1));
+        } else {
+            // Row count changed: rebuild the rows belonging to this hash.
+            parent->beginRemoveRows(QModelIndex(), lowerIndex, upperIndex - 1);
+            cachedWallet.erase(cachedWallet.begin() + lowerIndex, cachedWallet.begin() + upperIndex);
+            parent->endRemoveRows();
+            parent->beginInsertRows(QModelIndex(), lowerIndex, lowerIndex + refreshed.size() - 1);
+            for (int i = 0; i < refreshed.size(); i++) {
+                cachedWallet.insert(lowerIndex + i, refreshed[i]);
+            }
+            parent->endInsertRows();
+        }
+    }
+
     /* Update our model of the wallet incrementally, to synchronize our model of the wallet
        with that of the core.
 
@@ -203,6 +241,7 @@ public:
                 TransactionRecord *rec = &cachedWallet[i];
                 rec->status.needsUpdate = true;
             }
+            refreshUnknownAmounts(wallet, hash, lowerIndex, upperIndex);
             break;
         }
     }
