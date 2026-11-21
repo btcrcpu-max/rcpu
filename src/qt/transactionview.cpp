@@ -101,6 +101,8 @@ TransactionView::TransactionView(const PlatformStyle *platformStyle, QWidget *pa
     // read, so those are not lost among normal history entries.
     unreadableWidget = new QCheckBox(tr("Needs review"), this);
     unreadableWidget->setToolTip(tr("Show only transactions with an output whose amount this wallet cannot read (e.g. while the wallet is locked)."));
+    // Keep the label readable when the filter row is tight.
+    unreadableWidget->setMinimumWidth(unreadableWidget->sizeHint().width() + 8);
     hlayout->addWidget(unreadableWidget);
 
     search_widget = new QLineEdit(this);

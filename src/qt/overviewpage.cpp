@@ -63,6 +63,9 @@ public:
         QString address = index.data(Qt::DisplayRole).toString();
         qint64 amount = index.data(TransactionTableModel::AmountRole).toLongLong();
         bool confirmed = index.data(TransactionTableModel::ConfirmedRole).toBool();
+        // RCPU CT: an unblindable amount is unknown, not zero. Show the same
+        // "—" placeholder the transaction list uses instead of "0.00000000".
+        const bool amount_known = index.data(TransactionTableModel::AmountKnownRole).toBool();
         QVariant value = index.data(Qt::ForegroundRole);
         QColor foreground = option.palette.color(QPalette::Text);
         if(value.canConvert<QBrush>())
@@ -83,7 +86,11 @@ public:
         QRect boundingRect;
         painter->drawText(addressRect, Qt::AlignLeft | Qt::AlignVCenter, address, &boundingRect);
 
-        if(amount < 0)
+        if(!amount_known)
+        {
+            foreground = option.palette.color(QPalette::Text);
+        }
+        else if(amount < 0)
         {
             foreground = COLOR_NEGATIVE;
         }
@@ -96,8 +103,10 @@ public:
             foreground = option.palette.color(QPalette::Text);
         }
         painter->setPen(foreground);
-        QString amountText = BitcoinUnits::formatWithUnit(unit, amount, true, BitcoinUnits::SeparatorStyle::ALWAYS);
-        if(!confirmed)
+        QString amountText = amount_known
+            ? BitcoinUnits::formatWithUnit(unit, amount, true, BitcoinUnits::SeparatorStyle::ALWAYS)
+            : QStringLiteral("—");
+        if(amount_known && !confirmed)
         {
             amountText = QString("[") + amountText + QString("]");
         }
