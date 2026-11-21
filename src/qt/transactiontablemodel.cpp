@@ -146,7 +146,7 @@ public:
                 cachedWallet[lowerIndex + i] = refreshed[i];
             }
             parent->dataChanged(parent->index(lowerIndex, 0),
-                                parent->index(upperIndex - 1, parent->columnCount() - 1));
+                                parent->index(upperIndex - 1, parent->columnCount(QModelIndex()) - 1));
         } else {
             // Row count changed: rebuild the rows belonging to this hash.
             parent->beginRemoveRows(QModelIndex(), lowerIndex, upperIndex - 1);
