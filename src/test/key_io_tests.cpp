@@ -138,7 +138,7 @@ BOOST_AUTO_TEST_CASE(key_io_invalid)
         std::string exp_base58string = test[0].get_str();
 
         // must be invalid as public and as private key
-        for (const auto& chain : {ChainType::RCPUMAIN, ChainType::TESTNET, ChainType::SIGNET, ChainType::REGTEST}) {
+        for (const auto& chain : {ChainType::RCPUMAIN, ChainType::RCPUTESTNET, ChainType::SIGNET, ChainType::RCPUREGTEST}) {
             SelectParams(chain);
             destination = DecodeDestination(exp_base58string);
             BOOST_CHECK_MESSAGE(!IsValidDestination(destination), "IsValid pubkey in mainnet:" + strTest);
@@ -159,7 +159,7 @@ BOOST_AUTO_TEST_CASE(key_io_mainnet_disabled)
     BOOST_CHECK(EncodeSecret(key).empty());
 
     const std::string test_wif{"92ZdE5HoLafywnTBbzPxbvRmp75pSfzvdU3XaZGh1cToipgdHVh"};
-    SelectParams(ChainType::TESTNET);
+    SelectParams(ChainType::RCPUTESTNET);
     BOOST_REQUIRE(DecodeSecret(test_wif).IsValid());
     SelectParams(ChainType::RCPUMAIN);
     BOOST_CHECK(!DecodeSecret(test_wif).IsValid());
