@@ -134,5 +134,5 @@ For answers to common questions about this code of conduct, see the FAQ at
 ## RCPU Community
 
 - **Telegram**: https://t.me/btc_rcpu
-- **Email**: rcpudevs@proton.me
+- **Email**: btc.rcpu@gmail.com
 - **GitHub**: https://github.com/btcrcpu-max/rcpu

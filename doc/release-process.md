@@ -103,7 +103,8 @@ the Bitcoin Core build process can adapt the Guix configuration for RCPU.
 - **One key, one signer**: Only the key `934D 5BC9 ... 1FE4 B8EE` signs releases.
 - **Tags must be signed** (`git tag -s`); commits do not require signatures.
 - Tags must be signed with key `934D 5BC9 5DD4 B3AC FEF5 21B9 5476 3350 1FE4 B8EE`.
-- The private key is held by the RCPU Dev Team (`rcpudevs@proton.me`).
+- The private key is held by the RCPU Dev Team (`btc.rcpu@gmail.com`; the key's
+  own user ID still says `rcpudevs@proton.me`).
 - The public key is committed to the repository as `RCPU-DEV-GPG-KEY.asc`.
 - Verify signatures:
 

@@ -34,7 +34,7 @@ Use the GitHub issue tracker: <https://github.com/btcrcpu-max/rcpu/issues>
 ## Contact
 
 - **Telegram**: https://t.me/btc_rcpu
-- **Email**: rcpudevs@proton.me (for security disclosures, see `SECURITY.md`)
+- **Email**: btc.rcpu@gmail.com (for security disclosures, see `SECURITY.md`)
 - **GitHub Issues**: https://github.com/btcrcpu-max/rcpu/issues
 
 ## Security

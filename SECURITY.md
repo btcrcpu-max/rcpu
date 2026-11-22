@@ -2,15 +2,16 @@
 
 ## Reporting a Vulnerability
 
-To report security issues send an email to **rcpudevs@proton.me**.
+To report security issues send an email to **btc.rcpu@gmail.com**.
 
-If you are sending from Protonmail, your email will already be end-to-end encrypted.
-
-If sending from a non-Protonmail account, encrypt with the following key:
+Please encrypt your report with the following key:
 
 | Name | Fingerprint |
 |------|-------------|
-| RCPU Dev Team (rcpudevs@proton.me) | `934D 5BC9 5DD4 B3AC FEF5 21B9 5476 3350 1FE4 B8EE` |
+| RCPU Dev Team | `934D 5BC9 5DD4 B3AC FEF5 21B9 5476 3350 1FE4 B8EE` |
+
+The key's user ID still reads `rcpudevs@proton.me`; the fingerprint above is
+what identifies the key. No new key has been generated for the address change.
 
 The armored public key is committed to the repository at `RCPU-DEV-GPG-KEY.asc`.
 Release artifacts are signed with this key: the node binaries are listed in
