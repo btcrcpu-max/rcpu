@@ -67,6 +67,12 @@ BOOST_AUTO_TEST_CASE(validation_chainstate_resize_caches)
 //! of what it does for the active chainstate.
 BOOST_FIXTURE_TEST_CASE(chainstate_update_tip, TestChain100Setup)
 {
+    // !RCPU: RCPU chains ship no assumeutxo snapshot, so the snapshot paths
+    // below cannot be exercised. Skip instead of failing on them.
+    if (!::Params().HasAssumeutxoData()) {
+        BOOST_TEST_MESSAGE("skipped: this chain ships no assumeutxo data");
+        return;
+    }
     ChainstateManager& chainman = *Assert(m_node.chainman);
     uint256 curr_tip = ::g_best_block;
 

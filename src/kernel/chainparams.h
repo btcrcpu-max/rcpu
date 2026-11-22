@@ -140,6 +140,9 @@ const std::string& Bech32HRP() const { return bech32_hrp; }
         return FindFirst(m_assumeutxo_data, [&](const auto& d) { return d.blockhash == blockhash; });
     }
 
+    /** Whether this chain ships any assumeutxo snapshot data at all. */
+    bool HasAssumeutxoData() const { return !m_assumeutxo_data.empty(); }
+
     const ChainTxData& TxData() const { return chainTxData; }
 
     /**
