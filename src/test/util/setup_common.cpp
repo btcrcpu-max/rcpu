@@ -138,10 +138,13 @@ BasicTestingSetup::BasicTestingSetup(const ChainType chainType, const std::vecto
         }
     }
     SelectParams(chainType);
-    // !RCPU (contract A): fixtures do not run AppInitMain, so mirror the
-    // selected chain's header layout here. Without it a block written to disk
-    // is serialized as the legacy 80-byte header and loses hashRandomX.
-    g_isRandomX = Params().GetConsensus().fPowRandomX;
+    // !RCPU: fixtures default to the legacy 80-byte header layout. Most captured
+    // test vectors in this tree are historical Bitcoin blocks, and parsing them
+    // with the RCPU layout consumes 32 extra bytes and yields a block with no
+    // transactions. Tests that mine RCPU blocks and round-trip them through disk
+    // opt in explicitly in their own fixture (see validation_block_tests); the
+    // node itself still gets the layout from AppInitMain/SelectParams.
+    g_isRandomX = false;
     SeedInsecureRand();
     if (G_TEST_LOG_FUN) LogInstance().PushBackCallback(G_TEST_LOG_FUN);
     InitLogging(*m_node.args);

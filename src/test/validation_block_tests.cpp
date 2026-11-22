@@ -26,6 +26,13 @@ using node::BlockAssembler;
 
 namespace validation_block_tests {
 struct MinerTestingSetup : public RegTestingSetup {
+    MinerTestingSetup()
+    {
+        // !RCPU: fixtures default to the legacy header layout. This suite mines
+        // real blocks and round-trips them through disk, so it needs the RCPU
+        // 112-byte header (otherwise hashRandomX is dropped on write).
+        g_isRandomX = true;
+    }
     std::shared_ptr<CBlock> Block(const uint256& prev_hash);
     std::shared_ptr<const CBlock> GoodBlock(const uint256& prev_hash);
     std::shared_ptr<const CBlock> BadBlock(const uint256& prev_hash);
