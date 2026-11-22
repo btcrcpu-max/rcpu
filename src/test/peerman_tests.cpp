@@ -6,7 +6,9 @@
 #include <node/miner.h>
 #include <net_processing.h>
 #include <pow.h>
+#include <test/util/mining.h>
 #include <test/util/setup_common.h>
+#include <util/check.h>
 #include <validation.h>
 
 #include <boost/test/unit_test.hpp>
@@ -21,7 +23,18 @@ static void mineBlock(const node::NodeContext& node, std::chrono::seconds block_
     auto curr_time = GetTime<std::chrono::seconds>();
     SetMockTime(block_time); // update time so the block is created with it
     CBlock block = node::BlockAssembler{node.chainman->ActiveChainstate(), nullptr}.CreateNewBlock(CScript() << OP_TRUE)->block;
-    while (!CheckProofOfWork(block.GetHash(), block.nBits, node.chainman->GetConsensus())) ++block.nNonce;
+    // !RCPU: the proof of work is RandomX/Etchash, not SHA256d over the header
+    // hash, and the solution must be stored in hashRandomX. SolveBlock() picks
+    // the algorithm from height/version and fills it in; the old loop compared
+    // the SHA256d hash against the target, left nonce 0 and made the node reject
+    // the block.
+    const auto& chainman{*Assert(node.chainman)};
+    CBlockHeader header{block.GetBlockHeader()};
+    const int64_t height{WITH_LOCK(chainman.GetMutex(), return chainman.ActiveHeight() + 1)};
+    const uint32_t prev_time{WITH_LOCK(chainman.GetMutex(), return chainman.ActiveChain().Tip()->GetBlockTime())};
+    Assert(SolveBlock(header, height, chainman.GetParams().GetConsensus(), prev_time));
+    block.nNonce = header.nNonce;
+    block.hashRandomX = header.hashRandomX;
     block.fChecked = true; // little speedup
     SetMockTime(curr_time); // process block at current time
     Assert(node.chainman->ProcessNewBlock(std::make_shared<const CBlock>(block), /*force_processing=*/true, /*min_pow_checked=*/true, nullptr));

@@ -147,11 +147,24 @@ BOOST_AUTO_TEST_CASE(test_assumeutxo)
         BOOST_CHECK(!out);
     }
 
-    const auto out110 = *params->AssumeutxoForHeight(110);
+    // !RCPU: RCPU regtest ships no assumeutxo snapshot (unlike Bitcoin regtest),
+    // so the positive lookups are skipped instead of dereferencing an empty
+    // optional. The negative checks above still run on every chain.
+    const auto out110_opt = params->AssumeutxoForHeight(110);
+    if (!out110_opt) {
+        BOOST_TEST_MESSAGE("no assumeutxo entry at height 110 on this chain; value checks skipped");
+        return;
+    }
+    const auto out110 = *out110_opt;
     BOOST_CHECK_EQUAL(out110.hash_serialized.ToString(), "b8e64fc1f1e2c54a0c67977e09e12d68fc8312af9f3033c4c626f7b6b2f6d549");
     BOOST_CHECK_EQUAL(out110.nChainTx, 111U);
 
-    const auto out110_2 = *params->AssumeutxoForBlockhash(uint256S("0x5536dd94c0941a7225bd0a3c5b69524b8fc0a6f49a9523c4acf314522373e49a"));
+    const auto out110_2_opt = params->AssumeutxoForBlockhash(uint256S("0x5536dd94c0941a7225bd0a3c5b69524b8fc0a6f49a9523c4acf314522373e49a"));
+    if (!out110_2_opt) {
+        BOOST_TEST_MESSAGE("no assumeutxo entry for that blockhash on this chain; value checks skipped");
+        return;
+    }
+    const auto out110_2 = *out110_2_opt;
     BOOST_CHECK_EQUAL(out110_2.hash_serialized.ToString(), "b8e64fc1f1e2c54a0c67977e09e12d68fc8312af9f3033c4c626f7b6b2f6d549");
     BOOST_CHECK_EQUAL(out110_2.nChainTx, 111U);
 }
