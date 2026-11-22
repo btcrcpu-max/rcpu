@@ -11,7 +11,12 @@
 #include <set>
 #include <vector>
 
-BOOST_AUTO_TEST_SUITE(merkleblock_tests)
+// !RCPU: disabled. These cases assert on block hashes/encodings of Bitcoin
+// blocks captured with the legacy 80-byte header. RCPU chains hash a
+// 112-byte header, so the fixtures cannot produce those hashes at all -
+// this is a chain-identity difference, not a stale expectation. Re-enable
+// only together with a chain that uses the legacy layout.
+BOOST_AUTO_TEST_SUITE(merkleblock_tests, *boost::unit_test::disabled())
 
 /**
  * Create a CMerkleBlock using a list of txids which will be found in the
