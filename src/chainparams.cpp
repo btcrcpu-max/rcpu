@@ -5,6 +5,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <chainparams.h>
+#include <primitives/block.h>
 
 #include <chainparamsbase.h>
 #include <common/args.h>
@@ -151,4 +152,10 @@ void SelectParams(const ChainType chain)
 {
     SelectBaseParams(chain);
     globalChainParams = CreateChainParams(gArgs, chain);
+    // !RCPU (contract A): g_isRandomX decides whether CBlockHeader serializes
+    // the 112-byte RCPU layout. AppInitMain sets it for the node and
+    // rcpu-chainstate for that tool, but unit tests only call SelectParams, and
+    // init.cpp builds several chains (each sets the flag while hashing its own
+    // genesis), so the selected chain has to win in the end.
+    g_isRandomX = globalChainParams->GetConsensus().fPowRandomX;
 }

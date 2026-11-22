@@ -13,6 +13,7 @@
 #include <addrman.h>
 #include <banman.h>
 #include <chainparams.h>
+#include <primitives/block.h>
 #include <common/system.h>
 #include <common/url.h>
 #include <consensus/consensus.h>
@@ -137,6 +138,10 @@ BasicTestingSetup::BasicTestingSetup(const ChainType chainType, const std::vecto
         }
     }
     SelectParams(chainType);
+    // !RCPU (contract A): fixtures do not run AppInitMain, so mirror the
+    // selected chain's header layout here. Without it a block written to disk
+    // is serialized as the legacy 80-byte header and loses hashRandomX.
+    g_isRandomX = Params().GetConsensus().fPowRandomX;
     SeedInsecureRand();
     if (G_TEST_LOG_FUN) LogInstance().PushBackCallback(G_TEST_LOG_FUN);
     InitLogging(*m_node.args);
