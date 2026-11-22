@@ -78,7 +78,7 @@ jobs:
           # "skipped because disabled" lines contain the suite names the check
           # below greps for. The two CT transaction cases now get their own
           # invocation and the run is verified suite by suite.
-          SUITES=blind_tests,confidential_validation_tests,randomx_tests,dualalgo_tests,logging_tests,coinbase_confidential_tests,group_outputs_tests,pow_tests,argsman_tests,tx_verify_tests,serialize_tests,bip324_tests,validation_block_tests
+          SUITES=blind_tests,confidential_validation_tests,randomx_tests,dualalgo_tests,logging_tests,coinbase_confidential_tests,group_outputs_tests,pow_tests,argsman_tests,tx_verify_tests,serialize_tests,bip324_tests,validation_block_tests,descriptor_tests,txvalidationcache_tests,ismine_tests,wallet_tests
           ./src/test/test_bitcoin --log_level=test_suite --run_test="$SUITES" 2>&1 | tee /tmp/rcpu-unit.log
           ./src/test/test_bitcoin --log_level=test_suite \
             --run_test=transaction_tests/ct_taproot_sighash_single_is_rejected:transaction_tests/ct_nonce_shape_validation \
@@ -90,14 +90,11 @@ jobs:
           done
           grep -q 'Entering test suite "transaction_tests"' /tmp/rcpu-unit.log || {
             echo "ERROR: CT transaction cases were not executed"; exit 1; }
-          # Still out of the gate, now for a real reason rather than a fixture
-          # exception (the test harness selects the RCPU chains, so these suites
-          # run and then fail on their own expectations):
-          #   wallet_tests - scan_for_wallet_transactions expects Bitcoin-regtest
-          #     maturity/scan semantics on an RCPU chain.
-          # descriptor_tests, txvalidationcache_tests and ismine_tests are also
-          # not listed here; they now run but still encode Bitcoin-regtest
-          # expectations (HRP, mempool/CT rules). Track them separately.
+          # The suites that used to be quarantined here (wallet_tests,
+          # descriptor_tests, txvalidationcache_tests, ismine_tests) now pass on
+          # the RCPU chains and are part of the gate above. What is still not
+          # covered: the fuzz targets (src/test/fuzz/*), which this workflow does
+          # not build and which still select the Bitcoin chain types.
       - name: Consensus gate - explicit coinbase symbol
         run: |
           # v1.0.9 rule: every coinbase output must be explicit. The published
