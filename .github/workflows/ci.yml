@@ -78,7 +78,7 @@ jobs:
           # "skipped because disabled" lines contain the suite names the check
           # below greps for. The two CT transaction cases now get their own
           # invocation and the run is verified suite by suite.
-          SUITES=blind_tests,confidential_validation_tests,randomx_tests,dualalgo_tests,logging_tests,coinbase_confidential_tests,group_outputs_tests,pow_tests,argsman_tests,tx_verify_tests,serialize_tests,bip324_tests
+          SUITES=blind_tests,confidential_validation_tests,randomx_tests,dualalgo_tests,logging_tests,coinbase_confidential_tests,group_outputs_tests,pow_tests,argsman_tests,tx_verify_tests,serialize_tests,bip324_tests,validation_block_tests
           ./src/test/test_bitcoin --log_level=test_suite --run_test="$SUITES" 2>&1 | tee /tmp/rcpu-unit.log
           ./src/test/test_bitcoin --log_level=test_suite \
             --run_test=transaction_tests/ct_taproot_sighash_single_is_rejected:transaction_tests/ct_nonce_shape_validation \
@@ -93,8 +93,6 @@ jobs:
           # Still out of the gate, now for a real reason rather than a fixture
           # exception (the test harness selects the RCPU chains, so these suites
           # run and then fail on their own expectations):
-          #   validation_block_tests - ProcessNewBlockHeaders() returns false and
-          #     the following optional deref asserts; needs its own investigation.
           #   wallet_tests - scan_for_wallet_transactions expects Bitcoin-regtest
           #     maturity/scan semantics on an RCPU chain.
           # descriptor_tests, txvalidationcache_tests and ismine_tests are also

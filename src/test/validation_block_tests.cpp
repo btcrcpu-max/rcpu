@@ -18,6 +18,7 @@
 #include <util/time.h>
 #include <validation.h>
 #include <validationinterface.h>
+#include <versionbits.h>
 
 #include <thread>
 
@@ -95,6 +96,13 @@ std::shared_ptr<CBlock> MinerTestingSetup::FinalizeBlock(std::shared_ptr<CBlock>
 
     pblock->hashMerkleRoot = BlockMerkleRoot(*pblock);
 
+    // !RCPU: retargeting is active on RCPU regtest (per-algorithm ASERT), so a
+    // block that hangs off a fork must take its target from that fork's parent.
+    // BlockAssembler computed nBits against the *active tip*, which is a
+    // different height for a branch block, and the node then rejects the header
+    // with "bad-diffbits" / "incorrect proof of work".
+    pblock->nBits = GetNextWorkRequired(prev_block, pblock.get(), Params().GetConsensus());
+
     // !RCPU: the proof of work here is RandomX (or Etchash for bit-30 blocks),
     // not SHA256d over the header hash, and the solution travels in
     // hashRandomX. SolveBlock() dispatches on height/version and fills it in;
@@ -163,19 +171,11 @@ void MinerTestingSetup::BuildChain(const uint256& root, int height, const unsign
     }
 }
 
-// !RCPU: disabled. The blocks themselves are now solved correctly (see
-// FinalizeBlock), but the case drives 10 threads through ProcessNewBlock while
-// the fixture has only ever submitted headers for the same blocks. On RCPU a
-// thread then reaches ConnectTip for an index entry whose data is not on disk
-// yet, ReadBlockFromDisk fails, and validation aborts with "Failed to read
-// block" (validation.cpp:3028), so the case fails on assertions and floods
-// debug.log. That is a separate problem from the PoW handling this file needed.
-// The body stays here for whoever picks that up: re-enable it by removing the
-// #if 0. A boost::unit_test::disabled() decorator was tried first, but it does
-// not stop the case from running when the suite is selected explicitly with
-// --run_test=validation_block_tests, which is how this binary is usually
-// invoked.
-#if 0
+// !RCPU: this case needed the same two fixes as the rest of the file - mining
+// with the RCPU PoW and taking nBits from the block's real parent - plus the
+// header-layout fix that keeps hashRandomX in the serialized block. Before them
+// a thread reached ConnectTip for an index entry whose data was not on disk,
+// ReadBlockFromDisk failed and validation aborted with "Failed to read block".
 BOOST_AUTO_TEST_CASE(processnewblock_signals_ordering)
 {
     // build a large-ish chain that's likely to have some forks
@@ -233,7 +233,6 @@ BOOST_AUTO_TEST_CASE(processnewblock_signals_ordering)
     LOCK(cs_main);
     BOOST_CHECK_EQUAL(sub->m_expected_tip, m_node.chainman->ActiveChain().Tip()->GetBlockHash());
 }
-#endif // !RCPU: disabled, see the comment above the case
 
 /**
  * Test that mempool updates happen atomically with reorgs.
@@ -394,11 +393,17 @@ BOOST_AUTO_TEST_CASE(unknown_prev_headers_skip_randomx)
 BOOST_AUTO_TEST_CASE(connected_header_still_checks_pow)
 {
     CBlockHeader hdr;
-    hdr.nVersion = CT_VERSION;
+    // Version 3 is rejected as "bad-version" before PoW is reached; use the
+    // lowest version this chain accepts.
+    hdr.nVersion = VERSIONBITS_LAST_OLD_BLOCK_VERSION;
     hdr.hashPrevBlock = Params().GenesisBlock().GetHash();
     hdr.hashMerkleRoot = uint256::ONE;
     hdr.nTime = Params().GenesisBlock().nTime + 1;
-    hdr.nBits = 0xffffffff; // exceeds pow limit -> PoW must fail
+    // RCPU checks the difficulty bits before the proof of work, so 0xffffffff is
+    // rejected as "bad-diffbits". Use the expected target and let the forged
+    // hashRandomX fail the PoW check instead.
+    const CBlockIndex* tip{WITH_LOCK(::cs_main, return m_node.chainman->ActiveChain().Tip())};
+    hdr.nBits = GetNextWorkRequired(tip, &hdr, Params().GetConsensus());
     hdr.nNonce = 0;
     hdr.hashRandomX = uint256::ONE;
 
