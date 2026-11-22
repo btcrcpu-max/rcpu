@@ -27,8 +27,16 @@ BOOST_FIXTURE_TEST_SUITE(coinbase_confidential_tests, BasicTestingSetup)
 // undefined behavior (observed as spurious bad-cb-missing on CI).
 static CTransactionRef CoinbaseOfBlockHex(const std::string& hex)
 {
+    // !RCPU (contract A): the fixtures were captured before the 112-byte RCPU
+    // header existed, so decode them with the legacy layout explicitly instead of
+    // inheriting the selected chain's layout. Without this the parser consumes
+    // eight extra bytes and the block comes back with no transactions.
+    const bool saved{g_isRandomX.load()};
+    g_isRandomX = false;
     CBlock block;
-    BOOST_REQUIRE(DecodeHexBlk(block, hex));
+    const bool decoded{DecodeHexBlk(block, hex)};
+    g_isRandomX = saved;
+    BOOST_REQUIRE(decoded);
     BOOST_REQUIRE(!block.vtx.empty());
     BOOST_REQUIRE(block.vtx[0]->IsCoinBase());
     return block.vtx[0];

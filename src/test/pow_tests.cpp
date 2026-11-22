@@ -289,7 +289,9 @@ BOOST_AUTO_TEST_CASE(Check_RandomX_BlockHeader)
     // domain (including hashRandomX) via an explicit field-wise serialization;
     // the flag only selects the domain for Bitcoin-compatible chains and is
     // constant for the process lifetime.
-    assert(!g_isRandomX);
+    // !RCPU (contract A): the flag mirrors the selected chain, so set the
+    // legacy layout explicitly instead of asserting the process default.
+    g_isRandomX = false;
     BOOST_CHECK_NE(consensus.hashGenesisBlock, chainParams->GenesisBlock().GetHash());
     g_isRandomX = true;
     BOOST_CHECK_EQUAL(consensus.hashGenesisBlock, chainParams->GenesisBlock().GetHash());
