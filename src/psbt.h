@@ -119,6 +119,15 @@ void UnserializeFromVector(Stream& s, X&&... args)
  *  (Serializable/Unserializable concepts) declared before theirs. A free
  *  function defined later in psbt.h would be invisible at that point and
  *  the code would not compile. */
+
+/* RCPU CT interoperability note (audit F-07): BIP174 has no representation
+ * for a confidential witness_utxo. With fCT == true the field below carries
+ * the 9/33-byte value encoding, the 33-byte nonce and the rangeproof. Only
+ * RCPU-aware parsers (this tree's decodepsbt/combinepsbt/walletprocesspsbt)
+ * can read it; standard Bitcoin Core or hardware-wallet PSBT parsers will
+ * fail. A CT PSBT must therefore not be exported to a non-RCPU signer until a
+ * dedicated CT-PSBT extension is specified. The unsigned transaction itself is
+ * v3 and is equally RCPU-only. */
 struct PSBTCtxOutSerialize {
     const CTxOut& out;
     bool fCT;

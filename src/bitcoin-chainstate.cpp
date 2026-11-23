@@ -21,6 +21,7 @@
 #include <core_io.h>
 #include <node/blockstorage.h>
 #include <primitives/block.h>
+#include <primitives/confidential.h>
 #include <node/caches.h>
 #include <node/chainstate.h>
 #include <random.h>
@@ -120,6 +121,10 @@ int main(int argc, char* argv[])
     // parsed as the legacy 80-byte form.
     auto chainparams = CChainParams::RcpuMain();
     g_isRandomX = chainparams->GetConsensus().fPowRandomX;
+    // M-10: CT is a consensus rule on RCPU mainnet. AppInitMain() normally
+    // initialises this global; standalone kernel users must do the same or
+    // every v3 transaction is rejected as bad-txns-ct-mode-disabled.
+    g_con_elementsmode = true;
     const ChainstateManager::Options chainman_opts{
         .chainparams = *chainparams,
         .datadir = abs_datadir,

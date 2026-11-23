@@ -1844,7 +1844,8 @@ CTxOut txout(recipient.nAmount, GetScriptForDestination(recipient.dest));
                                       explicit_outputs.empty() ? nullptr : &explicit_outputs,
                                       /*use_path_c=*/true,
                                       spend_height,
-                                      consensus.nCTStrictRulesHeight)) {
+                                      consensus.nCTStrictRulesHeight,
+                                      consensus.nBanPathAHeight)) {
                     return util::Error{_("Confidential transaction blinding failed")};
                 }
                 const CAmount paid_fee = result.GetSelectedValue() - total_output_value();

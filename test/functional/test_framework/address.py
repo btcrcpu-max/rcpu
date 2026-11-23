@@ -47,17 +47,19 @@ class AddressType(enum.Enum):
 b58chars = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'
 
 
-def create_deterministic_address_bcrt1_p2tr_op_true():
+def create_deterministic_address_bcrt1_p2tr_op_true(hrp=None):
     """
     Generates a deterministic bech32m address (segwit v1 output) that
     can be spent with a witness stack of OP_TRUE and the control block
     with internal public key (script-path spending).
 
     Returns a tuple with the generated address and the internal key.
+    `hrp` selects the bech32 HRP (default bcrt; RCPU chains pass rrcpu/trcpu/rcpu).
     """
     internal_key = (1).to_bytes(32, 'big')
-    address = output_key_to_p2tr(taproot_construct(internal_key, [(None, CScript([OP_TRUE]))]).output_pubkey)
-    assert_equal(address, 'bcrt1p9yfmy5h72durp7zrhlw9lf7jpwjgvwdg0jr0lqmmjtgg83266lqsekaqka')
+    address = output_key_to_p2tr(taproot_construct(internal_key, [(None, CScript([OP_TRUE]))]).output_pubkey, hrp=hrp)
+    if hrp is None:
+        assert_equal(address, 'bcrt1p9yfmy5h72durp7zrhlw9lf7jpwjgvwdg0jr0lqmmjtgg83266lqsekaqka')
     return (address, internal_key)
 
 
@@ -128,13 +130,15 @@ def key_to_p2sh_p2wpkh(key, main=False):
     p2shscript = CScript([OP_0, hash160(key)])
     return script_to_p2sh(p2shscript, main)
 
-def program_to_witness(version, program, main=False):
+def program_to_witness(version, program, main=False, hrp=None):
     if (type(program) is str):
         program = bytes.fromhex(program)
     assert 0 <= version <= 16
     assert 2 <= len(program) <= 40
     assert version > 0 or len(program) in [20, 32]
-    return encode_segwit_address("bc" if main else "bcrt", version, program)
+    if hrp is None:
+        hrp = "bc" if main else "bcrt"
+    return encode_segwit_address(hrp, version, program)
 
 def script_to_p2wsh(script, main=False):
     script = check_script(script)
@@ -149,9 +153,9 @@ def script_to_p2sh_p2wsh(script, main=False):
     p2shscript = CScript([OP_0, sha256(script)])
     return script_to_p2sh(p2shscript, main)
 
-def output_key_to_p2tr(key, main=False):
+def output_key_to_p2tr(key, main=False, hrp=None):
     assert len(key) == 32
-    return program_to_witness(1, key, main)
+    return program_to_witness(1, key, main, hrp=hrp)
 
 def check_key(key):
     if (type(key) is str):
@@ -170,7 +174,7 @@ def check_script(script):
 
 def bech32_to_bytes(address):
     hrp = address.split('1')[0]
-    if hrp not in ['bc', 'tb', 'bcrt']:
+    if hrp not in ['bc', 'tb', 'bcrt', 'rcpu', 'trcpu', 'rrcpu']:
         return (None, None)
     version, payload = decode_segwit_address(hrp, address)
     if version is None:

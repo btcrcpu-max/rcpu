@@ -112,6 +112,11 @@ CAmount CTransaction::GetValueOut() const
 
 CAmount CTransaction::GetFeeOut() const
 {
+    // RCPU CT: the explicit fee-output convention only exists for v3
+    // transactions. A v2 empty-script output is an ordinary (nonstandard)
+    // output, not a fee; counting it here would misreport wallet/RPC fees.
+    // Consensus UTXO semantics are deliberately unchanged (see audit F-06).
+    if (nVersion != CT_VERSION) return 0;
     CAmount nFee = 0;
     for (const auto& tx_out : vout) {
         if (tx_out.IsFee()) {

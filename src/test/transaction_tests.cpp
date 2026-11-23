@@ -1002,6 +1002,9 @@ BOOST_AUTO_TEST_CASE(test_IsStandard)
 BOOST_AUTO_TEST_CASE(calculate_output_value_skips_fee)
 {
     CMutableTransaction tx;
+    // The explicit fee-output convention only exists for v3/CT transactions;
+    // GetFeeOut() deliberately returns 0 for legacy v2 transactions.
+    tx.nVersion = CT_VERSION;
     tx.vout.push_back(CTxOut(100000, CScript() << OP_TRUE));
     tx.vout.push_back(CTxOut(2500, CScript())); // fee
     CTransaction ctx(tx);

@@ -128,7 +128,7 @@ static std::vector<RPCResult> DecodeTxDoc(const std::string& txid_field_doc)
         {
             {RPCResult::Type::OBJ, "", "",
             {
-                {RPCResult::Type::STR_AMOUNT, "value", "The value in " + CURRENCY_UNIT},
+                {RPCResult::Type::STR_AMOUNT, "value", "The value in " + CURRENCY_UNIT + "; the string \"confidential\" when the value is hidden behind a Pedersen commitment"},
                 {RPCResult::Type::NUM, "n", "index"},
                 {RPCResult::Type::OBJ, "scriptPubKey", "", ScriptPubKeyDoc()},
             }},
@@ -316,7 +316,7 @@ static RPCHelpMan getrawtransaction()
                                     {
                                         {RPCResult::Type::BOOL, "generated", "Coinbase or not"},
                                         {RPCResult::Type::NUM, "height", "The height of the prevout"},
-                                        {RPCResult::Type::STR_AMOUNT, "value", "The value in " + CURRENCY_UNIT},
+                                        {RPCResult::Type::STR_AMOUNT, "value", "The value in " + CURRENCY_UNIT + "; the string \"confidential\" when the value is hidden behind a Pedersen commitment"},
                                         {RPCResult::Type::OBJ, "scriptPubKey", "", ScriptPubKeyDoc()},
                                     }},
                                 }},

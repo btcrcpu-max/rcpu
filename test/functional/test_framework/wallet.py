@@ -95,7 +95,14 @@ class MiniWallet:
             pub_key = self._priv_key.get_pubkey()
             self._scriptPubKey = key_to_p2pk_script(pub_key.get_bytes())
         elif mode == MiniWalletMode.ADDRESS_OP_TRUE:
-            self._address, self._internal_key = create_deterministic_address_bcrt1_p2tr_op_true()
+            # RCPU chains use their own bech32 HRP; the framework default
+            # (bcrt1...) is rejected by RCPU nodes as an invalid address.
+            hrp = {
+                'rcpuregtest': 'rrcpu',
+                'rcputestnet': 'trcpu',
+                'rcpu': 'rcpu',
+            }.get(test_node.chain, 'bcrt')
+            self._address, self._internal_key = create_deterministic_address_bcrt1_p2tr_op_true(hrp=hrp)
             self._scriptPubKey = address_to_scriptpubkey(self._address)
 
         # When the pre-mined test framework chain is used, it contains coinbase

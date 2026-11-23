@@ -4,6 +4,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <blind.h>
+#include <common/args.h>
 #include <core_io.h>
 #include <hash.h>
 #include <key_io.h>
@@ -797,6 +798,20 @@ RPCHelpMan listunspent()
     };
 }
 
+namespace {
+/** True if `candidate` is `base` or below it, comparing path components (so
+ * "/data2" is not considered inside "/data"). */
+bool PathIsAtOrBelow(const fs::path& base, const fs::path& candidate)
+{
+    auto b = base.begin();
+    auto c = candidate.begin();
+    for (; b != base.end(); ++b, ++c) {
+        if (c == candidate.end() || *b != *c) return false;
+    }
+    return true;
+}
+} // namespace
+
 RPCHelpMan listunreadableoutputs()
 {
     return RPCHelpMan{
@@ -872,7 +887,22 @@ RPCHelpMan listunreadableoutputs()
     }
 
     if (!request.params[0].isNull()) {
+        // W-01: confine the CSV to the wallet data directory. This RPC used to
+        // accept any absolute path, giving a wallet-RPC caller a file-create
+        // primitive anywhere the node user can write (and a symlink TOCTOU
+        // between exists() and open()). Canonicalise the parent so symlinks
+        // and ".." cannot escape the datadir.
+        std::error_code ec;
+        const fs::path base = fs::weakly_canonical(fs::absolute(gArgs.GetDataDirNet()), ec);
+        if (ec) {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "Cannot resolve the data directory");
+        }
         fs::path filepath = fs::absolute(fs::u8path(request.params[0].get_str()));
+        const fs::path parent = fs::weakly_canonical(filepath.parent_path(), ec);
+        if (ec || parent.empty() || !PathIsAtOrBelow(base, parent)) {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "Output file must be inside the data directory");
+        }
+        filepath = parent / filepath.filename();
         // Same rule as dumpwallet: never overwrite an existing file.
         if (fs::exists(filepath)) {
             throw JSONRPCError(RPC_INVALID_PARAMETER, filepath.utf8string() + " already exists. If you are sure this is what you want, move it out of the way first");

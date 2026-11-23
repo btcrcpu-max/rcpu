@@ -136,6 +136,11 @@ std::optional<CAmount> GetOutputAmount(const CTxOut& txout);
  *                           leave the default -1 (legacy behavior).
  * @param[in] nCTStrictRulesHeight strict CT activation height. Path A (0x02)
  *                           is rejected when nSpendHeight reaches this value.
+ * @param[in] nBanPathAHeight    consensus height from which the legacy Path-A
+ *                           nonce encoding is rejected. Callers must pass the
+ *                           chain's nBanPathAHeight; on mainnet it is lower
+ *                           than nCTStrictRulesHeight, so checking only the
+ *                           strict height could build a consensus-invalid tx.
  * @return true on success
  */
 bool BlindTransaction(const std::vector<uint256>& input_blinds, CMutableTransaction& tx,
@@ -144,7 +149,8 @@ bool BlindTransaction(const std::vector<uint256>& input_blinds, CMutableTransact
                       const std::vector<bool>* explicit_outputs = nullptr,
                       bool use_path_c = false,
                       int nSpendHeight = -1,
-                      int nCTStrictRulesHeight = std::numeric_limits<int>::max());
+                      int nCTStrictRulesHeight = std::numeric_limits<int>::max(),
+                      int nBanPathAHeight = std::numeric_limits<int>::max());
 
 /**
  * Blind an output to a specific recipient using ECDH. The nonce commitment

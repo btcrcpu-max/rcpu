@@ -645,7 +645,7 @@ const RPCResult getblock_vin{
             {
                 {RPCResult::Type::BOOL, "generated", "Coinbase or not"},
                 {RPCResult::Type::NUM, "height", "The height of the prevout"},
-                {RPCResult::Type::STR_AMOUNT, "value", "The value in " + CURRENCY_UNIT},
+                {RPCResult::Type::STR_AMOUNT, "value", "The value in " + CURRENCY_UNIT + "; the string \"confidential\" when the value is hidden behind a Pedersen commitment"},
                 {RPCResult::Type::OBJ, "scriptPubKey", "",
                 {
                     {RPCResult::Type::STR, "asm", "Disassembly of the public key script"},
@@ -888,7 +888,7 @@ static RPCHelpMan gettxoutsetinfo()
                 "\nReturns statistics about the unspent transaction output set.\n"
                 "Note this call may take some time if you are not using coinstatsindex.\n",
                 {
-                    {"hash_type", RPCArg::Type::STR, RPCArg::Default{"hash_serialized_3"}, "Which UTXO set hash should be calculated. Options: 'hash_serialized_3' (the legacy algorithm), 'hash_serialized_4' (CT-aware: commits to commitment/nonce/rangeproof), 'muhash', 'none'."},
+                    {"hash_type", RPCArg::Type::STR, RPCArg::Default{"hash_serialized_3"}, "Which UTXO set hash should be calculated. 'hash_serialized_3' is CT-aware on confidential chains (commits to commitment/nonce/rangeproof); 'hash_serialized_4' is the explicit CT-aware alias; 'muhash' is the legacy (non-CT) construction; 'none' skips hashing."},
                     {"hash_or_height", RPCArg::Type::NUM, RPCArg::DefaultHint{"the current best block"}, "The block hash or height of the target height (only available with coinstatsindex).",
                      RPCArgOptions{
                          .skip_type_check = true,
@@ -906,6 +906,8 @@ static RPCHelpMan gettxoutsetinfo()
                         {RPCResult::Type::STR_HEX, "hash_serialized_3", /*optional=*/true, "The serialized hash (only present if 'hash_serialized_3' hash_type is chosen)"},
         {RPCResult::Type::STR_HEX, "hash_serialized_4", /*optional=*/true, "The CT-aware serialized hash (only present if 'hash_serialized_4' hash_type is chosen)"},
                         {RPCResult::Type::STR_HEX, "muhash", /*optional=*/true, "The serialized hash (only present if 'muhash' hash_type is chosen)"},
+                        {RPCResult::Type::BOOL, "ct_aware", "RCPU CT: true iff the returned hash commits to commitment/nonce/rangeproof (hash_serialized_3 on a confidential chain, or hash_serialized_4)"},
+                        {RPCResult::Type::STR, "warning", /*optional=*/true, "RCPU CT: present when a confidential chain was queried with a non-CT-aware hash type; the hash must not be used as a UTXO-set integrity commitment"},
                         {RPCResult::Type::NUM, "transactions", /*optional=*/true, "The number of transactions with unspent outputs (not available when coinstatsindex is used)"},
                         {RPCResult::Type::NUM, "disk_size", /*optional=*/true, "The estimated size of the chainstate on disk (not available when coinstatsindex is used)"},
                         {RPCResult::Type::STR_AMOUNT, "total_amount", "The total amount of coins in the UTXO set. Confidential outputs are counted as 0, see \"amounts_complete\""},
@@ -945,7 +947,14 @@ static RPCHelpMan gettxoutsetinfo()
     UniValue ret(UniValue::VOBJ);
 
     const CBlockIndex* pindex{nullptr};
-    const CoinStatsHashType hash_type{request.params[0].isNull() ? CoinStatsHashType::HASH_SERIALIZED : ParseHashType(request.params[0].get_str())};
+    // RCPU CT: the historical hash_serialized_3 construction does not commit to
+    // commitment/nonce/rangeproof. On a confidential chain ComputeUTXOStats()
+    // now computes it with the CT-aware construction (and hash_serialized_4 is
+    // an explicit alias), so keeping the old default no longer produces a hash
+    // that ignores CT data. Non-CT chains are byte-identical to upstream.
+    const CoinStatsHashType hash_type{request.params[0].isNull()
+                                          ? CoinStatsHashType::HASH_SERIALIZED
+                                          : ParseHashType(request.params[0].get_str())};
     bool index_requested = request.params[2].isNull() || request.params[2].get_bool();
 
     NodeContext& node = EnsureAnyNodeContext(request.context);
@@ -1005,6 +1014,17 @@ static RPCHelpMan gettxoutsetinfo()
         }
         if (hash_type == CoinStatsHashType::MUHASH) {
             ret.pushKV("muhash", stats.hashSerialized.GetHex());
+        }
+        // RCPU CT: tell callers whether the returned hash commits to
+        // commitment/nonce/rangeproof. hash_serialized_3 and muhash (the
+        // coinstatsindex format) do not; only hash_serialized_4 does. A
+        // "ct_aware": false hash must never be used as a UTXO-set integrity
+        // commitment on a confidential chain.
+        const bool ct_aware{hash_type == CoinStatsHashType::HASH_SERIALIZED_CT ||
+                            (hash_type == CoinStatsHashType::HASH_SERIALIZED && g_con_elementsmode)};
+        ret.pushKV("ct_aware", ct_aware);
+        if (g_con_elementsmode && !ct_aware && hash_type != CoinStatsHashType::NONE) {
+            ret.pushKV("warning", "this UTXO-set hash does not commit to confidential transaction data; use hash_serialized_4 for integrity checks");
         }
         CHECK_NONFATAL(stats.total_amount.has_value());
         ret.pushKV("total_amount", ValueFromAmount(stats.total_amount.value()));
@@ -2000,7 +2020,17 @@ const CTxOut& prevoutput = coin.out;
                 utxo_size_inc_actual -= prevout_size;
             }
 
-            CAmount txfee = tx_total_in - tx_total_out;
+            // RCPU CT: a v3 transaction's fee is the explicit fee output
+            // (VerifyAmounts / CheckTxInputs CT branch), not
+            // tx_total_in - tx_total_out: confidential inputs and outputs are
+            // not representable as CAmount and GetAmount() returns 0 for them.
+            // Using the difference made txfee negative whenever a confidential
+            // output was spent (CHECK_NONFATAL then aborted the RPC) and
+            // wildly overstated it otherwise. v2 amounts are fully explicit,
+            // so the legacy difference is correct there.
+            const CAmount txfee = (tx->nVersion == CT_VERSION)
+                                      ? tx->GetFeeOut()
+                                      : (tx_total_in - tx_total_out);
             CHECK_NONFATAL(MoneyRange(txfee));
             if (do_medianfee) {
                 fee_array.push_back(txfee);
