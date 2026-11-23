@@ -177,7 +177,12 @@ bool UnblindConfidentialOutput(const CWallet& wallet, const CTxOut& txout,
     // private key (P2SH / P2WSH / Taproot / pubkey-import-only) and genuinely
     // foreign outputs stay unblinded -- the caller reports 0 as before.
     CTxDestination dest;
-    if (!ExtractDestination(txout.scriptPubKey, dest)) {
+    // NOTE: ExtractDestination returns false for bare P2PK even though it
+    // fills in a valid PubKeyDestination (P2PK has no address form). Only a
+    // CNoDestination means the script carries no key we can use, so do not
+    // require the bool here -- mirror UnblindWalletOutput above.
+    ExtractDestination(txout.scriptPubKey, dest);
+    if (std::get_if<CNoDestination>(&dest)) {
         return false;
     }
     CKeyID keyid;
@@ -188,7 +193,7 @@ bool UnblindConfidentialOutput(const CWallet& wallet, const CTxOut& txout,
         keyid = ToKeyID(*pkh);
     } else if (const auto* wpkh = std::get_if<WitnessV0KeyHash>(&dest)) {
         keyid = ToKeyID(*wpkh);
-    } else if (const auto* tr = std::get_if<WitnessV1Taproot>(&dest)) {
+    } else if (std::get_if<WitnessV1Taproot>(&dest)) {
         // Path-B (confidential, rcpux1...) outputs are bound to a taproot
         // script. Without this branch UnblindConfidentialOutput returned false
         // for every P2TR output, so receive / balance / history credited 0 --
@@ -225,6 +230,13 @@ bool UnblindConfidentialOutput(const CWallet& wallet, const CTxOut& txout,
         else if (auto* desc = dynamic_cast<DescriptorScriptPubKeyMan*>(man)) {
             CKeyID kd;
             if (desc->GetPrivKey(txout.scriptPubKey, kd, key)) { have_key = true; break; }
+        }
+        // LegacySigningProvider::GetKey is hard-wired to return false
+        // (see UnblindWalletOutput above), so a legacy wallet must resolve the
+        // key straight from its LegacyScriptPubKeyMan. Without this branch
+        // every path-B/C output of a legacy wallet was reported NoKey/0.
+        else if (const auto* legacy = dynamic_cast<const LegacyScriptPubKeyMan*>(man)) {
+            if (legacy->GetKey(keyid, key)) { have_key = true; break; }
         } else {
             std::unique_ptr<SigningProvider> spk = man->GetSolvingProvider(txout.scriptPubKey);
             if (spk && spk->GetKey(keyid, key)) { have_key = true; break; }
@@ -296,6 +308,16 @@ CTOutputInfo GetCTOutputInfo(const CWallet& wallet, const CWalletTx& wtx, unsign
     const auto it = wtx.mapValue.find(strprintf("ct_unblind_%u", n));
     if (it != wtx.mapValue.end()) {
         const CAmount cached = LocaleIndependentAtoi<CAmount>(it->second);
+        if (MoneyRange(cached)) return {CTAmountStatus::KnownCached, cached};
+    }
+    // RCPU CT (W-02): the sender knows the plaintext amount of an output it
+    // created even when the recipient is a foreign rcpux1... key it cannot
+    // unblind. CommitTransaction() persists that value in vout_amount_<n>; use
+    // it so listtransactions/gettransaction do not report amount_known=false
+    // for a value they already display from CachedTxGetAmounts().
+    const auto sent_it = wtx.mapValue.find(strprintf("vout_amount_%u", n));
+    if (sent_it != wtx.mapValue.end()) {
+        const CAmount cached = LocaleIndependentAtoi<CAmount>(sent_it->second);
         if (MoneyRange(cached)) return {CTAmountStatus::KnownCached, cached};
     }
     return info;

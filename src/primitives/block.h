@@ -35,6 +35,14 @@ extern std::atomic<bool> g_isIBDFinished;
 // so header layout, GetHash() and ToString() can never diverge.
 inline bool HasRandomXHeaderField() { return g_isRandomX.load(std::memory_order_acquire); }
 
+// Audit F-11 note: the 80-vs-112-byte header layout is a chain-level property
+// carried in a process global, not in the data being parsed. Every entry point
+// that deserializes headers (daemon, bitcoin-chainstate, fixtures, future
+// kernel users) must call SelectParams() or set g_isRandomX before the first
+// header is read. A tool that forgets silently parses the wrong layout; there
+// is no way to detect it from the bytes alone. Threading fPowRandomX through
+// CBlockHeader's serialization parameters is the long-term fix.
+
 // !RCPU
 // Dual-algo: nVersion bit that marks a block as mined with Etchash. The wire
 // header layout is unchanged; the algorithm result is carried in the existing

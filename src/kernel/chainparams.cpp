@@ -14,6 +14,7 @@
 #include <kernel/messagestartchars.h>
 #include <logging.h>
 #include <primitives/block.h>
+#include <primitives/confidential.h>
 #include <primitives/transaction.h>
 #include <script/interpreter.h>
 #include <script/script.h>
@@ -320,6 +321,10 @@ consensus.fPowRandomX = true;
         // Genesis coinbase text is a frozen artifact (2024 news string).
         // Canonical launch timestamp is genesis.nTime = 1788566400.
         g_isRandomX = true; // !RCPU: 112-byte RCPU header from genesis on
+        // M-10: confidential transactions are a consensus rule on this chain.
+        // Set here as well as in CreateChainParams() so direct constructors
+        // (standalone tools, tests, kernel users) never default to CT-off.
+        g_con_elementsmode = true;
         genesis = CreateRcpuGenesisBlock(1788566400, 20076863, 0x1e3ffffc, 1, 50 * COIN);
         genesis.hashRandomX = uint256S("33c450e0152826e3a8948b01464cf9182344a1544b3ddcf6153dd04b62938d01");
         consensus.hashGenesisBlock = GetHashOfRcpuGenesisBlock(genesis);
@@ -456,6 +461,10 @@ consensus.fPowRandomX = true;
         // RCPU (P1-1): testnet uses the canonical 112-byte hash domain from
         // genesis height (byte-identical to the legacy domain).
         g_isRandomX = true; // !RCPU: 112-byte RCPU header from genesis on
+        // M-10: confidential transactions are a consensus rule on this chain.
+        // Set here as well as in CreateChainParams() so direct constructors
+        // (standalone tools, tests, kernel users) never default to CT-off.
+        g_con_elementsmode = true;
         genesis = CreateRcpuGenesisBlock(1708750000, 1, 0x1e7fffff, 1, 50 * COIN, "22/Feb/2024 RCPU Testnet Genesis - Independent Chain");
         genesis.hashRandomX = uint256{};
         consensus.hashGenesisBlock = GetHashOfRcpuGenesisBlock(genesis);
@@ -588,6 +597,10 @@ public:
         consensus.nEtchashEpochLength = 10;
         consensus.nEtchashBigEndianHeight = 0; // tests exercise standard geth ordering
         g_isRandomX = true; // !RCPU: 112-byte RCPU header from genesis on
+        // M-10: confidential transactions are a consensus rule on this chain.
+        // Set here as well as in CreateChainParams() so direct constructors
+        // (standalone tools, tests, kernel users) never default to CT-off.
+        g_con_elementsmode = true;
         genesis = CreateRcpuGenesisBlock(1296688602, 1, 0x207fffff, 1, 50 * COIN);
         genesis.hashRandomX = uint256S("0x177a9deba97f0dae00a6bf55e03671ec6bce7051d6a5054db49237598b803f93");
         consensus.hashGenesisBlock = GetHashOfRcpuGenesisBlock(genesis);

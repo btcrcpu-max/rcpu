@@ -653,7 +653,9 @@ jobs:
       - name: Attest release assets
         # REL-02: sign a provenance attestation for every published asset so a
         # downloader can verify which workflow produced it.
-        uses: actions/attest-build-provenance@v2
+        # S-01: pin to the v2 commit SHA (not the mutable v2 tag). This job has
+        # contents:write + id-token:write and imported the release GPG key.
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
         with:
           subject-path: |
             linux/*

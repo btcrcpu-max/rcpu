@@ -221,7 +221,8 @@ bool BlindTransaction(const std::vector<uint256>& input_blinds, CMutableTransact
                       const std::vector<bool>* explicit_outputs,
                       bool use_path_c,
                       int nSpendHeight,
-                      int nCTStrictRulesHeight)
+                      int nCTStrictRulesHeight,
+                      int nBanPathAHeight)
 {
     secp256k1_context* ctx = GetBlindContext();
     const size_t n = tx.vout.size();
@@ -393,7 +394,8 @@ bool BlindTransaction(const std::vector<uint256>& input_blinds, CMutableTransact
             // From nCTStrictRulesHeight the nonce must be a real curve point,
             // so 0x02 is consensus-invalid. Fail closed here as well, even for
             // callers that bypass the wallet's explicit-output handling.
-            if (nSpendHeight >= 0 && nSpendHeight >= nCTStrictRulesHeight) {
+            if (nSpendHeight >= 0 &&
+                (nSpendHeight >= nCTStrictRulesHeight || nSpendHeight >= nBanPathAHeight)) {
                 return false;
             }
             Rand32(output_nonces[i]);

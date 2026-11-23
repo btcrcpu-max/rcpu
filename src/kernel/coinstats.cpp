@@ -183,8 +183,14 @@ std::optional<CCoinsStats> ComputeUTXOStats(CoinStatsHashType hash_type, CCoinsV
     bool success = [&]() -> bool {
         switch (hash_type) {
         case(CoinStatsHashType::HASH_SERIALIZED): {
+            // RCPU CT: on a confidential chain the legacy construction maps
+            // every commitment to "value 0 + script", so two different UTXO
+            // sets can hash identically. Keep the historical hash_serialized_3
+            // name (callers depend on it) but compute the CT-aware commitment
+            // there as well. On non-CT chains this stays byte-identical to
+            // upstream.
             HashWriter ss{};
-            return ComputeUTXOStats(view, stats, ss, interruption_point, /*f_ct=*/false);
+            return ComputeUTXOStats(view, stats, ss, interruption_point, /*f_ct=*/g_con_elementsmode);
         }
         case(CoinStatsHashType::HASH_SERIALIZED_CT): {
             HashWriter ss{};

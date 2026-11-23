@@ -6,6 +6,7 @@
 
 #include <chainparams.h>
 #include <primitives/block.h>
+#include <primitives/confidential.h>
 
 #include <chainparamsbase.h>
 #include <common/args.h>
@@ -113,8 +114,17 @@ std::unique_ptr<const CChainParams> CreateChainParams(const ArgsManager& args, c
     // !RCPU (dual-algo): every chain type is built through here, so this is the
     // one place that can reject a misconfigured dual-algo schedule before the
     // node starts accepting blocks. See Consensus::Params::CheckDualAlgoConsistency().
+    // M-10: CT is a consensus rule on every RCPU network. Initialise the
+    // process-wide mode here so any entry point that builds chain parameters
+    // (daemon, tests, libbitcoinkernel, standalone tools) starts from the
+    // correct value. AppInitParameterInteraction() may still override it for
+    // RCPUREGTEST via -ctmode; mainnet/testnet force it back on there.
     const auto checked = [](std::unique_ptr<const CChainParams> params) {
         params->GetConsensus().CheckDualAlgoConsistency();
+        const ChainType type = params->GetChainType();
+        g_con_elementsmode = (type == ChainType::RCPUMAIN ||
+                              type == ChainType::RCPUTESTNET ||
+                              type == ChainType::RCPUREGTEST);
         return params;
     };
 
@@ -158,4 +168,9 @@ void SelectParams(const ChainType chain)
     // init.cpp builds several chains (each sets the flag while hashing its own
     // genesis), so the selected chain has to win in the end.
     g_isRandomX = globalChainParams->GetConsensus().fPowRandomX;
+    // M-10: keep the CT consensus switch in sync with the selected chain even
+    // when the parameters object was built outside CreateChainParams().
+    g_con_elementsmode = (chain == ChainType::RCPUMAIN ||
+                          chain == ChainType::RCPUTESTNET ||
+                          chain == ChainType::RCPUREGTEST);
 }
