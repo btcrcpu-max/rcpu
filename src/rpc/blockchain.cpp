@@ -906,6 +906,8 @@ static RPCHelpMan gettxoutsetinfo()
                         {RPCResult::Type::STR_HEX, "hash_serialized_3", /*optional=*/true, "The serialized hash (only present if 'hash_serialized_3' hash_type is chosen)"},
         {RPCResult::Type::STR_HEX, "hash_serialized_4", /*optional=*/true, "The CT-aware serialized hash (only present if 'hash_serialized_4' hash_type is chosen)"},
                         {RPCResult::Type::STR_HEX, "muhash", /*optional=*/true, "The serialized hash (only present if 'muhash' hash_type is chosen)"},
+                        {RPCResult::Type::BOOL, "ct_aware", "RCPU CT: true iff the returned hash commits to commitment/nonce/rangeproof (hash_serialized_3 on a confidential chain, or hash_serialized_4)"},
+                        {RPCResult::Type::STR, "warning", /*optional=*/true, "RCPU CT: present when a confidential chain was queried with a non-CT-aware hash type; the hash must not be used as a UTXO-set integrity commitment"},
                         {RPCResult::Type::NUM, "transactions", /*optional=*/true, "The number of transactions with unspent outputs (not available when coinstatsindex is used)"},
                         {RPCResult::Type::NUM, "disk_size", /*optional=*/true, "The estimated size of the chainstate on disk (not available when coinstatsindex is used)"},
                         {RPCResult::Type::STR_AMOUNT, "total_amount", "The total amount of coins in the UTXO set. Confidential outputs are counted as 0, see \"amounts_complete\""},
