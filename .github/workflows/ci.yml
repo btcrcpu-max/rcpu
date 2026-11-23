@@ -294,6 +294,8 @@ jobs:
           # RPC coverage on rcpuregtest: gettxoutsetinfo hash types / index /
           # reorg consistency, and getblockstats/getblockheader/getblock.
           # Both are adapted from upstream and set self.chain = 'rcpuregtest'.
-          python3 test/functional/rpc_blockchain.py --descriptors
-          python3 test/functional/feature_coinstatsindex.py --descriptors
+          # These two tests are walletless, so the framework does not expose
+          # the --descriptors option; run them without it.
+          python3 test/functional/rpc_blockchain.py
+          python3 test/functional/feature_coinstatsindex.py
 
