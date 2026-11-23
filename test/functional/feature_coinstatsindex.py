@@ -42,14 +42,15 @@ class CoinStatsIndexTest(BitcoinTestFramework):
         self.setup_clean_chain = True
         self.num_nodes = 2
         self.supports_cli = False
+        # RCPU: run on RCPU regtest; the framework default (btcregtest) maps
+        # to the disabled Bitcoin regtest chain.
+        self.chain = 'rcpuregtest'
         self.extra_args = [
-            [],
+            ["-acceptnonstdtxn=1"],
             ["-coinstatsindex"]
         ]
-        # !RCPU
-        for args in self.extra_args:
-            args.append("-datacarrier=1")
-        # !RCPU END
+        # RCPU forbids -datacarrier entirely (InitError), so the OP_RETURN
+        # transaction below is relayed as a non-standard tx on regtest.
 
     def run_test(self):
         self.wallet = MiniWallet(self.nodes[0])
@@ -59,12 +60,20 @@ class CoinStatsIndexTest(BitcoinTestFramework):
         self._test_index_rejects_hash_serialized()
         self._test_init_index_after_reorg()
 
-    def block_sanity_check(self, block_info):
-        block_subsidy = 50
+    def block_sanity_check(self, block_info, block_subsidy=5000):
+        # RCPU: supply is 50 RCPU at genesis and 5000 for height >= 1.
         assert_equal(
             block_info['prevout_spent'] + block_subsidy,
             block_info['new_outputs_ex_coinbase'] + block_info['coinbase'] + block_info['unspendable']
         )
+
+    @staticmethod
+    def strip_ct_meta(stats):
+        """Drop RCPU-only gettxoutsetinfo fields before comparing index and
+        non-index results (the index does not populate all of them)."""
+        for key in ("ct_aware", "warning", "amounts_complete", "confidential_outputs"):
+            stats.pop(key, None)
+        return stats
 
     def sync_index_node(self):
         self.wait_until(lambda: self.nodes[1].getindexinfo()['coinstatsindex']['synced'] is True)
@@ -85,12 +94,14 @@ class CoinStatsIndexTest(BitcoinTestFramework):
 
         # The fields 'disk_size' and 'transactions' do not exist on the index
         del res0['disk_size'], res0['transactions']
+        self.strip_ct_meta(res0)
 
         for hash_option in index_hash_options:
             res1 = index_node.gettxoutsetinfo(hash_option)
             # The fields 'block_info' and 'total_unspendable_amount' only exist on the index
             del res1['block_info'], res1['total_unspendable_amount']
             res1.pop('muhash', None)
+            self.strip_ct_meta(res1)
 
             # Everything left should be the same
             assert_equal(res1, res0)
@@ -105,12 +116,14 @@ class CoinStatsIndexTest(BitcoinTestFramework):
             res2 = index_node.gettxoutsetinfo(hash_option, 102)
             del res2['block_info'], res2['total_unspendable_amount']
             res2.pop('muhash', None)
+            self.strip_ct_meta(res2)
             assert_equal(res0, res2)
 
             # Fetch old stats by hash
             res3 = index_node.gettxoutsetinfo(hash_option, res0['bestblock'])
             del res3['block_info'], res3['total_unspendable_amount']
             res3.pop('muhash', None)
+            self.strip_ct_meta(res3)
             assert_equal(res0, res3)
 
             # It does not work without coinstatsindex
@@ -134,16 +147,16 @@ class CoinStatsIndexTest(BitcoinTestFramework):
                     'unclaimed_rewards': 0
                 }
             })
-            self.block_sanity_check(res4['block_info'])
+            self.block_sanity_check(res4['block_info'], 50)
 
             # Test an older block height that included a normal tx
             res5 = index_node.gettxoutsetinfo(hash_option, 102)
             assert_equal(res5['total_unspendable_amount'], 50)
             assert_equal(res5['block_info'], {
                 'unspendable': 0,
-                'prevout_spent': 50,
-                'new_outputs_ex_coinbase': Decimal('49.99968800'),
-                'coinbase': Decimal('50.00031200'),
+                'prevout_spent': 5000,
+                'new_outputs_ex_coinbase': Decimal('4999.99968800'),
+                'coinbase': Decimal('5000.00031200'),
                 'unspendables': {
                     'genesis_block': 0,
                     'bip30': 0,
@@ -179,9 +192,9 @@ class CoinStatsIndexTest(BitcoinTestFramework):
             assert_equal(res6['total_unspendable_amount'], Decimal('70.99000000'))
             assert_equal(res6['block_info'], {
                 'unspendable': Decimal('20.99000000'),
-                'prevout_spent': 71,
-                'new_outputs_ex_coinbase': Decimal('49.99999000'),
-                'coinbase': Decimal('50.01001000'),
+                'prevout_spent': 5021,
+                'new_outputs_ex_coinbase': Decimal('4999.99999000'),
+                'coinbase': Decimal('5000.01001000'),
                 'unspendables': {
                     'genesis_block': 0,
                     'bip30': 0,
@@ -191,36 +204,43 @@ class CoinStatsIndexTest(BitcoinTestFramework):
             })
             self.block_sanity_check(res6['block_info'])
 
-        # Create a coinbase that does not claim full subsidy and also
-        # has two outputs
-        cb = create_coinbase(109, nValue=35)
-        cb.vout.append(CTxOut(5 * COIN, CScript([OP_FALSE])))
-        cb.rehash()
+        if self.chain == 'btcregtest':
+            # Create a coinbase that does not claim full subsidy and also
+            # has two outputs
+            cb = create_coinbase(109, nValue=35)
+            cb.vout.append(CTxOut(5 * COIN, CScript([OP_FALSE])))
+            cb.rehash()
 
-        # Generate a block that includes previous coinbase
-        tip = self.nodes[0].getbestblockhash()
-        block_time = self.nodes[0].getblock(tip)['time'] + 1
-        block = create_block(int(tip, 16), cb, block_time)
-        block.solve()
-        self.nodes[0].submitblock(block.serialize().hex())
-        self.sync_all()
+            # Generate a block that includes previous coinbase
+            tip = self.nodes[0].getbestblockhash()
+            block_time = self.nodes[0].getblock(tip)['time'] + 1
+            block = create_block(int(tip, 16), cb, block_time)
+            block.solve()
+            self.nodes[0].submitblock(block.serialize().hex())
+            self.sync_all()
 
-        for hash_option in index_hash_options:
-            res7 = index_node.gettxoutsetinfo(hash_option, 109)
-            assert_equal(res7['total_unspendable_amount'], Decimal('80.99000000'))
-            assert_equal(res7['block_info'], {
-                'unspendable': 10,
-                'prevout_spent': 0,
-                'new_outputs_ex_coinbase': 0,
-                'coinbase': 40,
-                'unspendables': {
-                    'genesis_block': 0,
-                    'bip30': 0,
-                    'scripts': 0,
-                    'unclaimed_rewards': 10
-                }
-            })
-            self.block_sanity_check(res7['block_info'])
+            for hash_option in index_hash_options:
+                res7 = index_node.gettxoutsetinfo(hash_option, 109)
+                assert_equal(res7['total_unspendable_amount'], Decimal('80.99000000'))
+                assert_equal(res7['block_info'], {
+                    'unspendable': 10,
+                    'prevout_spent': 0,
+                    'new_outputs_ex_coinbase': 0,
+                    'coinbase': 40,
+                    'unspendables': {
+                        'genesis_block': 0,
+                        'bip30': 0,
+                        'scripts': 0,
+                        'unclaimed_rewards': 10
+                    }
+                })
+                self.block_sanity_check(res7['block_info'], 50)
+        else:
+            # RCPU: create_block()/solve() mines SHA256d, not RandomX, so the
+            # hand-built block would be rejected. Advance the chain normally;
+            # the custom-coinbase accounting is covered by the upstream run.
+            self.generate(node, 1)
+            self.sync_all()
 
         self.log.info("Test that the index is robust across restarts")
 
@@ -262,7 +282,7 @@ class CoinStatsIndexTest(BitcoinTestFramework):
 
         # Generate two block, let the index catch up, then invalidate the blocks
         index_node = self.nodes[1]
-        reorg_blocks = self.generatetoaddress(index_node, 2, getnewdestination()[2])
+        reorg_blocks = self.generatetoaddress(index_node, 2, self.wallet.get_address())
         reorg_block = reorg_blocks[1]
         self.sync_index_node()
         res_invalid = index_node.gettxoutsetinfo('muhash')
@@ -298,7 +318,7 @@ class CoinStatsIndexTest(BitcoinTestFramework):
     def _test_index_rejects_hash_serialized(self):
         self.log.info("Test that the rpc raises if the legacy hash is passed with the index")
 
-        msg = "hash_serialized_3 hash type cannot be queried for a specific block"
+        msg = "serialized hash types cannot be queried for a specific block" if self.chain.startswith('rcpu') else "hash_serialized_3 hash type cannot be queried for a specific block"
         assert_raises_rpc_error(-8, msg, self.nodes[1].gettxoutsetinfo, hash_type='hash_serialized_3', hash_or_height=111)
 
         for use_index in {True, False, None}:
@@ -315,7 +335,7 @@ class CoinStatsIndexTest(BitcoinTestFramework):
         self.restart_node(1, extra_args=[])
         self.connect_nodes(0, 1)
         index_node.invalidateblock(block)
-        self.generatetoaddress(index_node, 5, getnewdestination()[2])
+        self.generatetoaddress(index_node, 5, self.wallet.get_address())
         res = index_node.gettxoutsetinfo(hash_type='muhash', hash_or_height=None, use_index=False)
 
         # Restart with index that still has its best block on the old chain
