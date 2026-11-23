@@ -247,10 +247,13 @@ class CoinStatsIndexTest(BitcoinTestFramework):
         res8 = index_node.gettxoutsetinfo('muhash')
         self.restart_node(1, extra_args=self.extra_args[1])
         res9 = index_node.gettxoutsetinfo('muhash')
+        self.strip_ct_meta(res8)
+        self.strip_ct_meta(res9)
         assert_equal(res8, res9)
 
         self.generate(index_node, 1, sync_fun=self.no_op)
         res10 = index_node.gettxoutsetinfo('muhash')
+        self.strip_ct_meta(res10)
         assert res8['txouts'] < res10['txouts']
 
         self.log.info("Test that the index works with -reindex")
@@ -258,6 +261,7 @@ class CoinStatsIndexTest(BitcoinTestFramework):
         self.restart_node(1, extra_args=["-coinstatsindex", "-reindex"])
         self.sync_index_node()
         res11 = index_node.gettxoutsetinfo('muhash')
+        self.strip_ct_meta(res11)
         assert_equal(res11, res10)
 
         self.log.info("Test that the index works with -reindex-chainstate")
@@ -265,6 +269,7 @@ class CoinStatsIndexTest(BitcoinTestFramework):
         self.restart_node(1, extra_args=["-coinstatsindex", "-reindex-chainstate"])
         self.sync_index_node()
         res12 = index_node.gettxoutsetinfo('muhash')
+        self.strip_ct_meta(res12)
         assert_equal(res12, res10)
 
     def _test_use_index_option(self):
@@ -275,6 +280,8 @@ class CoinStatsIndexTest(BitcoinTestFramework):
         res = self.nodes[0].gettxoutsetinfo('muhash')
         option_res = self.nodes[1].gettxoutsetinfo(hash_type='muhash', hash_or_height=None, use_index=False)
         del res['disk_size'], option_res['disk_size']
+        self.strip_ct_meta(res)
+        self.strip_ct_meta(option_res)
         assert_equal(res, option_res)
 
     def _test_reorg_index(self):
