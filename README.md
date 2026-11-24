@@ -33,6 +33,15 @@ dual-algo** mode alongside RandomX.
 > that could otherwise be released as `powLimit`-difficulty blocks. Consensus
 > parameters, PoW algorithms, rewards and the CT rules are otherwise unchanged.
 
+> **v1.4.27 HARD FORK AT BLOCK 31,939 (expected 2026-12-01).**
+> All nodes, pools and miners must upgrade before this height. From 31,939 on,
+> an algorithm that has produced **no** block since dual-algo activation
+> (21,000) re-anchors to the activation anchor instead of staying pinned at
+> `powLimit`: its resume block is capped at `nDualAlgoMaxDrop` (8x) relative to
+> the halved pre-activation target, and the following blocks anchor on it and
+> continue with normal ASERT. Before 31,939 the chain validates exactly as with
+> v1.4.26, so **no reindex is required**; nodes still on v1.4.26 or older fork
+> off after 31,939 if such a block appears.
 
 ## Code signing policy
 
