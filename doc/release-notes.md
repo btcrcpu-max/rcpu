@@ -2,6 +2,7 @@
 
 RCPU Core release notes live in [doc/release-notes/](release-notes/):
 
+- [v1.4.27](release-notes/v1.4.27.md) — Consensus: the POW-02 never-mined resume rule is scheduled at height **31,939** on mainnet and testnet (it shipped inactive in v1.4.18). Every node, pool and miner must upgrade before that height; no reindex is required.
 - [v1.4.26](release-notes/v1.4.26.md) — Security/correctness follow-up from the 2026-11-23 audit: `getblockstats` no longer aborts on CT blocks with confidential inputs, `gettxoutsetinfo` reports CT-aware `hash_serialized_3`/`hash_serialized_4` with `ct_aware`/`warning`, wallet CT amount/fee `/unblind` fixes, `listunreadableoutputs` data-dir confinement, chain-parameter/CT-mode initialisation for library entry points, and release-attestation pinning. No consensus change; monitors/explorers must adapt to the changed CT-chain `hash_serialized_3` value.
 - [v1.4.25](release-notes/v1.4.25.md) — Hardening: the node refuses a dual-algo schedule that would make the difficulty code fall back to `powLimit`, the RCPU 112-byte header layout is now tied to the selected chain for every entry point, and the unit-test gate grew from 12 to 17 suites. No consensus, wallet, or RPC behavior change.
 - [v1.4.24](release-notes/v1.4.24.md) — GUI: the transaction list and Overview now refresh after unlocking the wallet, so confidential amounts stop showing `—` without a restart; the details dialog prints `unknown` instead of `0.00000000 RCPU` for amounts the wallet cannot unblind. No consensus, wallet, or RPC behavior change.

@@ -6,12 +6,14 @@
 
 #include <arith_uint256.h>
 #include <chain.h>
+#include <common/args.h>
 #include <consensus/amount.h>
 #include <consensus/merkle.h>
 #include <consensus/params.h>
 #include <consensus/validation.h>
 #include <crypto/etchash.h>
 #include <crypto/keccak.h>
+#include <kernel/chainparams.h>
 #include <pow.h>
 #include <primitives/block.h>
 #include <primitives/transaction.h>
@@ -19,8 +21,11 @@
 #include <span.h>
 #include <test/util/setup_common.h>
 #include <uint256.h>
+#include <util/chaintype.h>
 #include <util/strencodings.h>
 #include <validation.h>
+
+#include <array>
 
 #include <memory>
 #include <algorithm>
@@ -765,6 +770,203 @@ BOOST_AUTO_TEST_CASE(dual_algo_reanchor_discards_banked_lateness)
     BOOST_CHECK(next_bits <= resume_bits);
 }
 
+namespace {
+/** Append one synthetic block index and return it.
+ *
+ *  Mirrors BlockManager::AddToBlockIndex(): height/pprev/chainwork come from the
+ *  given parent, then the dual-algo count cache and the H-1 re-anchor state are
+ *  derived exactly as the node derives them when it indexes a block.
+ */
+CBlockIndex* AppendDualAlgoIndex(std::vector<std::unique_ptr<CBlockIndex>>& owned,
+                                 CBlockIndex* pprev,
+                                 const Consensus::Params& params,
+                                 int32_t height,
+                                 int32_t version,
+                                 int64_t time,
+                                 uint32_t bits)
+{
+    auto index = std::make_unique<CBlockIndex>();
+    index->nHeight = height;
+    index->pprev = pprev;
+    index->nTime = time;
+    index->nBits = bits;
+    index->nVersion = version;
+    index->nChainWork = (pprev ? pprev->nChainWork : arith_uint256(0)) + GetBlockProof(*index);
+    index->nSecondAlgoCount = ComputeSecondAlgoCount(*index, params.nDualAlgoActivationHeight);
+    UpdateDualAlgoState(*index, params);
+    owned.push_back(std::move(index));
+    return owned.back().get();
+}
+
+/** Parameters around the H-1 fix: activation 150, fix 160, 12h gap, 8x cap. */
+Consensus::Params FixHeightParams()
+{
+    Consensus::Params params;
+    params.powLimit = uint256S("0x7fffffff00000000000000000000000000000000000000000000000000000000");
+    params.nDualAlgoActivationHeight = 150;
+    params.nDualAlgoTargetSpacing = 600;
+    params.nPowTargetSpacing = 300;
+    params.nASERTHalfLife = 2 * 24 * 60 * 60;
+    params.nEtchashEpochLength = 10;
+    params.fPowAllowMinDifficultyBlocks = false;
+    params.fPowNoRetargeting = false;
+    params.nDualAlgoLatenessFixHeight = 160;
+    params.nDualAlgoReanchorGap = 12 * 60 * 60;
+    params.nDualAlgoMaxDrop = 8;
+    return params;
+}
+} // namespace
+
+// !RCPU (H-1, reorg): the re-anchor state is stored per block index and must be
+// derived only from that index's own ancestry. Reorganising across the fix
+// height must not let the abandoned branch's anchor leak into the new branch,
+// and must not mutate the abandoned branch either: a header-only reorg rebuilds
+// the new branch through AddToBlockIndex while the old indexes still exist.
+BOOST_AUTO_TEST_CASE(dual_algo_reorg_across_fix_height_keeps_branch_state)
+{
+    const Consensus::Params params{FixHeightParams()};
+    const int64_t nBaseTime{1710000000};
+
+    std::vector<std::unique_ptr<CBlockIndex>> chain;
+    for (int32_t height = 140; height <= 159; ++height) {
+        const int32_t version = (height == 150) ? BLOCK_VERSION_QHASH : 0;
+        AppendDualAlgoIndex(chain, chain.empty() ? nullptr : chain.back().get(), params,
+                            height, version, nBaseTime + (height - 140) * 300, 0x1f00ffff);
+    }
+    CBlockIndex* fork_point = chain.back().get();
+
+    // More than 12h after the common tip, measured from the last Etchash block
+    // at height 150.
+    const int64_t nResumeTime{nBaseTime + (159 - 140) * 300 + 13 * 60 * 60};
+
+    // Branch A (abandoned): Etchash resumes, so it becomes its own anchor.
+    CBlockHeader header_a;
+    header_a.nTime = nResumeTime;
+    header_a.nVersion = BLOCK_VERSION_QHASH;
+    const uint32_t bits_a{GetNextWorkRequired(fork_point, &header_a, params)};
+
+    std::vector<std::unique_ptr<CBlockIndex>> branch_a;
+    CBlockIndex* a160 = AppendDualAlgoIndex(branch_a, fork_point, params,
+                                            160, BLOCK_VERSION_QHASH, nResumeTime, bits_a);
+    BOOST_CHECK_EQUAL(a160->nLastEtchashHeight, 160);
+    BOOST_CHECK_EQUAL(a160->nAsertAnchorEtchashHeight, 160);
+
+    // Branch B (selected): a RandomX block at the same height, then Etchash.
+    CBlockHeader header_b;
+    header_b.nTime = nResumeTime;
+    header_b.nVersion = 0;
+    const uint32_t bits_b160{GetNextWorkRequired(fork_point, &header_b, params)};
+
+    std::vector<std::unique_ptr<CBlockIndex>> branch_b;
+    CBlockIndex* b160 = AppendDualAlgoIndex(branch_b, fork_point, params,
+                                            160, 0, nResumeTime, bits_b160);
+    // The new branch starts from the common ancestor's state, not from A's.
+    BOOST_CHECK_EQUAL(b160->nLastEtchashHeight, 150);
+    BOOST_CHECK_EQUAL(b160->nAsertAnchorEtchashHeight, 149);
+    BOOST_CHECK_EQUAL(b160->nLastRandomXHeight, 160);
+    BOOST_CHECK_EQUAL(b160->nAsertAnchorRandomXHeight, 149);
+
+    CBlockHeader header_b161;
+    header_b161.nTime = nResumeTime + 600;
+    header_b161.nVersion = BLOCK_VERSION_QHASH;
+    const uint32_t bits_b161{GetNextWorkRequired(b160, &header_b161, params)};
+    CBlockIndex* b161 = AppendDualAlgoIndex(branch_b, b160, params,
+                                            161, BLOCK_VERSION_QHASH, header_b161.nTime, bits_b161);
+    BOOST_CHECK_EQUAL(b161->nLastEtchashHeight, 161);
+    BOOST_CHECK_EQUAL(b161->nAsertAnchorEtchashHeight, 161);
+
+    // Building branch B must not touch branch A's indexes.
+    BOOST_CHECK_EQUAL(a160->nLastEtchashHeight, 160);
+    BOOST_CHECK_EQUAL(a160->nAsertAnchorEtchashHeight, 160);
+
+    // Isolated reference chain with the same ancestry and timestamps: the
+    // difficulty on the selected branch must be bit-for-bit identical.
+    std::vector<std::unique_ptr<CBlockIndex>> reference;
+    for (int32_t height = 140; height <= 159; ++height) {
+        const int32_t version = (height == 150) ? BLOCK_VERSION_QHASH : 0;
+        AppendDualAlgoIndex(reference, reference.empty() ? nullptr : reference.back().get(), params,
+                            height, version, nBaseTime + (height - 140) * 300, 0x1f00ffff);
+    }
+    CBlockIndex* r160 = AppendDualAlgoIndex(reference, reference.back().get(), params,
+                                            160, 0, nResumeTime, bits_b160);
+    CBlockHeader ref_header;
+    ref_header.nTime = nResumeTime + 600;
+    ref_header.nVersion = BLOCK_VERSION_QHASH;
+    BOOST_CHECK_EQUAL(bits_b161, GetNextWorkRequired(r160, &ref_header, params));
+}
+
+// !RCPU (H-1, restart/reindex): every per-algorithm field is memory-only and is
+// rebuilt by BlockManager::LoadBlockIndex() in height order. Rebuilding from
+// headers alone must reproduce the incremental AddToBlockIndex() state exactly,
+// otherwise a node would change its own difficulty after a restart or -reindex.
+BOOST_AUTO_TEST_CASE(dual_algo_state_rebuild_matches_incremental)
+{
+    const Consensus::Params params{FixHeightParams()};
+    const int64_t nBaseTime{1710000000};
+
+    std::vector<std::unique_ptr<CBlockIndex>> chain;
+    for (int32_t height = 140; height <= 159; ++height) {
+        const int32_t version = (height == 150) ? BLOCK_VERSION_QHASH : 0;
+        AppendDualAlgoIndex(chain, chain.empty() ? nullptr : chain.back().get(), params,
+                            height, version, nBaseTime + (height - 140) * 300, 0x1f00ffff);
+    }
+
+    // 60 days idle for Etchash: the height-160 resume block must re-anchor.
+    chain.back()->nTime += 60 * 24 * 60 * 60;
+    int64_t nTime{chain.back()->nTime + 600};
+    for (int32_t height = 160; height <= 164; ++height) {
+        const int32_t version = (height == 160) ? BLOCK_VERSION_QHASH : 0;
+        CBlockHeader header;
+        header.nTime = nTime;
+        header.nVersion = version;
+        const uint32_t bits{GetNextWorkRequired(chain.back().get(), &header, params)};
+        AppendDualAlgoIndex(chain, chain.back().get(), params, height, version, nTime, bits);
+        nTime += 600;
+    }
+
+    struct Snapshot {
+        int64_t second_algo_count;
+        int32_t last_randomx;
+        int32_t last_etchash;
+        int32_t anchor_randomx;
+        int32_t anchor_etchash;
+    };
+    std::vector<Snapshot> incremental;
+    for (const auto& index : chain) {
+        incremental.push_back({index->nSecondAlgoCount, index->nLastRandomXHeight, index->nLastEtchashHeight,
+                               index->nAsertAnchorRandomXHeight, index->nAsertAnchorEtchashHeight});
+    }
+
+    // Simulate a fresh process: the memory-only fields start at their defaults,
+    // then LoadBlockIndex() recomputes them in height order.
+    for (auto& index : chain) {
+        index->nSecondAlgoCount = -1;
+        index->nLastRandomXHeight = -1;
+        index->nLastEtchashHeight = -1;
+        index->nAsertAnchorRandomXHeight = -1;
+        index->nAsertAnchorEtchashHeight = -1;
+    }
+    for (auto& index : chain) {
+        index->nSecondAlgoCount = ComputeSecondAlgoCount(*index, params.nDualAlgoActivationHeight);
+        UpdateDualAlgoState(*index, params);
+    }
+
+    for (size_t i = 0; i < chain.size(); ++i) {
+        BOOST_CHECK_EQUAL(chain[i]->nSecondAlgoCount, incremental[i].second_algo_count);
+        BOOST_CHECK_EQUAL(chain[i]->nLastRandomXHeight, incremental[i].last_randomx);
+        BOOST_CHECK_EQUAL(chain[i]->nLastEtchashHeight, incremental[i].last_etchash);
+        BOOST_CHECK_EQUAL(chain[i]->nAsertAnchorRandomXHeight, incremental[i].anchor_randomx);
+        BOOST_CHECK_EQUAL(chain[i]->nAsertAnchorEtchashHeight, incremental[i].anchor_etchash);
+    }
+
+    // The rebuilt state still describes the re-anchor, not the activation
+    // anchor: Etchash resumed at 160, RandomX last seen at 164.
+    BOOST_CHECK_EQUAL(chain.back()->nLastEtchashHeight, 160);
+    BOOST_CHECK_EQUAL(chain.back()->nAsertAnchorEtchashHeight, 160);
+    BOOST_CHECK_EQUAL(chain.back()->nLastRandomXHeight, 164);
+    BOOST_CHECK_EQUAL(chain.back()->nAsertAnchorRandomXHeight, 149);
+}
+
 // !RCPU (dual-algo): a chain whose schedule would make the difficulty code
 // divide by zero or fall back to powLimit (no difficulty at all) must be
 // rejected when its parameters are built, not at the first block that reaches
@@ -1202,6 +1404,30 @@ BOOST_AUTO_TEST_CASE(etchash_mainnet_21000_boundaries)
     BOOST_CHECK(GetPowAlgoForHeader(20999, BLOCK_VERSION_QHASH, params) == PowAlgo::RandomX);
     BOOST_CHECK(GetPowAlgoForHeader(21000, BLOCK_VERSION_QHASH, params) == PowAlgo::Etchash);
     BOOST_CHECK(GetPowAlgoForHeader(21000, 0x20000000, params) == PowAlgo::RandomX);
+}
+
+BOOST_AUTO_TEST_CASE(dual_algo_never_mined_is_scheduled_on_live_chains)
+{
+    // POW-02 only runs where retargeting runs, so the live chains must carry an
+    // explicit height. Regtest keeps fPowNoRetargeting and its 0 is intent only.
+    // If this fails after an intentional re-schedule, update the expected height
+    // together with chainparams and the release notes.
+    const std::array<std::pair<ChainType, int>, 2> live{{
+        {ChainType::RCPUMAIN, 31939},
+        {ChainType::RCPUTESTNET, 31939},
+    }};
+    for (const auto& [chain, expected] : live) {
+        const auto chain_params = CreateChainParams(*m_node.args, chain);
+        const auto& params = chain_params->GetConsensus();
+        BOOST_CHECK_EQUAL(params.nDualAlgoActivationHeight, 21000);
+        BOOST_CHECK_EQUAL(params.nDualAlgoLatenessFixHeight, 29909);
+        BOOST_CHECK_EQUAL(params.nDualAlgoNeverMinedFixHeight, expected);
+        BOOST_CHECK(params.nDualAlgoNeverMinedFixHeight > params.nDualAlgoLatenessFixHeight);
+        BOOST_CHECK_NO_THROW(params.CheckDualAlgoConsistency());
+    }
+
+    const auto regtest = CreateChainParams(*m_node.args, ChainType::RCPUREGTEST);
+    BOOST_CHECK_EQUAL(regtest->GetConsensus().nDualAlgoNeverMinedFixHeight, 0);
 }
 
 BOOST_AUTO_TEST_SUITE_END()
