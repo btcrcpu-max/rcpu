@@ -13,7 +13,7 @@
 #include <consensus/validation.h>
 #include <crypto/etchash.h>
 #include <crypto/keccak.h>
-#include <kernel/chainparams.h>
+#include <chainparams.h>
 #include <pow.h>
 #include <primitives/block.h>
 #include <primitives/transaction.h>
