@@ -849,7 +849,10 @@ BOOST_AUTO_TEST_CASE(dual_algo_reorg_across_fix_height_keeps_branch_state)
     CBlockIndex* a160 = AppendDualAlgoIndex(branch_a, fork_point, params,
                                             160, BLOCK_VERSION_QHASH, nResumeTime, bits_a);
     BOOST_CHECK_EQUAL(a160->nLastEtchashHeight, 160);
-    BOOST_CHECK_EQUAL(a160->nAsertAnchorEtchashHeight, 160);
+    // Re-anchor check uses pprev's time vs. last-same time, not this block's
+    // time; with the 45 min gap between height 150 (Etchash) and 159
+    // (pprev) no re-anchor fires, so the activation anchor stays.
+    BOOST_CHECK_EQUAL(a160->nAsertAnchorEtchashHeight, 149);
 
     // Branch B (selected): a RandomX block at the same height, then Etchash.
     CBlockHeader header_b;
@@ -877,7 +880,7 @@ BOOST_AUTO_TEST_CASE(dual_algo_reorg_across_fix_height_keeps_branch_state)
 
     // Building branch B must not touch branch A's indexes.
     BOOST_CHECK_EQUAL(a160->nLastEtchashHeight, 160);
-    BOOST_CHECK_EQUAL(a160->nAsertAnchorEtchashHeight, 160);
+    BOOST_CHECK_EQUAL(a160->nAsertAnchorEtchashHeight, 149);
 
     // Isolated reference chain with the same ancestry and timestamps: the
     // difficulty on the selected branch must be bit-for-bit identical.
