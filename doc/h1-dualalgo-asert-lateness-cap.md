@@ -221,8 +221,9 @@ Consensus parameters (`src/consensus/params.h`):
   `29909`; regtest is `0` so tests exercise the rule. This height is already
   scheduled and must not be moved again.
 - `nDualAlgoNeverMinedFixHeight` — POW-02 resume height for an algorithm that
-  has never produced a block. `INT_MAX` means "not scheduled"; the release that
-  ships it must set `TIP + 2016` on mainnet and testnet. Regtest is `0`.
+  has never produced a block. `INT_MAX` means "not scheduled". Mainnet and
+  testnet now ship **31939** (tip 29923 on 2026-11-24 + 2016 blocks); do not
+  move it once the release ships. Regtest is `0`.
 - `nDualAlgoReanchorGap` — 12h on mainnet/testnet, 1h on regtest.
 - `nDualAlgoMaxDrop` — 8 on all RCPU chains.
 

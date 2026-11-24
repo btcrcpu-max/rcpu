@@ -285,10 +285,12 @@ consensus.fPowRandomX = true;
         consensus.nDualAlgoLatenessFixHeight = 29909;
         consensus.nDualAlgoReanchorGap = 12 * 60 * 60;
         consensus.nDualAlgoMaxDrop = 8;
-        // POW-02: set to TIP + 2016 in the release that ships the never-mined
-        // resume rule. INT_MAX here means "not scheduled yet" and keeps the
-        // shipped consensus unchanged until an explicit height is chosen.
-        consensus.nDualAlgoNeverMinedFixHeight = std::numeric_limits<int>::max();
+        // POW-02: scheduled at 31939 (tip 29923 on 2026-11-24 + 2016 blocks,
+        // ~2026-12-01 at the ~5-minute cadence, earlier if the recent ~2-minute
+        // cadence holds). The rule is active from this height, so every
+        // node/pool must upgrade before it. Do not move this height once the
+        // release ships; pick a new one for a later release instead.
+        consensus.nDualAlgoNeverMinedFixHeight = 31939;
         // !RCPU (dual-algo etchash): the bit-30 algorithm is Etchash (ECIP-1099
         // light verification). Epoch length 6000 blocks: with both algorithms
         // mining, ~20.8 days per epoch at the combined ~5-minute cadence
@@ -446,7 +448,9 @@ consensus.fPowRandomX = true;
         consensus.nDualAlgoReanchorGap = 12 * 60 * 60;
         consensus.nDualAlgoMaxDrop = 8;
         // POW-02: scheduled together with mainnet (same release, same height).
-        consensus.nDualAlgoNeverMinedFixHeight = std::numeric_limits<int>::max();
+        // Testnet's tip is lower, so the rule activates later there; that is
+        // expected for a shared height and is not a testnet rehearsal.
+        consensus.nDualAlgoNeverMinedFixHeight = 31939;
         // !RCPU (dual-algo etchash): testnet mirrors mainnet etchash params.
         consensus.nEtchashEpochLength = 6000;
         // P2-7: same standard big-endian rule as mainnet.
