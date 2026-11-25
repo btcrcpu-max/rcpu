@@ -76,7 +76,8 @@ Source: `src/pow.cpp`, `GetEpoch()` and `GetSeedHash()`.
 |-------|------|---------|
 | `rx_epoch_duration` | num | Epoch duration in seconds |
 | `rx_epoch` | num | Epoch of the template timestamp (`time / rx_epoch_duration`); recompute from the final block time if it is adjusted |
-| `rx_seed_hash` | hex | RandomX key for `rx_epoch` |
+| `rx_seed_hash` | hex | RandomX key for `rx_epoch`, in uint256 display order (byte-reversed vs. raw seed bytes); kept for compatibility |
+| `rx_seed_hash_raw` | hex | RandomX key in raw seed byte order (the 32 bytes to pass to `randomx_calculate_hash`); prefer this for new miners |
 | `rx_header_size` | num | Serialized header size fed to RandomX: **112** (80-byte legacy header + 32-byte `hashRandomX`) |
 | `rx_hash_field` | str | `hashRandomX` location/semantics: 32 bytes at offset 80; **zeroed** during hashing and commitment, filled with the resulting RandomX hash before submission |
 | `rx_commitment_target` | hex | Maximum acceptable RandomX commitment (same 256-bit value as `target`) |
@@ -114,7 +115,9 @@ Determine the epoch from the **final** block time:
 
 ```
 epoch = time / rx_epoch_duration
-seed  = sha256d("RCPU/RandomX/Epoch/%d" % epoch)   # == rx_seed_hash of that epoch
+raw_seed = sha256d("RCPU/RandomX/Epoch/%d" % epoch)  # == rx_seed_hash_raw
+# rx_seed_hash is the same value in uint256 display order (byte-reversed);
+# feed raw_seed / rx_seed_hash_raw to randomx_calculate_hash, not the reversed hex.
 ```
 
 Initialize a RandomX VM with `seed`, hash `header112` and obtain the

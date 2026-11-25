@@ -4087,13 +4087,19 @@ bool HasValidProofOfWork(const std::vector<CBlockHeader>& headers, const Consens
             // passes the pre-check with a 150-byte message and would then
             // proceed to AcceptBlockHeader where POW_VERIFY_FULL runs a
             // full 10-30 ms HashimotoLight in cs_main -- a ~10^5 CPU
-            // amplification per header. RandomX and QHash do not have this
-            // problem because their commitment is computed from the header
-            // (GetRandomXCommitment / GetQHashCommitment) and cannot be
-            // forged without solving the PoW.
+            // amplification per header.
             //
-            // Running POW_VERIFY_FULL here filters forged headers outside
-            // cs_main so they cannot block validation. The cost is one
+            // RandomX's commitment is also NOT an unforgeable PoW proof:
+            // GetRandomXCommitment() = blake2b(header112, hashRandomX), and
+            // hashRandomX is an attacker-chosen header field. A peer can
+            // search hashRandomX until that blake2b value meets nBits without
+            // ever computing a valid RandomX hash, so this pre-check is a
+            // cheap filter, not "proof of work". The real RandomX hash is
+            // verified in AcceptBlockHeader (POW_VERIFY_FULL), under cs_main.
+            // Keep this asymmetry in mind when changing the header budget.
+            //
+            // Running POW_VERIFY_FULL here for Etchash filters forged headers
+            // outside cs_main so they cannot block validation. The cost is one
             // HashimotoLight per header at pre-check time; AcceptBlockHeader
             // re-runs it once, but the per-call cost is tiny and attackers
             // are rejected before reaching the lock path.
@@ -4102,6 +4108,9 @@ bool HasValidProofOfWork(const std::vector<CBlockHeader>& headers, const Consens
             }
             break;
         case PowAlgo::RandomX:
+            // Commitment-only is deliberately cheaper than a full RandomX
+            // hash, but it is forgeable as described above; the full hash is
+            // checked under cs_main in AcceptBlockHeader.
             if (!CheckProofOfWorkRandomX(header, consensusParams, POW_VERIFY_COMMITMENT_ONLY)) {
                 return false;
             }
@@ -4337,6 +4346,12 @@ bool ChainstateManager::AcceptBlockHeader(const CBlockHeader& block, BlockValida
         // where expensive RandomX work is spent per header. A header reaching
         // this point with a forged hashRandomX gets misbehavior points via
         // BLOCK_INVALID_HEADER downstream.
+        //
+        // Note: the commitment-only pre-check in HasValidProofOfWork() is
+        // forgeable (hashRandomX is attacker-controlled), so this FULL call —
+        // not the pre-check — is the actual PoW verification and the expensive
+        // one. Do not remove it on the assumption that the pre-check proved
+        // RandomX work.
         if (g_isRandomX && !CheckBlockHeader(block, state, GetConsensus(), /*fCheckPOW=*/true, pindexPrev)) {
             LogPrint(BCLog::VALIDATION, "%s: Consensus::CheckBlockHeader: %s, %s\n", __func__, hash.ToString(), state.ToString());
             return false;

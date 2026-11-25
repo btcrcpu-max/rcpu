@@ -1013,6 +1013,14 @@ BOOST_AUTO_TEST_CASE(dual_algo_parameter_validation)
     bad.nASERTHalfLife = 0;
     BOOST_CHECK_THROW(bad.CheckDualAlgoConsistency(), std::runtime_error);
 
+    // Etchash epoch length is used by GetEtchashEpoch() on every dual chain.
+    bad = params;
+    bad.nEtchashEpochLength = 0;
+    BOOST_CHECK_THROW(bad.CheckDualAlgoConsistency(), std::runtime_error);
+    bad = params;
+    bad.nEtchashEpochLength = -1;
+    BOOST_CHECK_THROW(bad.CheckDualAlgoConsistency(), std::runtime_error);
+
     // A cap below 1 ("at most 0x") is never intended.
     bad = params;
     bad.nDualAlgoMaxDrop = 0;
