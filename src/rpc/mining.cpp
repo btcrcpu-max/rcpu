@@ -171,11 +171,17 @@ uint256 rxHash;
     // Etchash needs the block height for its epoch; when the prev index is
     // unknown (should not happen for a template built on the active tip) the
     // guard above has already refused the template.
+    bool fSolved = false;
     while (max_tries > 0 &&
-           block.nNonce < std::numeric_limits<uint32_t>::max() &&
-           !((block.nVersion & BLOCK_VERSION_QHASH)
-                 ? CheckProofOfWorkEtchash(block, nMiningHeight, chainman.GetConsensus(), POW_VERIFY_MINING, &rxHash)
-                 : CheckProofOfWorkRandomX(block, chainman.GetConsensus(), POW_VERIFY_MINING, &rxHash, prevBlockTime))) {
+           block.nNonce < std::numeric_limits<uint32_t>::max()) {
+        const bool solved =
+            (block.nVersion & BLOCK_VERSION_QHASH)
+                ? CheckProofOfWorkEtchash(block, nMiningHeight, chainman.GetConsensus(), POW_VERIFY_MINING, &rxHash)
+                : CheckProofOfWorkRandomX(block, chainman.GetConsensus(), POW_VERIFY_MINING, &rxHash, prevBlockTime);
+        if (solved) {
+            fSolved = true;
+            break;
+        }
         ++block.nNonce;
         --max_tries;
     }
@@ -185,8 +191,11 @@ uint256 rxHash;
     if (max_tries == 0 || chainman.m_interrupt) {
         return false;
     }
-    if (block.nNonce == std::numeric_limits<uint32_t>::max()) {
-        return true;
+    if (block.nNonce == std::numeric_limits<uint32_t>::max() && !fSolved) {
+        // Nonce space exhausted without a solution. Return false so
+        // generateBlocks() stops instead of looping forever with an empty
+        // block_out (it only decrements nGenerate when block_out is set).
+        return false;
     }
 
     block_out = std::make_shared<const CBlock>(block);
@@ -759,7 +768,8 @@ static RPCHelpMan getblocktemplate()
 // !RCPU
                 {RPCResult::Type::NUM, "rx_epoch_duration", "RandomX epoch duration in seconds (seed changes once per epoch)"},
                 {RPCResult::Type::NUM, "rx_epoch", "RandomX epoch of the template timestamp (block timestamp / rx_epoch_duration); if the miner adjusts the block time, the epoch must be recomputed from the final timestamp"},
-                {RPCResult::Type::STR_HEX, "rx_seed_hash", "RandomX key (seed hash) for rx_epoch, 32-byte hex; derived as sha256d(\"RCPU/RandomX/Epoch/<epoch>\")"},
+                {RPCResult::Type::STR_HEX, "rx_seed_hash", "RandomX key (seed hash) for rx_epoch, 32-byte hex in uint256 display order (byte-reversed relative to raw seed bytes); derived as sha256d(\"RCPU/RandomX/Epoch/<epoch>\")"},
+                {RPCResult::Type::STR_HEX, "rx_seed_hash_raw", /*optional=*/true, "RandomX key in raw seed byte order (the bytes to pass to randomx_calculate_hash), 32-byte hex"},
                 {RPCResult::Type::NUM, "rx_header_size", "serialized header size in bytes fed to RandomX (80-byte legacy header plus the 32-byte hashRandomX field)"},
                 {RPCResult::Type::STR, "rx_hash_field", "location and semantics of the hashRandomX field: 32 bytes appended after the 80-byte header; must be zeroed before computing the RandomX hash and commitment, then filled with the computed RandomX hash before submission"},
                 {RPCResult::Type::STR_HEX, "rx_commitment_target", "maximum acceptable RandomX commitment (256-bit hex); the commitment computed over the zeroed-hashRandomX header must be <= this target"},
@@ -1159,7 +1169,11 @@ static RPCHelpMan getblocktemplate()
             const uint32_t nEpochTime = std::min<uint32_t>(pblock->GetBlockTime(), cache.pindexPrev->GetBlockTime() + static_cast<uint32_t>(MAX_FUTURE_BLOCK_TIME));
             const uint32_t nEpoch = GetEpoch(nEpochTime, consensusParams.nRandomXEpochDuration);
             result.pushKV("rx_epoch", nEpoch);
-            result.pushKV("rx_seed_hash", GetSeedHash(nEpoch).GetHex());
+            const uint256 rx_seed = GetSeedHash(nEpoch);
+            // Keep rx_seed_hash's historical display order for compatibility,
+            // and expose the raw seed bytes explicitly for external miners.
+            result.pushKV("rx_seed_hash", rx_seed.GetHex());
+            result.pushKV("rx_seed_hash_raw", HexStr(Span<const uint8_t>{rx_seed.data(), rx_seed.size()}));
             result.pushKV("rx_header_size", RCPU_LEGACY_HEADER_SIZE + RANDOMX_HASH_SIZE);
             result.pushKV("rx_hash_field", strprintf("hashRandomX at byte offset %zu, %d bytes; zero before hashing and commitment, fill with the RandomX hash before submission", RCPU_LEGACY_HEADER_SIZE, RANDOMX_HASH_SIZE));
             result.pushKV("rx_commitment_target", hashTarget.GetHex());

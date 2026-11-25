@@ -291,6 +291,14 @@ struct Params {
         // "never"; a negative height is a configuration bug.
         if (nDualAlgoLatenessFixHeight < 0) fail("nDualAlgoLatenessFixHeight must not be negative");
         if (nDualAlgoNeverMinedFixHeight < 0) fail("nDualAlgoNeverMinedFixHeight must not be negative");
+        // Epoch length is consumed by GetEtchashEpoch() on every dual-algo
+        // chain, including fPowNoRetargeting chains; a zero/negative value
+        // would make every Etchash epoch invalid at runtime.
+        if (nEtchashEpochLength <= 0) fail("nEtchashEpochLength must be > 0");
+        // The dual-algo difficulty path anchors on the activation block and
+        // per-algorithm anchor heights; it does not consume
+        // asertAnchorParams (the optional single-algo ASERT anchor), so that
+        // field is intentionally not required here.
         // With fPowNoRetargeting (regtest) GetDualAlgoWorkRequired() returns the
         // reference target before it reaches ASERT or the re-anchor logic, so
         // those parameters are legitimately unused there.

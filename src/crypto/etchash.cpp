@@ -7,6 +7,8 @@
 #include <crypto/keccak.h>
 
 #include <cstring>
+#include <limits>
+#include <stdexcept>
 
 namespace etchash {
 
@@ -170,7 +172,11 @@ std::vector<uint32_t> GenerateCache(uint64_t cache_size, const uint256& seed)
 void GenerateDatasetItem(const std::vector<uint32_t>& cache_words, uint32_t index,
                          unsigned char out[HASH_BYTES])
 {
-    const uint32_t rows = uint32_t(cache_words.size() / HASH_WORDS);
+    const uint64_t rows64 = cache_words.size() / HASH_WORDS;
+    if (rows64 > std::numeric_limits<uint32_t>::max()) {
+        throw std::runtime_error("etchash cache too large for uint32 dataset item index");
+    }
+    const uint32_t rows = uint32_t(rows64);
 
     // Initialize the mix: word 0 ^= index, rest copied.
     unsigned char mix[HASH_BYTES];
@@ -207,7 +213,11 @@ void HashimotoLight(uint64_t dataset_size, const std::vector<uint32_t>& cache_wo
     // Each row is two 64-byte dataset items, so rows = dataset_size / MIX_BYTES.
     // (Previously this erroneously used the cache size, wrapping the dataset
     // index far too early and producing wrong digest/result values.)
-    const uint32_t rows = uint32_t(dataset_size / MIX_BYTES);
+    const uint64_t rows64 = dataset_size / MIX_BYTES;
+    if (rows64 > std::numeric_limits<uint32_t>::max()) {
+        throw std::runtime_error("etchash dataset too large for uint32 row index");
+    }
+    const uint32_t rows = uint32_t(rows64);
 
     // seed = keccak512(header_hash || nonce as 8-byte LE)
     unsigned char seed_in[40];
