@@ -693,6 +693,10 @@ private:
     /** Various helpers for headers processing, invoked by ProcessHeadersMessage() */
     /** Return true if headers are continuous and have valid proof-of-work (DoS points assigned on failure) */
     bool CheckHeadersPoW(const std::vector<CBlockHeader>& headers, const Consensus::Params& consensusParams, Peer& peer);
+    /** Consume the process-wide budget for full RandomX header verification.
+     *  Returns false when the caller should drop the header/batch and retry
+     *  later; no misbehavior is assigned for budget exhaustion. */
+    bool ConsumeRandomXHeaderBudget(int64_t headers);
     /** Calculate an anti-DoS work threshold for headers chains */
     arith_uint256 GetAntiDoSWorkThreshold();
     /** Deal with state tracking and headers sync for peers that send the
@@ -967,6 +971,24 @@ private:
     NodeId m_headers_presync_bestpeer GUARDED_BY(m_headers_presync_mutex) {-1};
     /** The m_headers_presync_stats improved, and needs signalling. */
     std::atomic_bool m_headers_presync_should_signal{false};
+
+    // !RCPU
+    // Process-wide budget for unknown RandomX headers whose FULL hash is
+    // verified under cs_main in AcceptBlockHeader. The commitment-only precheck
+    // is forgeable (hashRandomX is attacker-controlled), so the per-peer header
+    // budget alone does not bound this expensive work: a peer can drain its
+    // own budget with cheap commitment-valid headers, and multiple peers can
+    // multiply the cost. This global bucket caps full RandomX verification at
+    // ~100 headers/s (burst: one maximum-size 2000-header batch) across all
+    // peers. It is a P2P policy limit, not a consensus rule; internal
+    // validation (RPC/submitblock/mining) is not throttled.
+    static constexpr int64_t RANDOMX_HEADER_BUDGET_MAX{2000};
+    static constexpr int64_t RANDOMX_HEADER_BUDGET_REFILL_PER_SEC{100};
+    mutable Mutex m_randomx_header_budget_mutex;
+    int64_t m_randomx_header_budget_tokens{RANDOMX_HEADER_BUDGET_MAX};
+    std::chrono::steady_clock::time_point m_randomx_header_budget_last{std::chrono::steady_clock::now()};
+    // !RCPU END
+
 
     /** Height of the highest block announced using BIP 152 high-bandwidth mode. */
     int m_highest_fast_announce GUARDED_BY(::cs_main){0};
@@ -2606,6 +2628,22 @@ void PeerManagerImpl::SendBlockTransactions(CNode& pfrom, Peer& peer, const CBlo
     MakeAndPushMessage(pfrom, NetMsgType::BLOCKTXN, resp);
 }
 
+bool PeerManagerImpl::ConsumeRandomXHeaderBudget(int64_t headers)
+{
+    if (headers <= 0) return true;
+    LOCK(m_randomx_header_budget_mutex);
+    const auto now = std::chrono::steady_clock::now();
+    const int64_t elapsed_us = std::chrono::duration_cast<std::chrono::microseconds>(now - m_randomx_header_budget_last).count();
+    if (elapsed_us > 0) {
+        const int64_t refill = elapsed_us * RANDOMX_HEADER_BUDGET_REFILL_PER_SEC / 1'000'000;
+        m_randomx_header_budget_tokens = std::min<int64_t>(RANDOMX_HEADER_BUDGET_MAX, m_randomx_header_budget_tokens + refill);
+        m_randomx_header_budget_last = now;
+    }
+    if (m_randomx_header_budget_tokens < headers) return false;
+    m_randomx_header_budget_tokens -= headers;
+    return true;
+}
+
 bool PeerManagerImpl::CheckHeadersPoW(const std::vector<CBlockHeader>& headers, const Consensus::Params& consensusParams, Peer& peer)
 {
     // !RCPU
@@ -2668,13 +2706,13 @@ bool PeerManagerImpl::CheckHeadersPoW(const std::vector<CBlockHeader>& headers, 
     // so replaying public Etchash headers cannot burn hashimoto CPU.
     //
     // Etchash is weighted 10× because every Etchash header in P2P forces a full
-    // HashimotoLight (~1-2 ms); RandomX/QHash only run cheap commitment checks.
-    // Without weighting a single peer can steady-state consume ~4 CPU cores
-    // (2000 headers/s × ~2 ms). Weighting at 10× drops Etchash-only sync to
-    // ~200 headers/s/peer while RandomX/QHash sync stays at 2000 headers/s.
-    // The weight threshold is heuristic; can be tuned by mainnet observations.
+    // HashimotoLight (~1-2 ms). RandomX's commitment-only precheck here is
+    // cheap, but it is forgeable; the FULL RandomX verification happens later
+    // in AcceptBlockHeader under cs_main and is bounded by the process-wide
+    // RandomX budget below, not by this per-peer weight.
     static constexpr int64_t HEADER_WEIGHT_ETCHASH{10};
     int64_t weighted_cost = 0;
+    int64_t randomx_headers = 0;
     int64_t h = nStartHeight;
 
     // F-4 fix: apply the 10x Etchash weight during IBD as well. Previously the
@@ -2699,6 +2737,7 @@ bool PeerManagerImpl::CheckHeadersPoW(const std::vector<CBlockHeader>& headers, 
             weighted_cost += HEADER_WEIGHT_ETCHASH;
         } else {
             weighted_cost += 1;
+            ++randomx_headers;
         }
         if (h >= 0) ++h;
     }
@@ -2722,6 +2761,21 @@ bool PeerManagerImpl::CheckHeadersPoW(const std::vector<CBlockHeader>& headers, 
             Misbehaving(peer, 100, "header with invalid proof of work");
             return false;
         }
+    }
+
+    // The per-peer budget above accounts for the Etchash HashimotoLight work
+    // and for the cheap RandomX commitment precheck, but it cannot bound the
+    // FULL RandomX verification that AcceptBlockHeader performs under cs_main
+    // for each unknown RandomX header: the commitment precheck is forgeable,
+    // and an attacker with many peers can multiply the cost. Charge a
+    // process-wide budget only after the commitment precheck passed (those
+    // headers will reach the expensive FULL path); invalid headers never
+    // consume this budget. On exhaustion, drop the batch without misbehavior;
+    // honest peers will retry.
+    if (randomx_headers > 0 && !ConsumeRandomXHeaderBudget(randomx_headers)) {
+        LogPrint(BCLog::NET, "CheckHeadersPoW: global RandomX header budget exhausted; dropping %d headers\n",
+                 static_cast<int>(randomx_headers));
+        return false;
     }
 
     return true;
@@ -4632,6 +4686,7 @@ void PeerManagerImpl::ProcessMessage(CNode& pfrom, const std::string& msg_type, 
         vRecv >> cmpctblock;
 
         bool received_new_header = false;
+        bool randomx_new_header = false;
         const auto blockhash = cmpctblock.header.GetHash();
 
         {
@@ -4652,11 +4707,18 @@ void PeerManagerImpl::ProcessMessage(CNode& pfrom, const std::string& msg_type, 
 
         if (!m_chainman.m_blockman.LookupBlockIndex(blockhash)) {
             received_new_header = true;
+            const auto algo = GetPowAlgoForHeader(prev_block->nHeight + 1, cmpctblock.header.nVersion,
+                                                  m_chainparams.GetConsensus());
+            randomx_new_header = (!algo || *algo == PowAlgo::RandomX);
         }
         }
 
         const CBlockIndex *pindex = nullptr;
         BlockValidationState state;
+        if (randomx_new_header && !ConsumeRandomXHeaderBudget(1)) {
+            LogPrint(BCLog::NET, "Ignoring compact block header from peer %d: global RandomX header budget exhausted\n", pfrom.GetId());
+            return;
+        }
         if (!m_chainman.ProcessNewBlockHeaders({cmpctblock.header}, /*min_pow_checked=*/true, state, &pindex)) {
             if (state.IsInvalid()) {
                 MaybePunishNodeForBlock(pfrom.GetId(), state, /*via_compact_block=*/true, "invalid header via cmpctblock");
