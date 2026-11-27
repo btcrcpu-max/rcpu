@@ -2,6 +2,7 @@
 
 RCPU Core release notes live in [doc/release-notes/](release-notes/):
 
+- [v1.4.30](release-notes/v1.4.30.md) — GUI: the white plate behind the application icon is gone; the badge itself is drawn with transparent corners in the executable, the taskbar and the installer shortcut. No consensus, wallet, or RPC behavior change.
 - [v1.4.29](release-notes/v1.4.29.md) — GUI: the application icon now has rounded corners in the executable, the taskbar and the installer shortcut, instead of the hard-edged square the opaque white plate produced. No consensus, wallet, or RPC behavior change.
 - [v1.4.28](release-notes/v1.4.28.md) — Non-consensus hardening: process-wide budget for FULL RandomX header verification (P2P DoS mitigation), `GenerateBlock` nonce-exhaustion fix, dual-algo parameter validation, Etchash row-overflow guards, and `rx_seed_hash_raw` for miners. No consensus change, no reindex; the v1.4.27 POW-02 height 31,939 schedule is unchanged.
 - [v1.4.27](release-notes/v1.4.27.md) — Consensus: the POW-02 never-mined resume rule is scheduled at height **31,939** on mainnet and testnet (it shipped inactive in v1.4.18). Every node, pool and miner must upgrade before that height; no reindex is required.
